@@ -79,18 +79,59 @@
 - All 10 Success Criteria met
 - 5 non-blocking bugs documented in `test.md` for Sprint 2
 
+## Sprint 2: Distribution Fixes + External Wallets
+
+### Distribution Engine Rewrite ✅ (Apr 2, 2026)
+- **Replaced OWS signAndSend with viem walletClient** — OWS docs confirm: "Current implementations do not provide a per-wallet nonce manager. Callers must handle it at a higher level." viem's walletClient is that higher level.
+- `WalletDistributor.transferUSDC()` now:
+  1. Decrypts private key from OWS vault via `exportWallet(wallet, passphrase)`
+  2. Creates viem account (`privateKeyToAccount` or `mnemonicToAccount`)
+  3. Sends via `walletClient.sendTransaction()` — viem handles nonce, gas estimation, EIP-1559
+  4. Waits for on-chain confirmation via `waitForTransactionReceipt()`
+- Removed all manual nonce tracking, gas bumping, and `serializeTransaction` logic
+
+### External Wallet Support ✅
+- Added optional `walletAddress` field to `ChildConfigSchema`
+- `configure-policy` accepts per-child `walletAddress` — if provided, skips OWS wallet creation
+- `WalletSetup.initializeFamily()` skips `createWallet()` for children with external addresses
+- `WalletDistributor.transferUSDC()` accepts optional `toAddress` param — sends directly to raw EVM address
+- `distribute-allowance` passes `childConfig.walletAddress` through to distributor
+- Added `"external-wallet-registered"` to `AuditEntrySchema` action enum
+
+### Partial Success Handling ✅
+- Savings transfer wrapped in its own try/catch — child transfer success is never hidden by savings failure
+- `savingsError` field propagated through results so Claude reports partial success accurately
+- Achievements marked as distributed even if savings transfer fails (child got paid)
+
+### On-Chain Test Results ✅ (Base Sepolia)
+- **Maya (OWS wallet):** 0.03264 USDC transferred successfully — tx `0x043e45da...`
+- **Elina (external wallet `0x5C47...63Ea`):** 0.02 USDC transferred successfully — tx `0xed4a14de...`
+- Both used EIP-1559 with automatic gas estimation
+- Savings transfers failed due to insufficient treasury ETH for second gas fee (partial success reported correctly)
+
+### Files Changed
+- `src/wallet/distributor.ts` — Full rewrite: exportWallet + viem walletClient, external address support
+- `src/tools/distribute-allowance.ts` — Partial success handling, external wallet passthrough
+- `src/tools/configure-policy.ts` — walletAddress param per child
+- `src/wallet/setup.ts` — Skip OWS wallet creation for external addresses
+- `src/schemas.ts` — walletAddress field, external-wallet-registered audit action
+- `src/constants.ts` — RPC URLs for Base mainnet and Sepolia
+
 ## Remaining Steps
 | Step | Task | Status |
 |------|------|--------|
-| 10 | x402 gating middleware | Deferred to Sprint 2 (requires HTTP transport) |
-| — | Fix hardcoded `actor: "manager"` in verify/distribute | Sprint 2 |
-| — | Category budget % validation (sum ≤ 100) | Sprint 2 |
-| — | Savings release tool | Sprint 2 |
-| — | OWS policy ERC-20 recipient enforcement | Sprint 2 |
+| 10 | x402 gating middleware | Deferred (requires HTTP transport) |
+| — | Fix hardcoded `actor: "manager"` in verify/distribute | Pending |
+| — | Category budget % validation (sum ≤ 100) | Pending |
+| — | Savings release tool | Pending |
+| — | Batch distributions (multiple children, sequential nonces) | Pending |
 
 ## Failed Approaches
 - Attempted to wrap MCP SDK `server.server.setRequestHandler()` for global RBAC intercept — SDK internal API doesn't support it cleanly (missing index signature, handler type mismatch). Switched to per-tool RBAC guard pattern.
 - `StateManager` using `process.cwd()` for `dataDir` — fails when Claude Desktop launches process without `cwd`. Fixed with `import.meta.url`.
+- **OWS `signAndSend` for distributions** — caused persistent "replacement transaction underpriced" errors. OWS does not manage nonces internally. Replaced with viem walletClient.
+- **OWS `signTransaction` + manual broadcast** — intermediate approach that still had signature parsing issues (r/s/v extraction from OWS SignResult). Replaced with full viem approach using `exportWallet`.
+- **Aggressive gas fee bumping (10x baseFee, 2 gwei priority)** — did not fix stuck transactions because the root cause was OWS nonce mismanagement, not gas pricing.
 
 ## Notes
 - All lint errors pre-install were expected (missing node_modules). Post-install `tsc --noEmit` is clean.
@@ -100,3 +141,4 @@
 - Total: 84 tests (71 unit + 13 E2E), all passing.
 - Claude Desktop config requires absolute paths (no `cwd` support in some versions). Use full `npx` path + absolute `src/index.ts`.
 - Live-tested on Claude Desktop with Sonnet 4.6 — full conversational flow works end-to-end.
+- GitHub repo: https://github.com/JdejesusIsaac/AllowMeOWS

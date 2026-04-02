@@ -12,7 +12,11 @@ Parents configure rules in plain English. Claude handles the rest: wallet creati
 
 > "Maya finished her science project — 90 out of 100."
 
+> "Distribute what Maya has earned." → USDC sent on-chain
+
 > "Invite Grandma Rosa so she can see Maya's progress."
+
+Children can use **OWS-managed wallets** (created automatically) or **external wallets** (MetaMask, Coinbase, etc.) — the parent chooses per child during setup.
 
 ## Architecture
 
@@ -31,7 +35,7 @@ Claude Desktop ←stdio→ AllowanceAgent MCP Server ←→ OWS (wallets, polici
 
 | Tool | Description | Roles |
 |------|-------------|-------|
-| `configure-policy` | Set up allowance rules per child | Manager |
+| `configure-policy` | Set up allowance rules per child (supports external wallet addresses) | Manager |
 | `verify-achievement` | Log and evaluate a child's achievement | Manager, Co-parent |
 | `distribute-allowance` | Send earned USDC to child + savings wallets | Manager |
 | `check-progress` | Weekly status, streaks, category breakdown | All |
@@ -98,8 +102,9 @@ verify-achievement
 
 distribute-allowance
   → calculateSavingsSplit (e.g. 80% child / 20% savings)
-  → WalletDistributor.transferUSDC (OWS signAndSend)
-  → audit log
+  → WalletDistributor.transferUSDC (viem walletClient, EIP-1559)
+  → wait for on-chain confirmation
+  → audit log (partial success if savings transfer fails)
 ```
 
 ### Role-Based Access Control
@@ -135,11 +140,13 @@ child  role   random
 | Wallet | Purpose |
 |--------|---------|
 | `treasury` | Parent funds this — source of all distributions |
-| `child-{name}` | Each child's spending wallet |
+| `child-{name}` | Each child's spending wallet (OWS-managed, or external address) |
 | `savings-vault` | Locked savings with streak multiplier bonus |
 | `gift-fund` | Family members contribute gifts here |
 
-Wallets are created by OWS when you first configure with a passphrase. Without a passphrase, all business logic runs but no on-chain transactions occur.
+**OWS-managed wallets** are created when you first configure with a passphrase. Children can alternatively use **external wallet addresses** (MetaMask, Coinbase, etc.) — just provide the address during setup and OWS wallet creation is skipped for that child.
+
+Distribution uses OWS for secure key storage (`exportWallet`) and viem for transaction construction, signing, and broadcast — giving full control over nonce management, gas estimation, and EIP-1559 formatting.
 
 ## Development
 
@@ -177,7 +184,7 @@ src/
     policy.ts              Achievement evaluation, savings split, streaks
   wallet/
     setup.ts               OWS wallet + policy bundle initialization
-    distributor.ts          USDC ERC-20 transfers via OWS signAndSend
+    distributor.ts          USDC ERC-20 transfers via viem walletClient
   roles/
     manager.ts             Role → OWS policy mapping, API key CRUD
   invites/
@@ -194,17 +201,25 @@ data/                      JSON file store (gitignored, created automatically)
 - **TypeScript** + **Node.js** (ESM)
 - **@modelcontextprotocol/sdk** — MCP server over stdio
 - **@open-wallet-standard/core** — wallet creation, policy enforcement, signing
-- **viem** — ERC-20 calldata encoding
+- **viem** — ERC-20 calldata encoding, transaction signing, gas estimation, broadcast
 - **zod** — schema validation
 - **vitest** — testing
+
+## Tested On-Chain
+
+Successfully tested on Base Sepolia testnet (Apr 2, 2026):
+- USDC transfers from treasury to child wallets (both OWS-managed and external)
+- EIP-1559 transactions with automatic gas estimation
+- Partial success handling (child transfer succeeds even if savings transfer fails due to gas)
+- Transaction confirmation via `waitForTransactionReceipt`
 
 ## Roadmap
 
 - [ ] HTTP transport + x402 micropayment gating (Sprint 2)
 - [ ] Savings release tool (auto-release on lock expiry)
-- [ ] Category budget percentage validation
+- [ ] Category budget percentage validation (sum ≤ 100)
 - [ ] QR code / deep link invite alternative
-- [ ] Base Sepolia testnet walkthrough with funded wallets
+- [ ] Batch distributions (multiple children in one call with sequential nonce management)
 
 ## License
 
