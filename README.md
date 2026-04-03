@@ -1,6 +1,44 @@
 # AllowanceAgent
 
-An [Open Wallet Standard](https://github.com/open-wallet-standard) (OWS) native MCP server that lets parents manage children's allowances entirely through conversation with Claude. No dashboards, no apps — just talk.
+> **SpendOS for families — five roles, five policy bundles, one OWS vault, and nobody in the family ever sees a private key.**
+
+---
+
+## OWS Hackathon Submission — Track 02: Agent Spend Governance & Identity
+
+**[Demo Video](https://www.youtube.com/watch?v=EYAkpVwEWmg)** | **[GitHub](https://github.com/JdejesusIsaac/AllowMeOWS)**
+
+AllowanceAgent is the first consumer-ready OWS application. A family financial agent where no one in the family ever sees a wallet address, an API key, or a policy JSON — but every dollar is policy-gated, every role is cryptographically enforced, and every distribution is on-chain.
+
+### Why Track 02
+
+AllowanceAgent implements four of the nine Track 02 building opportunities in a single integrated product:
+
+- **SpendOS for teams** — Five-role policy architecture (Manager, Co-parent, Learner, Family, Advisor). Each role maps to a pre-built OWS policy bundle with different signing rules, wallet scopes, and spending caps. The parent issues scoped API keys through natural language — "invite Grandma Rosa as family" — not through a dashboard.
+
+- **Dead man's switch** — LegacyLink estate logic with tiered escalation (30/60/90 days), conditional release (age + educational attestation), and lawyer audit-read-only delegation. The "Agent Inheritance Protocol" applied to the most important use case: what happens to my family's money when I'm gone.
+
+- **Audit log forensics** — Every achievement verification, USDC distribution, invite, role change, and policy update is logged with actor, timestamp, amount, and tx hash. `check-progress` is the family-friendly version of Datadog for agent wallets.
+
+- **Multi-sig agent governance** — Two-tier RBAC where the Manager must approve distributions, the Co-parent can verify achievements but not spend, the Learner can self-report but not distribute, and the Advisor can audit but not sign. Enforced at both the app layer and the OWS custom policy executable.
+
+### What's Built and Working
+
+- **9 MCP tools** — configure-policy, verify-achievement, distribute-allowance, check-progress, check-savings, invite-member, accept-invite, manage-members, get-funding-address
+- **84 passing tests** — 71 unit + 13 E2E covering policy engine, invite system, RBAC matrix, state management, and full flow
+- **Live on-chain USDC transfers** — Confirmed on Base Sepolia (April 2, 2026). EIP-1559 transactions with viem. Partial success handling.
+- **Claude Desktop integration** — Live-tested with Sonnet 4.6. Full conversational flow. No OWS internals ever exposed to the user.
+- **Custom OWS policy executable** — `allowance-policy.py` handles all roles with ERC-20 calldata decoding, spend cap enforcement, and recipient allowlists
+- **Human-readable invite codes** — `MAYA-GIFT-7X2K`. Phone-speakable, 48h expiry, single-use. Deferred OWS key creation on acceptance.
+- **External wallet support** — Children can use MetaMask, Coinbase, or any EVM address alongside OWS-managed wallets
+
+### The Consumer Proof Point
+
+Most OWS projects are developer tools. AllowanceAgent proves the standard works for normal people. A parent says "set up Maya with $15 a week" and Claude creates OWS wallets, policy bundles, and API keys. A grandmother says "I have a code: MAYA-GIFT-7X2K" and she's connected with gift-only permissions. A child completes a lesson, earns USDC, and watches her savings vault grow. None of them know what OWS is. That's the point.
+
+**Built by [AllowMe LLC](https://juanisaac.dev) — Juan Isaac**
+
+---
 
 ## What it does
 
@@ -29,7 +67,7 @@ Claude Desktop ←stdio→ AllowanceAgent MCP Server ←→ OWS (wallets, polici
 - **Claude is the only interface** — no family member ever sees wallet addresses, keys, or JSON
 - **OWS handles custody** — wallets, policy-gated signing, API key delegation
 - **USDC on Base** — ERC-20 transfers for real-value allowances (testnet or mainnet)
-- **Four roles** — Manager, Co-parent, Family, Advisor — enforced at both app and OWS layer
+- **Five roles** — Manager, Co-parent, Learner, Family, Advisor — enforced at both app and OWS layer
 
 ## MCP Tools
 
@@ -120,6 +158,7 @@ Every tool enforces RBAC at two layers:
 | **Co-parent** | Verify achievements, view progress/savings | Configure, distribute, invite, manage |
 | **Family** | View progress, send gifts | Verify, distribute, configure |
 | **Advisor** | View audit log | Everything else |
+| **Learner** | View own progress/savings, self-report achievements | View other children, configure, distribute, invite |
 
 ### Invite System
 
@@ -215,11 +254,15 @@ Successfully tested on Base Sepolia testnet (Apr 2, 2026):
 
 ## Roadmap
 
-- [ ] HTTP transport + x402 micropayment gating (Sprint 2)
-- [ ] Savings release tool (auto-release on lock expiry)
-- [ ] Category budget percentage validation (sum ≤ 100)
-- [ ] QR code / deep link invite alternative
-- [ ] Batch distributions (multiple children in one call with sequential nonce management)
+- [ ] **Learner role** — child connects from their own Claude account, sees only their own data (Sprint 2)
+- [ ] **HTTP transport** — multi-device access for parent + child + family (Sprint 2)
+- [ ] **x402 micropayment gating** — revenue on value-delivery tools (Sprint 2)
+- [ ] **Savings release tool** — auto-release on lock expiry with multiplier (Sprint 2)
+- [ ] **Source tagging** — track achievement provenance (openMAIC, fitbit, self-report) (Sprint 2)
+- [ ] **OpenMAIC integration** — Claude orchestrates verified classroom achievements (Sprint 2)
+- [ ] **MoonPay peer MCP** — fiat on-ramp + savings diversification to gold/PAXG (Sprint 2.5)
+- [ ] **LegacyLink estate vault** — dead-man's-switch + conditional release (Sprint 3)
+- [ ] **GiftFlow** — streak bonuses trigger automated gift purchases (Sprint 3)
 
 ## License
 
