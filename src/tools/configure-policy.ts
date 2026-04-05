@@ -24,7 +24,6 @@ export function registerConfigurePolicyTool(server: McpServer): void {
         })
       ).describe("Children to configure"),
       useTestnet: z.boolean().default(true).describe("Use Base Sepolia testnet (recommended for setup)"),
-      passphrase: z.string().optional().describe("Wallet passphrase for initial setup"),
       ...rbacFields,
     },
     async (args) => {
@@ -36,6 +35,22 @@ export function registerConfigurePolicyTool(server: McpServer): void {
         const state = new StateManager();
         const chainId = args.useTestnet ? CHAIN_IDS.BASE_SEPOLIA : CHAIN_IDS.BASE_MAINNET;
         const usdcAddress = args.useTestnet ? USDC.BASE_SEPOLIA : USDC.BASE_MAINNET;
+
+        // C2: Validate category budget percentages sum ≤ 100
+        for (const child of args.children) {
+          const totalPct = child.educationPct + child.healthPct + child.personalPct;
+          if (totalPct > 100) {
+            return {
+              content: [{
+                type: "text" as const,
+                text: JSON.stringify({
+                  success: false,
+                  error: `Category percentages for ${child.name} sum to ${totalPct}% — must be ≤ 100%.`,
+                }),
+              }],
+            };
+          }
+        }
 
         // Convert USD to USDC 6-decimal units
         const children: ChildConfig[] = args.children.map((child) => {
@@ -65,10 +80,11 @@ export function registerConfigurePolicyTool(server: McpServer): void {
           usdcAddress,
         };
 
-        // Initialize wallets + policies via OWS if passphrase provided (first-time setup)
-        if (args.passphrase) {
+        // Initialize wallets + policies via OWS if passphrase available (first-time setup)
+        const passphrase = process.env.OWS_PASSPHRASE;
+        if (passphrase) {
           const setup = new WalletSetup();
-          await setup.initializeFamily(familyConfig, args.passphrase);
+          await setup.initializeFamily(familyConfig, passphrase);
         }
 
         // Save family config
@@ -99,10 +115,10 @@ export function registerConfigurePolicyTool(server: McpServer): void {
                 familyName: args.familyName,
                 network: args.useTestnet ? "Base Sepolia (testnet)" : "Base (mainnet)",
                 children: summary,
-                walletsCreated: args.passphrase ? true : false,
-                message: args.passphrase
+                walletsCreated: passphrase ? true : false,
+                message: passphrase
                   ? `Family "${args.familyName}" configured! Wallets and policies are set up. You're ready to verify achievements.`
-                  : `Family "${args.familyName}" configured! Run again with a passphrase to create wallets, or use the setup script.`,
+                  : `Family "${args.familyName}" configured! Set OWS_PASSPHRASE env var and run again to create wallets, or use the setup script.`,
               }),
             },
           ],

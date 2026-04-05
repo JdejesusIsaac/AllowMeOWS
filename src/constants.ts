@@ -32,6 +32,7 @@ export const ROLES = {
   CO_PARENT: "co-parent",
   FAMILY: "family",
   ADVISOR: "advisor",
+  LEARNER: "learner",
 } as const;
 
 export type Role = (typeof ROLES)[keyof typeof ROLES];
@@ -42,6 +43,7 @@ export const POLICY_IDS = {
   APPROVE_AND_READ_ONLY: "approve-and-read-only",
   GIFT_CONTRIBUTE_ONLY: "gift-contribute-only",
   AUDIT_READ_ONLY: "audit-read-only",
+  LEARNER_READ_ONLY: "learner-read-only",
 } as const;
 
 // Role → Policy mapping
@@ -50,6 +52,7 @@ export const ROLE_POLICY_MAP: Record<Role, string> = {
   [ROLES.CO_PARENT]: POLICY_IDS.APPROVE_AND_READ_ONLY,
   [ROLES.FAMILY]: POLICY_IDS.GIFT_CONTRIBUTE_ONLY,
   [ROLES.ADVISOR]: POLICY_IDS.AUDIT_READ_ONLY,
+  [ROLES.LEARNER]: POLICY_IDS.LEARNER_READ_ONLY,
 };
 
 // Role → Tool access (which MCP tools each role can call)
@@ -64,6 +67,8 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     "accept-invite",
     "manage-members",
     "get-funding-address",
+    "release-savings",
+    "connect-fitbit",
   ],
   [ROLES.CO_PARENT]: [
     "verify-achievement",
@@ -80,6 +85,12 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     "query-audit-log",
     "accept-invite",
   ],
+  [ROLES.LEARNER]: [
+    "check-progress",
+    "check-savings",
+    "verify-achievement",
+    "accept-invite",
+  ],
 };
 
 // Invite code config
@@ -91,6 +102,7 @@ export const INVITE = {
     [ROLES.CO_PARENT]: "COPRT",
     [ROLES.FAMILY]: "GIFT",
     [ROLES.ADVISOR]: "ADVSR",
+    [ROLES.LEARNER]: "LEARN",
   } as Record<Role, string>,
 } as const;
 

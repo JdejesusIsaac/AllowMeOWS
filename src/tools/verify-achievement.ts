@@ -3,7 +3,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { StateManager } from "../engine/state.js";
 import { PolicyEngine } from "../engine/policy.js";
-import { CategoryEnum } from "../schemas.js";
+import { CategoryEnum, AchievementSourceEnum } from "../schemas.js";
 import type { AchievementRecord } from "../schemas.js";
 import { USDC } from "../constants.js";
 import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
@@ -17,6 +17,8 @@ export function registerVerifyAchievementTool(server: McpServer): void {
       category: CategoryEnum.describe("Achievement category"),
       description: z.string().describe("What the child accomplished"),
       score: z.number().min(0).max(100).describe("Achievement score (0-100)"),
+      source: AchievementSourceEnum.default("manual").optional().describe("Achievement source: manual, openMAIC, fitbit, apple-health, self-report, parent-attested"),
+      metadata: z.record(z.unknown()).optional().describe("Optional metadata (e.g. classroomId, topic)"),
       ...rbacFields,
     },
     async (args) => {
@@ -58,6 +60,19 @@ export function registerVerifyAchievementTool(server: McpServer): void {
           };
         }
 
+        // Learner can only verify achievements for their own child
+        if (caller.role === "learner" && caller.childName?.toLowerCase() !== args.childName.toLowerCase()) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({
+                success: false,
+                error: "Learners can only report achievements for themselves.",
+              }),
+            }],
+          };
+        }
+
         // Evaluate achievement amount
         const amount = engine.evaluateAchievement(
           args.score,
@@ -79,7 +94,8 @@ export function registerVerifyAchievementTool(server: McpServer): void {
           description: args.description,
           score: args.score,
           amount: multipliedAmount,
-          verifiedBy: "manager", // TODO: resolve from caller context
+          source: args.source || "manual",
+          verifiedBy: caller.memberId,
           verifiedAt: new Date().toISOString(),
           distributed: false,
         };
@@ -91,11 +107,13 @@ export function registerVerifyAchievementTool(server: McpServer): void {
           id: randomUUID(),
           timestamp: new Date().toISOString(),
           action: "verify-achievement",
-          actor: "manager",
+          actor: caller.memberId,
           details: {
             childName: args.childName,
             category: args.category,
             score: args.score,
+            source: args.source || "manual",
+            metadata: args.metadata,
             baseAmount: amount,
             multiplier: streak.multiplier,
             finalAmount: multipliedAmount,
@@ -113,6 +131,7 @@ export function registerVerifyAchievementTool(server: McpServer): void {
               childName: childConfig.name,
               category: args.category,
               score: args.score,
+              source: args.source || "manual",
               baseAmountUsd: baseUsd,
               streakMultiplier: streak.multiplier,
               finalAmountUsd: amountUsd,

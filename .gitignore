@@ -4,10 +4,3 @@ data/
 *.tmp.*
 .env
 .env.local
-.windsurf
-evaluation/
-implementation/
-research/
-test.md
-plan.md
-progress.md

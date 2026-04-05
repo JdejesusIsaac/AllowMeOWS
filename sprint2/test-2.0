@@ -1,0 +1,213 @@
+# AllowanceAgent — test.md (Sprint 2)
+
+---
+
+## Unit Tests — Learner Role RBAC (D1)
+
+| # | Test Case | Expected | Category |
+|---|-----------|----------|----------|
+| L1 | Learner can call check-progress | `isToolAuthorized("check-progress", "learner") → true` | Auth/Security |
+| L2 | Learner can call check-savings | `isToolAuthorized("check-savings", "learner") → true` | Auth/Security |
+| L3 | Learner can call verify-achievement | `isToolAuthorized("verify-achievement", "learner") → true` | Auth/Security |
+| L4 | Learner can call accept-invite | `isToolAuthorized("accept-invite", "learner") → true` | Auth/Security |
+| L5 | Learner cannot call configure-policy | `isToolAuthorized("configure-policy", "learner") → false` | Auth/Security |
+| L6 | Learner cannot call distribute-allowance | `isToolAuthorized("distribute-allowance", "learner") → false` | Auth/Security |
+| L7 | Learner cannot call invite-member | `isToolAuthorized("invite-member", "learner") → false` | Auth/Security |
+| L8 | Learner cannot call manage-members | `isToolAuthorized("manage-members", "learner") → false` | Auth/Security |
+
+## Unit Tests — Child-Scoped Data Access (D2)
+
+| # | Test Case | Expected | Category |
+|---|-----------|----------|----------|
+| CS1 | `getChildScope` returns childName for learner | Learner member with `childName: "Maya"` → `"Maya"` | Auth/Security |
+| CS2 | `getChildScope` returns null for manager | Manager → `null` (all children visible) | Auth/Security |
+| CS3 | `getChildScope` returns null for co-parent | Co-parent → `null` (all children visible) | Auth/Security |
+| CS4 | Learner check-progress returns only their child | Two children configured, Maya learner calls → only Maya's report | Auth/Security |
+| CS5 | Learner check-savings returns only their child | Maya learner → only Maya's savings entries | Auth/Security |
+| CS6 | Manager check-progress returns all children | Manager → both Maya and Carlos reports | Functionality |
+
+## Unit Tests — Source Field (D3)
+
+| # | Test Case | Expected | Category |
+|---|-----------|----------|----------|
+| S1 | verify-achievement with source "openMAIC" | AchievementRecord persisted with `source: "openMAIC"` | Functionality |
+| S2 | verify-achievement with source "self-report" | AchievementRecord persisted with `source: "self-report"` | Functionality |
+| S3 | verify-achievement without source | AchievementRecord defaults to `source: "manual"` | Functionality |
+| S4 | check-progress shows source per achievement | Response includes source tag in each achievement entry | Design/UX |
+| S5 | Source field persists through distribution | After distribute, achievement record still has original source | Functionality |
+
+## Unit Tests — Invite Delivery Response (D3b)
+
+| # | Test Case | Expected | Category |
+|---|-----------|----------|----------|
+| ID1 | invite-member with ALLOWANCE_AGENT_URL set | Response includes `serverUrl` and `joinMessage` with both URL and code | Functionality |
+| ID2 | invite-member without ALLOWANCE_AGENT_URL | Response includes `inviteCode` but omits `serverUrl` and `joinMessage` | Functionality |
+| ID3 | joinMessage contains both server URL and invite code | `joinMessage` string includes the exact serverUrl and exact inviteCode values | Design/UX |
+| ID4 | invite-member message ends with delivery prompt | `message` field ends with "Want me to text this to her?" (or similar) | Design/UX |
+| ID5 | Learner invite requires childName | invite-member with role "learner" and no childName → error: "childName required" | Design/UX |
+
+## Unit Tests — Savings Release (D4)
+
+| # | Test Case | Expected | Category |
+|---|-----------|----------|----------|
+| SR1 | Release expired entry with 1.0x multiplier | $3.00 locked → $3.00 released to child wallet | Functionality |
+| SR2 | Release expired entry with 1.5x multiplier | $3.00 locked at 1.5x → $4.50 released | Functionality |
+| SR3 | No expired entries → nothing to release | `{ success: true, released: 0, message: "No savings ready" }` | Functionality |
+| SR4 | Mixed: some expired, some not | Only expired entries released. Unexpired remain locked. | Functionality |
+| SR5 | Empty savings vault → no error | `{ success: true, released: 0 }` — no crash | Design/UX |
+
+## Unit Tests — Category % Validation (D5)
+
+| # | Test Case | Expected | Category |
+|---|-----------|----------|----------|
+| CV1 | educationPct=34 + healthPct=33 + personalPct=33 = 100 | Pass — config saved | Functionality |
+| CV2 | educationPct=50 + healthPct=50 + personalPct=50 = 150 | Fail — error: "sum to 150%, must be ≤ 100%" | Design/UX |
+| CV3 | educationPct=40 + healthPct=30 + personalPct=20 = 90 | Pass — config saved (10% unallocated is valid) | Functionality |
+
+## Unit Tests — Bug Fix Verification (D6)
+
+| # | Test Case | Expected | Category |
+|---|-----------|----------|----------|
+| BF1 | verify-achievement audit entry uses caller memberId | Co-parent calls verify → audit `actor` = co-parent's memberId, not "manager" | Functionality |
+| BF2 | distribute-allowance audit entry uses caller memberId | Manager calls distribute → audit `actor` = manager's memberId | Functionality |
+| BF3 | Passphrase not in tool schema | `distribute-allowance` schema has no `passphrase` field. `WalletDistributor` reads from `process.env.OWS_PASSPHRASE`. | Auth/Security |
+
+---
+
+## End-to-End Tests
+
+### E2E-S2-1: Mother-Daughter Full Flow (D7 — 8 steps)
+
+**Setup:** Two-child family (Maya + Carlos). Maya has external wallet.
+
+**Step 1: Mother configures family**
+- `configure-policy` — familyName: "Garcia", Maya ($15/week, external wallet), Carlos ($10/week, OWS wallet)
+- Assert: family-config.json has 2 children, streaks initialized
+
+**Step 2: Mother invites Maya as learner**
+- `invite-member` — name: "Maya", role: "learner", childName: "Maya"
+- Assert: invite code format `MAYA-LEARN-XXXX`, stored in invites.json with `childName: "Maya"`
+
+**Step 3: Maya accepts invite**
+- `accept-invite` — code: "MAYA-LEARN-XXXX", name: "Maya"
+- Assert: Member created with `role: "learner"`, `childName: "Maya"`, invite marked used
+
+**Step 4: Maya checks her progress (child-scoped)**
+- `check-progress` — called by Maya's member context
+- Assert: response contains ONLY Maya's data, not Carlos's. Shows $0 earned across all categories.
+
+**Step 5: Maya self-reports an achievement**
+- `verify-achievement` — childName: "Maya", category: "personal", description: "Journaled about career goals", score: 100, source: "self-report"
+- Assert: AchievementRecord created with `source: "self-report"`, `verifiedBy: Maya's memberId` (not "manager")
+
+**Step 6: Claude orchestrates OpenMAIC achievement (simulated)**
+- `verify-achievement` — childName: "Maya", category: "education", description: "Completed OpenMAIC: Fractions", score: 88, source: "openMAIC", metadata: { classroomId: "test-123", topic: "Fractions" }
+- Assert: AchievementRecord with `source: "openMAIC"`, metadata persisted
+
+**Step 7: Mother checks progress (sees source provenance)**
+- `check-progress` — called by Manager
+- Assert: Response shows both achievements with distinct source tags: "self-report" for journal, "openMAIC" for fractions. Shows both Maya and Carlos.
+
+**Step 8: Mother distributes + Maya checks savings**
+- Manager: `distribute-allowance` — dryRun: true
+- Assert: Distribution preview shows correct split (child wallet + savings)
+- Maya: `check-savings` — child-scoped
+- Assert: Only Maya's savings entries visible
+
+### E2E-S2-2: Cross-Child Isolation (D8 — 5 tests)
+
+**Setup:** Same two-child family. Both children invited as learners.
+
+| # | Test | Expected | Category |
+|---|------|----------|----------|
+| ISO1 | Maya calls check-progress | Only Maya's achievements returned | Auth/Security |
+| ISO2 | Carlos calls check-progress | Only Carlos's achievements returned | Auth/Security |
+| ISO3 | Manager calls check-progress | Both Maya and Carlos returned | Functionality |
+| ISO4 | Maya calls check-savings | Only Maya's savings entries | Auth/Security |
+| ISO5 | Maya calls verify-achievement for Carlos | **Blocked** — learner can only verify achievements for their own child. Returns error: "Learners can only report achievements for themselves." | Auth/Security |
+
+**Note on ISO5 (updated):** Originally the plan allowed cross-child reporting with audit transparency. During implementation, a stricter posture was adopted (B7 fix): learners can only self-report for their own linked child. This prevents a sibling from fabricating achievements for another child. The parent (Manager) can still verify for any child. This is a security improvement over the original design.
+
+---
+
+## HTTP Transport + x402 Tests
+
+*These tests require the server running in HTTP mode. They test the transport layer, not business logic.*
+
+| # | Test | Expected | Category |
+|---|------|----------|----------|
+| H1 | Health check endpoint | `GET /health` → 200, `{ status: "ok", version: "0.2.0", transport: "http" }` | Functionality |
+| H2 | MCP tool call via HTTP | `POST /mcp` with verify-achievement → valid response | Functionality |
+| H3 | x402 gated tool without payment | verify-achievement without payment header → 402 + payment instructions | Auth/Security |
+| H4 | x402 gated tool with valid payment | verify-achievement with valid x402 header → 200 + tool response | Auth/Security |
+| H5 | Free tool without payment | configure-policy without payment → 200 (no gating) | Auth/Security |
+| H6 | Member identification via header | `X-Member-Id: maya-id` → resolves to learner role → child-scoped | Auth/Security |
+| H7 | Missing member header defaults to manager | No X-Member-Id → default manager (backward compat) | Functionality |
+| H8 | Concurrent sessions isolated | Parent + child connected simultaneously → independent state reads | Auth/Security |
+
+---
+
+## OWS Policy Tests (Bug #4 Fix)
+
+| # | Test | Expected | Category |
+|---|------|----------|----------|
+| P1 | Manager ERC-20 to authorized wallet | Decode calldata `transfer(0xCHILD, amount)` → 0xCHILD in authorized_wallets → allow | Auth/Security |
+| P2 | Manager ERC-20 to unauthorized wallet | Decode calldata `transfer(0xATTACKER, amount)` → not in authorized_wallets → deny | Auth/Security |
+| P3 | Manager ERC-20 spend cap within limit | Decoded amount + daily_total < max_weekly → allow | Auth/Security |
+| P4 | Manager ERC-20 spend cap exceeded | Decoded amount + daily_total > max_weekly → deny | Auth/Security |
+| P5 | Non-ERC-20 transaction (native ETH) | `tx.data` empty or not transfer signature → deny (only ERC-20 USDC allowed) | Auth/Security |
+
+---
+
+## Fitbit OAuth Flow Tests (D9)
+
+| # | Test | Expected | Category |
+|---|------|----------|----------|
+| F1 | connect-fitbit returns valid OAuth URL | URL contains client_id, redirect_uri, scope=activity | Functionality |
+| F2 | connect-fitbit is Manager only | Learner, Co-parent, Family, Advisor all denied | Auth/Security |
+| F3 | Callback exchanges code for tokens (mock Fitbit API) | Access token + refresh token stored in fitbit-tokens.json | Functionality |
+| F4 | Tokens stored encrypted | fitbit-tokens.json contents are AES-256-GCM encrypted, not plaintext | Auth/Security |
+| F5 | Token auto-refresh on expiry | Expired access token → automatic refresh call → new token stored → API query succeeds | Functionality |
+| F6 | verify-achievement with source "fitbit" queries API | Mock Fitbit returns 9,200 steps → score calculated from step count → achievement created with source: "fitbit" | Functionality |
+| F7 | Missing FITBIT_CLIENT_ID env var | connect-fitbit returns graceful error: "Fitbit not configured" (not a crash) | Design/UX |
+| F8 | verify-achievement source "fitbit" with no stored tokens | Returns error: "Fitbit not connected for this child. Use connect-fitbit first." | Design/UX |
+
+---
+
+## Edge Cases
+
+| # | Edge Case | Expected | Category |
+|---|-----------|----------|----------|
+| EC1 | Learner invited without childName | `invite-member` returns error: "childName required for learner role" | Design/UX |
+| EC2 | Learner childName doesn't match any configured child | `accept-invite` returns error: "child not found in family config" | Design/UX |
+| EC3 | Two learners for the same child | Both can view same child's data, both can self-report. Audit distinguishes by verifiedBy. | Functionality |
+| EC4 | Learner calls verify-achievement for nonexistent child | Returns error: "child not found" (same as current behavior) | Functionality |
+| EC5 | OWS_PASSPHRASE not set + distribute called | Returns error: "wallet passphrase not configured" (not a crash) | Auth/Security |
+| EC6 | x402 payment for wrong amount | 402 error with correct payment instructions | Auth/Security |
+| EC7 | stdio mode + x402 tool call | Tool executes without payment (stdio = free) | Functionality |
+| EC8 | Learner calls manage-members | Access denied: "learner role cannot use manage-members" | Auth/Security |
+| EC9 | Release savings in dry-run mode | Preview shows what would release without transferring | Functionality |
+| EC10 | Category % sum exactly 100 with decimals (33.33 + 33.33 + 33.34) | Pass — no floating point issues | Functionality |
+
+---
+
+## Test Count Summary
+
+| Suite | Count |
+|-------|-------|
+| Learner RBAC (D1) | 8 |
+| Child-scoped access (D2) | 6 |
+| Source field (D3) | 5 |
+| Invite delivery response (D3b) | 5 |
+| Savings release (D4) | 5 |
+| Category % validation (D5) | 3 |
+| Bug fix verification (D6) | 3 |
+| E2E: Mother-daughter flow (D7) | 8 |
+| E2E: Cross-child isolation (D8) | 5 |
+| Fitbit OAuth flow (D9) | 8 |
+| HTTP transport + x402 (H1-H8) | 8 |
+| OWS policy fix (P1-P5) | 5 |
+| Edge cases (EC1-EC10) | 10 |
+| **Total new tests** | **79** |
+| **Carried from Sprint 1** | **84** |
+| **Total after Sprint 2** | **163** |

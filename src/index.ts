@@ -9,6 +9,8 @@ import { registerInviteMemberTool } from "./tools/invite-member.js";
 import { registerAcceptInviteTool } from "./tools/accept-invite.js";
 import { registerManageMembersTool } from "./tools/manage-members.js";
 import { registerGetFundingAddressTool } from "./tools/get-funding-address.js";
+import { registerReleaseSavingsTool } from "./tools/release-savings.js";
+import { registerConnectFitbitTool } from "./tools/connect-fitbit.js";
 const server = new McpServer({
   name: "allowance-agent",
   version: "0.1.0",
@@ -24,6 +26,8 @@ registerInviteMemberTool(server);
 registerAcceptInviteTool(server);
 registerManageMembersTool(server);
 registerGetFundingAddressTool(server);
+registerReleaseSavingsTool(server);
+registerConnectFitbitTool(server);
 
 // Connect via stdio transport
 const transport = new StdioServerTransport();

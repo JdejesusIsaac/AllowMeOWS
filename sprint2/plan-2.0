@@ -1,0 +1,174 @@
+# AllowanceAgent — plan.md (Sprint 2)
+
+## Feature Summary
+
+Sprint 2 transforms AllowanceAgent from a single-parent local tool into a multi-user family system with revenue. Three workstreams: (1) The Learner role lets the child interact from their own Claude account — seeing their progress, completing OpenMAIC lessons (orchestrated by Claude), and self-reporting achievements with transparent source tagging. (2) HTTP transport enables multi-device connections so parent, child, and family members can all connect simultaneously. (3) x402 micropayment gating generates revenue on value-delivery tools while keeping onboarding and growth tools free. Five bug fixes from Sprint 1 evaluation close the remaining gaps.
+
+## Architecture Decisions
+
+### 1. Dual transport — stdio + HTTP
+**Decision:** Support both via `TRANSPORT` env var. stdio for local Claude Desktop (backward compat), HTTP for multi-user + x402.
+**Why:** Breaking existing stdio users is unacceptable. HTTP enables the child connection, family member connections, and x402 revenue — all of which require remote access.
+
+### 2. Learner role is child-scoped, not globally scoped
+**Decision:** Each Learner member is linked to a specific `childName`. Tool responses filter to that child only.
+**Why:** Maya should not see her brother Carlos's progress. The scoping is enforced in the middleware, not in each tool handler — one check, applied everywhere.
+
+### 3. Source field is logged, not enforced
+**Decision:** Any caller can set any `source` value on `verify-achievement`. The system logs it transparently. The parent reviews source provenance during distribution.
+**Why:** AllowanceAgent cannot verify that Claude actually called OpenMAIC — it can only trust Claude as the intermediary. Cryptographic verification is a V3 concern. For Sprint 2, the parent's review step is the trust gate.
+
+### 4. x402 only in HTTP mode
+**Decision:** stdio mode is free (no x402). x402 gating only applies when running in HTTP transport mode.
+**Why:** Local Claude Desktop users (single parent) shouldn't need USDC to use their own tool. x402 is for the hosted/multi-user deployment model.
+
+### 5. Passphrase moves to server-side env var
+**Decision:** `OWS_PASSPHRASE` env var, set once at server startup. Tools read from env, never from user input.
+**Why:** Fixes Bug #5. Passphrase no longer flows through tool args (visible in logs). In HTTP mode, remote callers never see or send the passphrase.
+
+### 6. OpenMAIC integration is Claude orchestration, not code integration
+**Decision:** No OpenMAIC dependency in AllowanceAgent. Claude orchestrates between the two services. AllowanceAgent just receives `source: "openMAIC"` in the metadata.
+**Why:** Loose coupling. Either system can evolve independently. AllowanceAgent is a universal achievement sink.
+
+### 7. Invite delivery is a Claude orchestration concern, not an AllowanceAgent concern
+**Decision:** `invite-member` returns the invite code, the server URL, and a pre-formatted join message. Claude delivers it to the child using `message_compose` (SMS/iMessage) when the parent says "text it to her." AllowanceAgent does not send emails, push notifications, or manage delivery.
+**Why:** Claude already knows how to send messages. Building email/SMS infrastructure inside AllowanceAgent is unnecessary complexity. The invite response provides all the content Claude needs to handle delivery. The `ALLOWANCE_AGENT_URL` env var tells the tool what server URL to include in the join instructions.
+
+### 8. Three documented paths for child connection
+**Decision:** Document three realistic ways the child connects their Claude to the AllowanceAgent server: (1) parent sets up child's device directly, (2) child adds MCP server URL to Claude Desktop config, (3) parent texts join instructions via Claude `message_compose`. No single path is required — families choose what works.
+**Why:** A 9-year-old won't edit JSON config files. A 15-year-old will. A parent helping a 6-year-old will set up the device themselves. Supporting all three paths without requiring any specific one keeps the product accessible across ages.
+
+---
+
+## Implementation Steps
+
+### Workstream A: Learner Role + Source Tagging
+
+| Step | Task | Complexity | Est. |
+|------|------|------------|------|
+| A1 | **Add Learner role to constants** — `ROLES.LEARNER = "learner"`, `ROLE_HINTS.LEARNER = "LEARN"`, `ROLE_TOOL_ACCESS` with scoped tools: check-progress, check-savings, verify-achievement, accept-invite. | Low | 20m |
+| A2 | **Add `childName` to Member schema** — Optional field, populated when role is "learner". Links member to specific child for data scoping. Update `MemberSchema` in `schemas.ts`. | Low | 15m |
+| A3 | **Add `source` field to achievement schemas** — `AchievementInputSchema` gets `source` (optional, default "manual"). `AchievementRecordSchema` carries it through. Enum: manual, openMAIC, fitbit, apple-health, self-report, parent-attested. | Low | 20m |
+| A4 | **Update `invite-member`** — When role is "learner", require `childName` param. Store `childName` in the invite record so it carries through to member creation on accept. Add `serverUrl` (from `ALLOWANCE_AGENT_URL` env var) and a pre-formatted `joinMessage` to the tool response so Claude can text it to the child via `message_compose`. Response shape: `{ inviteCode, serverUrl, joinMessage, message }`. The `joinMessage` reads: "Your [parent] set up your allowance! Connect your Claude to: [serverUrl] — then tell Claude: [inviteCode]". End the Claude-facing `message` with "Want me to text this to her?" so Claude naturally offers to deliver it. | Medium | 45m |
+| A5 | **Update `accept-invite`** — When accepting a learner invite, copy `childName` from invite to the new Member record. | Low | 20m |
+| A6 | **Child-scoped middleware** — Add `getChildScope(callerCtx)` function to access-control.ts. If caller role is "learner", returns their linked `childName`. If Manager/Co-parent, returns null (see all children). If Family/Advisor, returns null (limited by tool access, not child scope). | Medium | 45m |
+| A7 | **Update `check-progress`** — Use `getChildScope()` to filter results. Learner sees only their own data. Manager/Co-parent see all. Add `source` to achievement breakdown in response. | Medium | 45m |
+| A8 | **Update `check-savings`** — Same child-scoping as check-progress. Learner sees only their own savings vault. | Low | 20m |
+| A9 | **Update `verify-achievement`** — Accept `source` from input. Carry through to AchievementRecord. Fix Bug #1: use `callerCtx.memberId` instead of hardcoded `"manager"` for `verifiedBy` and audit `actor`. | Medium | 30m |
+| A10 | **Update `check-progress` response format** — Include source provenance per achievement so parent sees "verified by OpenMAIC" vs "self-reported by Maya" at a glance. | Medium | 30m |
+| A11 | **Learner role policy bundle** — Add `POLICY_IDS.LEARNER_READ_ONLY` policy bundle in `setup.ts`. No signing authority. Update `ROLE_POLICY_MAP`. | Low | 20m |
+
+**Workstream A estimate: ~5 hours**
+
+### Workstream B: HTTP Transport + x402
+
+| Step | Task | Complexity | Est. |
+|------|------|------------|------|
+| B1 | **Add Express dependency** — `npm install express @types/express`. Keep stdio transport intact. | Low | 10m |
+| B2 | **Dual transport entry point** — Refactor `index.ts` to check `TRANSPORT` env var. `"stdio"` (default) uses `StdioServerTransport`. `"http"` uses Express + `StreamableHTTPServerTransport`. Same server instance, same tools. | High | 2h |
+| B3 | **HTTP caller identification** — In HTTP mode, `resolveCallerRole()` reads from request context (API key header or session token) instead of `_callerRole` args. For Sprint 2 MVP: accept `X-Member-Id` header → lookup member → resolve role. Full OWS API key auth in Sprint 3. | High | 1.5h |
+| B4 | **x402 gating layer** — In HTTP mode, wrap paid tools with x402 payment verification middleware. Free tools pass through ungated. Pricing per research.md table. Requires `X402_RECIPIENT_WALLET` env var. | High | 2h |
+| B5 | **x402 fallback for stdio** — When transport is stdio, skip x402 entirely. All tools are free locally. No `x402-mcp` import in stdio path. | Medium | 30m |
+| B6 | **Health check endpoint** — `GET /health` returns server status, version, transport mode. Useful for remote monitoring and OpenMAIC orchestration. | Low | 15m |
+| B7 | **CORS configuration** — Allow Claude clients from any origin to connect. Configurable via `CORS_ORIGIN` env var. | Low | 15m |
+
+**Workstream B estimate: ~6.5 hours**
+
+### Workstream C: Bug Fixes + Quality
+
+| Step | Task | Complexity | Est. |
+|------|------|------------|------|
+| C1 | **Bug #1: Fix hardcoded actor** — `verify-achievement.ts` and `distribute-allowance.ts`: replace `actor: "manager"` with `callerCtx.memberId`. The `withAccessControl` wrapper already resolves this — pass it through to business logic. (Partially addressed in A9, complete here for distribute.) | Low | 20m |
+| C2 | **Bug #2: Category budget % validation** — In `configure-policy.ts`, validate that `educationPct + healthPct + personalPct ≤ 100`. Return clear error if exceeded. | Low | 20m |
+| C3 | **Bug #3: Savings release tool** — New MCP tool: `release-savings`. Finds all entries where `lockUntil < now && !released`. Applies `multiplierAtDeposit`. Transfers multiplied amount from savings-vault to child wallet. Marks entries released. Manager only. Free (no x402). | High | 2h |
+| C4 | **Bug #4: OWS policy ERC-20 recipient enforcement** — Update `allowance-policy.py` manager branch. Decode ERC-20 `transfer(to, amount)` calldata. Check decoded `to` against `authorized_wallets` config. Deny if recipient not authorized. | Medium | 1h |
+| C5 | **Bug #5: Passphrase to env var** — Remove `passphrase` param from `distribute-allowance` and `configure-policy` tool schemas. Read from `process.env.OWS_PASSPHRASE` in `WalletDistributor` and `WalletSetup`. Document in README. | Medium | 45m |
+| C6 | **Update README** — Document: (1) Learner role and child-scoped access. (2) HTTP transport setup with `TRANSPORT=http` and `ALLOWANCE_AGENT_URL` env vars. (3) x402 configuration with `X402_RECIPIENT_WALLET`. (4) **Three child connection paths**: Path A — parent sets up child's device; Path B — child self-configures from texted instructions; Path C — parent texts join instructions via `message_compose`. (5) OpenMAIC orchestration pattern: how Claude wires quiz scores into `verify-achievement` with `source: "openMAIC"`. (6) Full env var reference table. (7) **Claude connector setup guide**: step-by-step with screenshots for Settings → Connectors → Add Custom Connector → paste URL. Note: free plan gets 1 custom connector (AllowanceAgent uses it), Pro/Max get unlimited. Note for schools: Team/Enterprise admin adds connector once, all parents see it automatically. (8) **MoonPay peer MCP integration**: install MoonPay CLI, add as second connector alongside AllowanceAgent, Claude orchestrates fiat on-ramp, savings diversification preview, and combined portfolio view. AllowanceAgent has zero MoonPay dependency. Gold conversion via `convert-savings` planned for Sprint 2.5. | Medium | 2h |
+| C7 | **Onboarding landing page** — Build `allowanceagent.app/join` (or equivalent). Mobile-first, static HTML hosted on Vercel. Three steps with screenshots of the actual Claude UI: **Step 1** — "Get Claude (free)" with App Store / Play Store buttons + "Already have Claude? Skip to Step 2." **Step 2** — "Connect AllowanceAgent (one time, 30 seconds)" with copy-to-clipboard MCP server URL (`https://allowanceagent.app/mcp`) and three annotated screenshots showing: (2a) claude.ai → Settings, (2b) Connectors → Add custom connector, (2c) paste URL → Add. **Step 3** — "Start talking" with screenshot of "+" menu → Connectors → enable toggle, then prompt: "Say: Set up allowance for my family." Separate section for invited family members: same Steps 1-2, then "Say: I have a code: MAYA-GIFT-7X2K." Include note about free plan (1 connector) and Team/Enterprise (admin adds once, everyone sees it). Link this page from all `invite-member` joinMessages and from school onboarding materials. | Medium | 2.5h |
+| C8 | **Fitbit OAuth flow** — Register one Fitbit developer application under AllowMe LLC (client ID + secret stored in `FITBIT_CLIENT_ID` / `FITBIT_CLIENT_SECRET` env vars — every family uses this single app registration). Add two HTTP endpoints to the AllowanceAgent server: `GET /fitbit/connect?child={name}` redirects to Fitbit OAuth authorization URL with client ID, redirect URI, and `activity` scope; `GET /fitbit/callback` receives authorization code, exchanges for access + refresh tokens via `POST api.fitbit.com/oauth2/token`, stores tokens encrypted in `data/fitbit-tokens.json` (AES-256-GCM keyed from `OWS_PASSPHRASE`), associates tokens with child name, redirects parent to success page. Add new MCP tool `connect-fitbit` (Manager only, free) that returns the OAuth connect URL for the parent to tap — Claude says "Tap this link to connect Maya's Fitbit." Add token auto-refresh logic: when `verify-achievement` with `source: "fitbit"` detects an expired access token, automatically refresh using stored refresh token before querying Fitbit Activity API (`GET /1/user/-/activities/date/{date}.json`). Update `verify-achievement` to accept `source: "fitbit"` and, when Fitbit tokens exist for the child, auto-query step count and active minutes instead of relying on manual input. Parent experience: tap one link → authorize on Fitbit's consent screen → done. No API keys, no developer console, no token management. | High | 4h |
+
+**Workstream C estimate: ~13 hours**
+
+### Workstream D: Tests
+
+| Step | Task | Complexity | Est. |
+|------|------|------------|------|
+| D1 | **Learner role unit tests** — RBAC matrix: learner can check-progress, check-savings, verify-achievement, accept-invite. Learner cannot configure, distribute, invite, manage, get-funding-address. (8 tests) | Medium | 30m |
+| D2 | **Child-scoped data access tests** — Learner sees only their own child data. Manager sees all. Two-child family, two learner members, verify isolation. (6 tests) | Medium | 45m |
+| D3 | **Source field tests** — verify-achievement with each source type. Check source persists in achievement record. Check source appears in check-progress response. (5 tests) | Low | 20m |
+| D4 | **Savings release tests** — Release with multiplier, release when nothing ready, release when no savings exist, partial release (some expired, some not). (5 tests) | Medium | 30m |
+| D5 | **Category % validation tests** — Sum exactly 100 (pass), sum > 100 (fail), sum < 100 (pass with warning). (3 tests) | Low | 15m |
+| D6 | **Bug fix verification tests** — Actor field uses caller context, ERC-20 recipient check in policy, passphrase from env. (3 tests) | Low | 15m |
+| D7 | **E2E: Learner flow** — Mother configures → invites Maya as learner → Maya accepts → Maya calls check-progress (sees only her data) → Maya self-reports achievement (source: "self-report") → Mother checks progress (sees source tag) → Mother distributes → Maya checks savings. (8 sequential steps) | High | 1.5h |
+| D8 | **E2E: Cross-child isolation** — Configure two children. Invite both as learners. Maya cannot see Carlos's progress. Carlos cannot see Maya's savings. Manager sees both. (5 tests) | Medium | 45m |
+| D9 | **Fitbit OAuth flow tests** — connect-fitbit returns valid OAuth URL with client ID and redirect URI. Callback endpoint exchanges code for tokens (mock Fitbit API). Tokens stored encrypted in fitbit-tokens.json. Token auto-refresh on expiry (mock expired token → refresh call → new token stored). verify-achievement with source "fitbit" queries Fitbit Activity API using stored token (mock API returns step data). connect-fitbit is Manager only (Learner/Family/Advisor denied). Missing FITBIT_CLIENT_ID env var returns graceful error. (8 tests) | Medium | 1h |
+
+**Workstream D estimate: ~5.5 hours**
+
+**Total Sprint 2 estimate: ~30 hours**
+
+---
+
+## Dependencies and Risks
+
+| Dependency | Risk | Mitigation |
+|------------|------|------------|
+| `express` | Low | Mature, well-understood. Already in AllowMe stack. |
+| `x402-mcp` | Medium | Relatively new package. May have edge cases with mixed paid/free tools. Spike validated. Fallback: custom x402 middleware without x402-mcp wrapper. |
+| `StreamableHTTPServerTransport` | Medium | MCP SDK transport. Session isolation confirmed in spike. Fallback: SSE transport if streaming issues arise. |
+| `ALLOWANCE_AGENT_URL` env var | Low | Required for invite join messages and landing page. If unset, invite-member omits serverUrl and joinMessage — code-only invite still works. |
+| Fitbit OAuth (`FITBIT_CLIENT_ID`, `FITBIT_CLIENT_SECRET`) | Medium | Requires AllowMe LLC Fitbit developer app registration. If Fitbit deprecates or rate-limits, health achievements fall back to manual self-report (`source: "self-report"`). |
+| Fitbit token storage encryption | Low | AES-256-GCM keyed from existing `OWS_PASSPHRASE`. No new secrets. |
+| Claude custom connectors (free plan, 1 connector) | Low | Free users get exactly 1 custom connector. AllowanceAgent uses it. If user already has a connector, they need Pro ($20/mo) or must remove the existing one. |
+| Landing page hosting (Vercel) | Low | Static HTML, zero dependencies. Could also host on GitHub Pages or Netlify. |
+| Child-scoped middleware | Low | Single enforcement point. Well-tested. |
+| Passphrase env var | Low | Simple refactor. Env vars are standard for secrets. |
+| `allowance-policy.py` ERC-20 decode fix | Medium | Calldata parsing is fragile. Defense-in-depth: app layer already tracks recipients. Policy is secondary check. |
+
+## Fallback Approaches
+
+- **HTTP transport fails:** Ship Learner role + source field + bug fixes on stdio. Defer x402, Fitbit OAuth, and landing page. Child connects by sharing parent's machine.
+- **x402-mcp incompatible:** Build custom x402 middleware: intercept HTTP requests, check for payment header, verify via facilitator, forward to MCP handler.
+- **Claude connector flow changes:** If Anthropic changes the Settings → Connectors UI, update landing page screenshots. The MCP server URL itself is stable.
+- **Fitbit OAuth registration denied or rate-limited:** Health achievements fall back to manual self-report and parent attestation. AllowanceAgent works fully without Fitbit — it's an enhancement, not a dependency.
+- **Fitbit token refresh fails:** Log error, mark token as invalid, tool returns "Fitbit connection expired — ask your parent to reconnect." One-tap reconnect via `/fitbit/connect`.
+- **Child-scoping breaks existing tests:** Add childName as optional (default: null = all children). Existing tests pass unchanged.
+- **Passphrase env var breaks CI:** Set `OWS_PASSPHRASE=test` in test env. Dry-run mode doesn't need real passphrase.
+- **Free plan connector limit blocks families:** Document workaround in onboarding page. If user already has a connector, they can remove it or upgrade to Pro.
+
+---
+
+## Sprint Contract — Sprint 2
+
+### Success Criteria
+
+1. **Learner role functional:** Child connects via invite code (MAYA-LEARN-8K3W), sees only their own progress and savings. Cannot configure, distribute, invite, or manage.
+2. **Child-scoped isolation:** In a two-child family, Maya's Learner account cannot see Carlos's data. Manager sees both.
+3. **Source tagging:** `verify-achievement` accepts and persists `source` field. `check-progress` displays source provenance per achievement ("verified by OpenMAIC" vs "self-reported").
+4. **HTTP transport:** AllowanceAgent runs as HTTP server via `TRANSPORT=http`. Multiple clients connect simultaneously (parent + child). Sessions are isolated.
+5. **x402 gating:** ~~Original: verify-achievement $0.02, distribute-allowance $0.10, check-progress $0.01, check-savings $0.01 paid.~~ **Override (B6 fix):** Learner-accessible tools (verify-achievement, check-progress, check-savings) are **free** so the child's Claude Mobile works without a paywall. Manager power tools are paid: distribute-allowance $0.01, manage-members $0.005, invite-member $0.003, get-funding-address $0.001. Free tools: configure, accept, release-savings, connect-fitbit. stdio mode is entirely free. This override is intentional — revenue comes from agent-to-agent calls, not from children checking their progress.
+6. **Savings release:** New `release-savings` tool finds expired locked entries, applies multiplier, transfers to child wallet, marks released. Previously locked-forever entries are now releasable.
+7. **Category % validation:** `configure-policy` rejects when category percentages exceed 100% with a clear error message.
+8. **Actor audit fix:** Audit log entries use actual caller identity from RBAC context, not hardcoded "manager".
+9. **ERC-20 policy fix:** OWS policy `allowance-policy.py` decodes ERC-20 calldata and checks recipient against `authorized_wallets` for manager role.
+10. **Passphrase security:** Passphrase read from `OWS_PASSPHRASE` env var. Never appears in tool arguments, user input, or tool responses. Remote HTTP callers cannot see or set it.
+11. **OpenMAIC documentation:** README documents how Claude orchestrates between AllowanceAgent and OpenMAIC — the "achievement sink" pattern with source tagging.
+12. **Invite delivery UX:** `invite-member` response includes `serverUrl` and a pre-formatted `joinMessage` that Claude can send via `message_compose`. When the parent says "text it to her," Claude delivers the server URL + invite code in one message. The child receives everything needed to connect — no follow-up steps from the parent.
+13. **Child connection paths documented:** README documents three paths for the child to connect: parent sets up device, child self-configures Claude Desktop, or parent texts join instructions. Example Claude Desktop configs provided for both parent (stdio/http) and child (http).
+14. **MoonPay peer MCP documented:** README documents MoonPay CLI installation, Claude Desktop config with both MCP servers, and three orchestration workflows (fiat on-ramp to treasury, savings diversification preview, combined portfolio view). Explicitly states AllowanceAgent has zero MoonPay code dependency. Notes `convert-savings` tool is planned for Sprint 2.5.
+15. **Onboarding landing page:** ~~Deferred to deployment.~~ Will be built as a static site when the HTTP server is deployed to production. Not blocking Sprint 2 ship — child connection paths are documented in README with Claude Desktop configs for all three paths.
+16. **Fitbit OAuth flow functional:** Manager calls `connect-fitbit` → receives a tap-to-authorize URL. Parent taps → Fitbit consent screen → authorizes → callback stores encrypted tokens → parent returns to Claude. `verify-achievement` with `source: "fitbit"` auto-queries Fitbit Activity API for step count using stored tokens. Token auto-refresh works when access token expires. Parent never sees a Client ID, API key, or developer console. Missing `FITBIT_CLIENT_ID` env var returns a graceful error, not a crash.
+
+### Dynamic Rubric
+
+| Category | Weight | Justification |
+|----------|--------|---------------|
+| Functionality | 30% | Learner role, savings release, HTTP transport, x402, source field, Fitbit OAuth, connect-fitbit tool |
+| Auth / Security | 30% | Child-scoped isolation, x402 payment verification, passphrase hardening, ERC-20 policy fix, Fitbit token encryption, Learner cannot escalate privileges |
+| Design / UX | 25% | Onboarding landing page (3-step, zero jargon), Learner experience, Fitbit one-tap connect, source provenance display, invite delivery |
+| Originality | 15% | Achievement-sink pattern (any source → one tool), server-side OAuth for consumer Fitbit access, dual transport architecture, child-as-participant model |
+
+### Grading Thresholds
+
+- **Pass:** All categories ≥ 70%. No category below 60%.
+- **Fail:** Any category below 60%, OR Functionality below 70%, OR Auth/Security below 70%.

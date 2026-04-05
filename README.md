@@ -59,29 +59,45 @@ Children can use **OWS-managed wallets** (created automatically) or **external w
 ## Architecture
 
 ```
-Claude Desktop ←stdio→ AllowanceAgent MCP Server ←→ OWS (wallets, policies, signing)
-                              ↓
-                        data/*.json (local persistence)
+                      ┌─────────────────────────────┐
+                      │     AllowanceAgent Server     │
+                      ├──────────┬──────────┬─────────┤
+Claude Desktop ←stdio→│ src/     │          │         │
+Claude Mobile  ←http→ │ index.ts │ app/     │ OWS     │
+Other Agents   ←a2a→  │ (MCP)    │ server.ts│ wallets │
+                      │          │ (aixyz)  │ policies│
+                      └──────────┴──────────┴─────────┘
+                                    ↓
+                              data/*.json
 ```
 
+**Dual transport:**
+- **stdio** (`npm start`) — Claude Desktop, local development
+- **HTTP** (`npm run start:http`) — Claude Mobile, remote access, agent-to-agent
+
+**Core:**
 - **Claude is the only interface** — no family member ever sees wallet addresses, keys, or JSON
 - **OWS handles custody** — wallets, policy-gated signing, API key delegation
 - **USDC on Base** — ERC-20 transfers for real-value allowances (testnet or mainnet)
 - **Five roles** — Manager, Co-parent, Learner, Family, Advisor — enforced at both app and OWS layer
+- **x402 micropayments** — manager power tools (distribute, manage, invite) are payment-gated for agent-to-agent; learner tools are free
+- **A2A discovery** — `/.well-known/agent-card.json` for OpenMAIC, MoonPay, and other agents
 
 ## MCP Tools
 
-| Tool | Description | Roles |
-|------|-------------|-------|
-| `configure-policy` | Set up allowance rules per child (supports external wallet addresses) | Manager |
-| `verify-achievement` | Log and evaluate a child's achievement | Manager, Co-parent |
-| `distribute-allowance` | Send earned USDC to child + savings wallets | Manager |
-| `check-progress` | Weekly status, streaks, category breakdown | All |
-| `check-savings` | Savings vault balances, lock dates, projections | Manager, Co-parent |
-| `invite-member` | Generate a human-readable invite code | Manager |
-| `accept-invite` | Join the family with an invite code | All |
-| `manage-members` | List, change roles, or remove members | Manager |
-| `get-funding-address` | Show the treasury wallet address for funding | Manager |
+| Tool | Description | Roles | x402 |
+|------|-------------|-------|:----:|
+| `configure-policy` | Set up allowance rules per child | Manager | Free |
+| `verify-achievement` | Log and evaluate a child's achievement (source tracking) | Manager, Co-parent, Learner | Free |
+| `distribute-allowance` | Send earned USDC to child + savings wallets | Manager | $0.01 |
+| `check-progress` | Weekly status, streaks, category breakdown with source | All | Free |
+| `check-savings` | Savings vault balances, lock dates, projections | Manager, Co-parent, Learner | Free |
+| `invite-member` | Generate a human-readable invite code | Manager | $0.003 |
+| `accept-invite` | Join the family with an invite code | All | Free |
+| `manage-members` | List, change roles, or remove members | Manager | $0.005 |
+| `get-funding-address` | Show the treasury wallet address for funding | Manager | $0.001 |
+| `release-savings` | Release matured savings with streak multiplier bonus | Manager | Free |
+| `connect-fitbit` | Get Fitbit OAuth URL to link a child's health data | Manager | Free |
 
 ## Quick Start
 
@@ -118,7 +134,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 > Replace paths with your actual `npx` binary and project location.
 > Find your npx path with: `which npx`
 
-Restart Claude Desktop. You'll see 9 tools available.
+Restart Claude Desktop. You'll see 11 tools available.
 
 ### First conversation
 
@@ -187,6 +203,130 @@ child  role   random
 
 Distribution uses OWS for secure key storage (`exportWallet`) and viem for transaction construction, signing, and broadcast — giving full control over nonce management, gas estimation, and EIP-1559 formatting.
 
+### Child Connection Paths
+
+Three ways a child connects their Claude to AllowanceAgent — families choose what works for their age and comfort level:
+
+**Path A: Parent sets up child's device**
+Best for younger children (6-10). Parent opens Claude on the child's phone/tablet, adds the MCP connector, and hands it back. The child just talks to Claude.
+
+**Path B: Child self-configures Claude Desktop**
+Best for older children (13+). Parent texts the server URL. Child adds it to Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "allowance-agent": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://allowanceagent.app/mcp"]
+    }
+  }
+}
+```
+
+Then tells Claude: *"I have a code: MAYA-LEARN-8K3W"*
+
+**Path C: Parent texts join instructions via Claude**
+Best for any age. Parent says *"Text Maya her invite"* and Claude sends via `message_compose`:
+
+> Your Garcia family set up your allowance! Connect your Claude to: https://allowanceagent.app — then tell Claude: MAYA-LEARN-8K3W
+
+**Parent Claude Desktop config (stdio — local):**
+```json
+{
+  "mcpServers": {
+    "allowance-agent": {
+      "command": "npx",
+      "args": ["tsx", "/path/to/allowmeOpenWalletStandard/src/index.ts"]
+    }
+  }
+}
+```
+
+**Parent Claude Desktop config (HTTP — remote):**
+```json
+{
+  "mcpServers": {
+    "allowance-agent": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://allowanceagent.app/mcp"]
+    }
+  }
+}
+```
+
+> **Note:** Claude free plan gets 1 custom connector. AllowanceAgent uses it. Pro/Max get unlimited. For schools: Team/Enterprise admin adds the connector once, all parents see it automatically.
+
+### OpenMAIC Orchestration Pattern
+
+AllowanceAgent is an **achievement sink** — it accepts verified achievements from any source without caring how they were generated. OpenMAIC (open-source math/AI curriculum) is one such source.
+
+**How Claude orchestrates between AllowanceAgent and OpenMAIC:**
+
+```
+Parent: "Maya, time for your math lesson"
+    │
+    ▼
+Claude → OpenMAIC: start lesson (topic: Fractions, grade: 4)
+    │     Child works through interactive problems
+    │     OpenMAIC returns: { score: 88, topic: "Fractions", classroomId: "abc-123" }
+    │
+    ▼
+Claude → AllowanceAgent verify-achievement:
+    {
+      childName: "Maya",
+      category: "education",
+      description: "Completed OpenMAIC: Introduction to Fractions",
+      score: 88,
+      source: "openMAIC",
+      metadata: { classroomId: "abc-123", topic: "Fractions" }
+    }
+    │
+    ▼
+AllowanceAgent: records achievement, applies streak multiplier, queues for distribution
+    │
+    ▼
+Parent checks progress → sees "education: 88/100 — verified by OpenMAIC"
+```
+
+**Key design:** AllowanceAgent has zero OpenMAIC code dependency. Claude is the coordinator. Either system can evolve independently. The `source` field provides provenance so parents see *who* verified each achievement — "openMAIC" vs "self-report" vs "fitbit" vs "manual" (parent-verified).
+
+### MoonPay Peer MCP Integration
+
+MoonPay runs as a **separate MCP server** alongside AllowanceAgent. Claude orchestrates between both — AllowanceAgent has zero MoonPay code dependency.
+
+**Install MoonPay CLI:**
+```bash
+npm install -g @moonpay/cli
+moonpay auth login
+```
+
+**Claude Desktop config with both MCP servers:**
+```json
+{
+  "mcpServers": {
+    "allowance-agent": {
+      "command": "npx",
+      "args": ["tsx", "/path/to/allowmeOpenWalletStandard/src/index.ts"]
+    },
+    "moonpay": {
+      "command": "moonpay",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+**Three orchestration workflows Claude can perform:**
+
+1. **Fiat on-ramp to treasury** — Parent says *"Add $50 to the treasury."* Claude calls `get-funding-address` (AllowanceAgent) → gets treasury wallet address → calls MoonPay buy (fiat → USDC → treasury address). Parent pays via Apple Pay/card on MoonPay's hosted checkout.
+
+2. **Savings diversification preview** — Parent says *"Show me Maya's savings options."* Claude calls `check-savings` (AllowanceAgent) → $25 locked → calls MoonPay `discover-tokens` → shows PAXG (gold), ETH, BTC prices → parent decides. Actual conversion via `convert-savings` planned for Sprint 2.5.
+
+3. **Combined portfolio view** — Parent says *"What does Maya have?"* Claude calls `check-savings` + `check-progress` (AllowanceAgent) → USDC position → calls MoonPay `discover-tokens` for price context → displays unified view: "$12.50 USDC savings (locked 67 days) + $4.40 earned this week."
+
+> **AllowanceAgent has zero MoonPay dependency.** No imports, no API calls, no shared state. Claude orchestrates both servers independently. `convert-savings` tool (Sprint 2.5) will record MoonPay swap results into the savings ledger.
+
 ## Development
 
 ### Type check
@@ -201,44 +341,79 @@ npm run typecheck
 npm test
 ```
 
-84 tests: 71 unit + 13 E2E covering policy engine, invite system, RBAC, state management, and full flow.
-
-### Run locally (stdio)
+### Run locally (stdio — Claude Desktop)
 
 ```bash
 npm start
 ```
 
+### Run HTTP server (Claude Mobile / agents)
+
+```bash
+npm run start:http
+```
+
+Endpoints:
+- `POST /mcp` — MCP over HTTP (StreamableHTTPServerTransport)
+- `POST /agent` — A2A JSON-RPC
+- `GET /.well-known/agent-card.json` — Agent discovery card
+- `GET /fitbit/connect?child=maya` — Fitbit OAuth redirect
+- `GET /fitbit/callback` — Fitbit OAuth callback
+- `GET /health` — Health check
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|:--------:|-------------|
+| `OWS_PASSPHRASE` | For wallets | Passphrase for OWS wallet operations + Fitbit token encryption |
+| `ALLOWANCE_AGENT_URL` | For HTTP | Public URL of the server (e.g. `https://allowanceagent.app`) |
+| `FITBIT_CLIENT_ID` | For Fitbit | AllowMe LLC Fitbit developer app client ID |
+| `FITBIT_CLIENT_SECRET` | For Fitbit | AllowMe LLC Fitbit developer app secret |
+| `X402_RECIPIENT_WALLET` | For x402 | Wallet address that receives x402 micropayments |
+| `X402_NETWORK` | For x402 | Network for payments (default: `eip155:8453` Base) |
+| `ANTHROPIC_API_KEY` | For HTTP | Required for the ToolLoopAgent in A2A mode |
+
 ## Project Structure
 
 ```
-src/
-  index.ts                 MCP server entry point (9 tools registered)
-  constants.ts             Chain IDs, USDC addresses, roles, RBAC matrix
-  schemas.ts               Zod schemas for all data types
+src/                         Core business logic (stdio transport)
+  index.ts                   MCP server entry point (11 tools registered)
+  constants.ts               Chain IDs, USDC addresses, roles, RBAC matrix
+  schemas.ts                 Zod schemas for all data types
   middleware/
-    access-control.ts      RBAC: role resolution, authorization, denied responses
+    access-control.ts        RBAC: role resolution, authorization, child scoping
   engine/
-    state.ts               JSON file persistence (atomic writes)
-    policy.ts              Achievement evaluation, savings split, streaks
+    state.ts                 JSON file persistence (atomic writes)
+    policy.ts                Achievement evaluation, savings split, streaks
   wallet/
-    setup.ts               OWS wallet + policy bundle initialization
-    distributor.ts          USDC ERC-20 transfers via viem walletClient
+    setup.ts                 OWS wallet + policy bundle initialization
+    distributor.ts           USDC ERC-20 transfers via viem walletClient
   roles/
-    manager.ts             Role → OWS policy mapping, API key CRUD
+    manager.ts               Role → OWS policy mapping, API key CRUD
   invites/
-    system.ts              Human-readable invite codes, validation
-  tools/                   9 MCP tool handlers
+    system.ts                Human-readable invite codes, validation
+  fitbit/
+    client.ts                Fitbit OAuth + Activity API client
+    token-store.ts           AES-256-GCM encrypted token storage
+  tools/                     11 MCP tool handlers
+app/                         HTTP transport layer (aixyz adapter)
+  server.ts                  AixyzServer + MCP + A2A + Fitbit OAuth endpoints
+  agent.ts                   ToolLoopAgent for A2A interactions
+  tools/                     Thin wrappers over src/ business logic
+    _helpers.ts              HTTP RBAC (getPayer → member lookup)
+aixyz.config.ts              Agent metadata, skills, x402 payment config
 policies/
-  allowance-policy.py      OWS custom executable policy (4 roles, ERC-20 decode)
-tests/                     Unit + E2E test suites
-data/                      JSON file store (gitignored, created automatically)
+  allowance-policy.py        OWS custom executable policy (5 roles, ERC-20 decode)
+tests/                       Unit + E2E test suites
+data/                        JSON file store (gitignored, created automatically)
 ```
 
 ## Tech Stack
 
 - **TypeScript** + **Node.js** (ESM)
 - **@modelcontextprotocol/sdk** — MCP server over stdio
+- **aixyz** — HTTP transport, x402 micropayments, A2A protocol
+- **ai** + **@ai-sdk/anthropic** — Vercel AI SDK ToolLoopAgent for A2A
 - **@open-wallet-standard/core** — wallet creation, policy enforcement, signing
 - **viem** — ERC-20 calldata encoding, transaction signing, gas estimation, broadcast
 - **zod** — schema validation
@@ -254,15 +429,22 @@ Successfully tested on Base Sepolia testnet (Apr 2, 2026):
 
 ## Roadmap
 
-- [ ] **Learner role** — child connects from their own Claude account, sees only their own data (Sprint 2)
-- [ ] **HTTP transport** — multi-device access for parent + child + family (Sprint 2)
-- [ ] **x402 micropayment gating** — revenue on value-delivery tools (Sprint 2)
-- [ ] **Savings release tool** — auto-release on lock expiry with multiplier (Sprint 2)
-- [ ] **Source tagging** — track achievement provenance (openMAIC, fitbit, self-report) (Sprint 2)
-- [ ] **OpenMAIC integration** — Claude orchestrates verified classroom achievements (Sprint 2)
-- [ ] **MoonPay peer MCP** — fiat on-ramp + savings diversification to gold/PAXG (Sprint 2.5)
-- [ ] **LegacyLink estate vault** — dead-man's-switch + conditional release (Sprint 3)
-- [ ] **GiftFlow** — streak bonuses trigger automated gift purchases (Sprint 3)
+### Sprint 2 (Done)
+- [x] **Learner role** — child connects from their own Claude account, sees only their own data
+- [x] **HTTP transport** — multi-device access for parent + child + family via aixyz
+- [x] **x402 micropayment gating** — revenue on manager power tools, learner tools free
+- [x] **A2A protocol** — agent-card discovery + JSON-RPC for agent-to-agent
+- [x] **Savings release tool** — auto-release on lock expiry with multiplier
+- [x] **Source tagging** — track achievement provenance (openMAIC, fitbit, self-report)
+- [x] **Fitbit OAuth** — one-tap health data connection per child
+- [x] **Category % validation** — budget percentages must sum ≤ 100%
+
+### Sprint 3 (Next)
+- [ ] **Roblox Robux redemption** — children can convert USDC earnings to Robux
+- [ ] **OpenMAIC integration** — Claude orchestrates verified classroom achievements
+- [ ] **MoonPay peer MCP** — fiat on-ramp + savings diversification to gold/PAXG
+- [ ] **LegacyLink estate vault** — dead-man's-switch + conditional release
+- [ ] **GiftFlow** — streak bonuses trigger automated gift purchases
 
 ## License
 

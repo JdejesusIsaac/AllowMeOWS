@@ -14,7 +14,6 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
     {
       childName: z.string().optional().describe("Distribute for a specific child, or all children if omitted"),
       dryRun: z.boolean().default(false).describe("Preview distribution without sending transactions"),
-      passphrase: z.string().optional().describe("Wallet passphrase to authorize the transaction (required for real distributions)"),
       ...rbacFields,
     },
     async (args) => {
@@ -25,7 +24,8 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
       try {
         const state = new StateManager();
         const engine = new PolicyEngine();
-        const distributor = new WalletDistributor(args.passphrase);
+        const passphrase = process.env.OWS_PASSPHRASE;
+        const distributor = new WalletDistributor(passphrase);
 
         const config = await state.loadFamilyConfig();
         if (!config) {
@@ -93,13 +93,13 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
           let savingsError: string | undefined;
 
           if (!args.dryRun) {
-            if (!args.passphrase) {
+            if (!passphrase) {
               return {
                 content: [{
                   type: "text" as const,
                   text: JSON.stringify({
                     success: false,
-                    error: "A passphrase is required to send real transactions. Provide your wallet passphrase, or use dryRun=true to preview.",
+                    error: "Wallet passphrase not configured. Set the OWS_PASSPHRASE environment variable.",
                   }),
                 }],
               };
@@ -161,7 +161,7 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
               id: randomUUID(),
               timestamp: now,
               action: "distribute",
-              actor: "manager",
+              actor: caller.memberId,
               details: {
                 childName,
                 achievementCount: childAchievements.length,

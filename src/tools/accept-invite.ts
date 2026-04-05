@@ -48,11 +48,30 @@ export function registerAcceptInviteTool(server: McpServer): void {
           invite.role
         );
 
-        // Create member record
+        // For learner invites, validate childName exists in family config
+        if (invite.role === "learner" && invite.childName) {
+          const config = await state.loadFamilyConfig();
+          if (config) {
+            const childExists = config.children.some(
+              (c) => c.name.toLowerCase() === invite.childName!.toLowerCase()
+            );
+            if (!childExists) {
+              return {
+                content: [{
+                  type: "text" as const,
+                  text: JSON.stringify({ success: false, error: "child not found in family config" }),
+                }],
+              };
+            }
+          }
+        }
+
+        // Create member record (copy childName from invite for learner role)
         const member: Member = {
           id: randomUUID(),
           name: args.name,
           role: invite.role,
+          childName: invite.role === "learner" ? invite.childName : undefined,
           apiKeyId: apiKeyResult?.id,
           joinedAt: new Date().toISOString(),
           active: true,
@@ -79,12 +98,13 @@ export function registerAcceptInviteTool(server: McpServer): void {
           },
         });
 
-        const roleDescription = {
+        const roleDescription: Record<string, string> = {
           manager: "full control over the family economy",
           "co-parent": "verify achievements and view progress",
           family: "view progress and send gifts",
           advisor: "view the audit log",
-        }[invite.role];
+          learner: "see your progress and savings, report achievements",
+        };
 
         return {
           content: [{
@@ -93,7 +113,8 @@ export function registerAcceptInviteTool(server: McpServer): void {
               success: true,
               name: args.name,
               role: invite.role,
-              message: `Welcome, ${args.name}! You're connected as a ${invite.role} member. You can ${roleDescription}.`,
+              childName: member.childName,
+              message: `Welcome, ${args.name}! You're connected as a ${invite.role} member. You can ${roleDescription[invite.role]}.`,
             }),
           }],
         };

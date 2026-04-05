@@ -40,6 +40,14 @@ def main():
         )
         return
 
+    # === Learner role: block ALL signing ===
+    if role == "learner":
+        json.dump(
+            {"allow": False, "reason": "Learner role: read-only access"},
+            sys.stdout,
+        )
+        return
+
     # === Co-parent role: no fund transfers ===
     if role == "co-parent":
         json.dump(
@@ -114,12 +122,22 @@ def main():
                 )
                 return
 
-        # Check authorized recipients
+        # Check authorized recipients for ERC-20 transfers
         authorized = [w.lower() for w in config.get("authorized_wallets", [])]
-        if authorized and tx.get("to", "").lower() not in authorized:
-            # For ERC-20, tx.to is the USDC contract — always allowed
-            # The actual recipient is checked by app logic
-            pass
+        if authorized and transfer:
+            recipient, _ = transfer
+            if recipient not in authorized:
+                json.dump(
+                    {"allow": False, "reason": f"ERC-20 recipient {recipient} not in authorized wallets"},
+                    sys.stdout,
+                )
+                return
+        elif authorized and tx.get("to", "").lower() not in authorized:
+            json.dump(
+                {"allow": False, "reason": "Recipient not in authorized wallets"},
+                sys.stdout,
+            )
+            return
 
         json.dump({"allow": True}, sys.stdout)
         return

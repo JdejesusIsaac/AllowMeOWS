@@ -111,6 +111,33 @@ function buildAdvisorPolicy() {
   };
 }
 
+function buildLearnerPolicy() {
+  return {
+    id: POLICY_IDS.LEARNER_READ_ONLY,
+    name: "Learner: Read Own Progress + Self-Report",
+    version: 1,
+    created_at: new Date().toISOString(),
+    rules: [
+      {
+        type: "allowed_chains",
+        chain_ids: [CHAIN_IDS.BASE_MAINNET, CHAIN_IDS.BASE_SEPOLIA],
+      },
+    ],
+    executable: null,
+    config: {
+      role: ROLES.LEARNER,
+      allowed_actions: [
+        "check-progress",
+        "check-savings",
+        "verify-achievement",
+        "accept-invite",
+      ],
+      signing_allowed: false,
+    },
+    action: "deny",
+  };
+}
+
 /**
  * Handles first-time OWS wallet and policy setup for a family.
  */
@@ -206,6 +233,7 @@ export class WalletSetup {
       buildCoParentPolicy(),
       buildFamilyPolicy(100_000_000), // $100 max gift default
       buildAdvisorPolicy(),
+      buildLearnerPolicy(),
     ];
 
     for (const policy of policies) {

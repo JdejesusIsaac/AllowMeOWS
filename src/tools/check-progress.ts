@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { StateManager } from "../engine/state.js";
 import { USDC } from "../constants.js";
-import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
+import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, getChildScope, rbacFields } from "../middleware/access-control.js";
 
 export function registerCheckProgressTool(server: McpServer): void {
   server.tool(
@@ -31,8 +31,13 @@ export function registerCheckProgressTool(server: McpServer): void {
         }
 
         const achievements = await state.loadAchievements();
-        const children = args.childName
-          ? config.children.filter((c) => c.name.toLowerCase() === args.childName!.toLowerCase())
+
+        // Child-scoped filtering: learner sees only their own data
+        const childScope = getChildScope(caller);
+        const requestedChild = childScope || args.childName;
+
+        const children = requestedChild
+          ? config.children.filter((c) => c.name.toLowerCase() === requestedChild.toLowerCase())
           : config.children;
 
         if (children.length === 0) {
@@ -61,10 +66,21 @@ export function registerCheckProgressTool(server: McpServer): void {
           const distributed = thisWeek.filter((a) => a.distributed).reduce((sum, a) => sum + a.amount, 0);
           const pending = thisWeek.filter((a) => !a.distributed).reduce((sum, a) => sum + a.amount, 0);
 
-          // Category breakdown
-          const byCat = { education: 0, health: 0, personal: 0 };
+          // Category breakdown with source provenance
+          const byCat: Record<string, { earned: number; details: Array<{ description: string; score: number; amount: number; source: string; verifiedBy: string }> }> = {
+            education: { earned: 0, details: [] },
+            health: { earned: 0, details: [] },
+            personal: { earned: 0, details: [] },
+          };
           for (const a of thisWeek) {
-            byCat[a.category] += a.amount;
+            byCat[a.category].earned += a.amount;
+            byCat[a.category].details.push({
+              description: a.description,
+              score: a.score,
+              amount: a.amount,
+              source: (a as Record<string, unknown>).source as string || "manual",
+              verifiedBy: a.verifiedBy,
+            });
           }
 
           // Streak
@@ -82,9 +98,36 @@ export function registerCheckProgressTool(server: McpServer): void {
             distributedUsd: (distributed / 10 ** USDC.DECIMALS).toFixed(2),
             pendingUsd: (pending / 10 ** USDC.DECIMALS).toFixed(2),
             categories: {
-              education: `$${(byCat.education / 10 ** USDC.DECIMALS).toFixed(2)} / $${(child.categoryBudgets.education / 10 ** USDC.DECIMALS).toFixed(2)}`,
-              health: `$${(byCat.health / 10 ** USDC.DECIMALS).toFixed(2)} / $${(child.categoryBudgets.health / 10 ** USDC.DECIMALS).toFixed(2)}`,
-              personal: `$${(byCat.personal / 10 ** USDC.DECIMALS).toFixed(2)} / $${(child.categoryBudgets.personal / 10 ** USDC.DECIMALS).toFixed(2)}`,
+              education: {
+                earned: `$${(byCat.education.earned / 10 ** USDC.DECIMALS).toFixed(2)}`,
+                budget: `$${(child.categoryBudgets.education / 10 ** USDC.DECIMALS).toFixed(2)}`,
+                achievements: byCat.education.details.map((d) => ({
+                  description: d.description,
+                  score: d.score,
+                  amountUsd: (d.amount / 10 ** USDC.DECIMALS).toFixed(2),
+                  source: d.source,
+                })),
+              },
+              health: {
+                earned: `$${(byCat.health.earned / 10 ** USDC.DECIMALS).toFixed(2)}`,
+                budget: `$${(child.categoryBudgets.health / 10 ** USDC.DECIMALS).toFixed(2)}`,
+                achievements: byCat.health.details.map((d) => ({
+                  description: d.description,
+                  score: d.score,
+                  amountUsd: (d.amount / 10 ** USDC.DECIMALS).toFixed(2),
+                  source: d.source,
+                })),
+              },
+              personal: {
+                earned: `$${(byCat.personal.earned / 10 ** USDC.DECIMALS).toFixed(2)}`,
+                budget: `$${(child.categoryBudgets.personal / 10 ** USDC.DECIMALS).toFixed(2)}`,
+                achievements: byCat.personal.details.map((d) => ({
+                  description: d.description,
+                  score: d.score,
+                  amountUsd: (d.amount / 10 ** USDC.DECIMALS).toFixed(2),
+                  source: d.source,
+                })),
+              },
             },
             achievementsThisWeek: thisWeek.length,
             totalAchievements: childAchievements.length,

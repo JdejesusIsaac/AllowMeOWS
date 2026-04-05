@@ -12,6 +12,7 @@ export const rbacFields = {
 export interface CallerContext {
   role: Role;
   memberId: string;
+  childName?: string; // populated for learner role — scopes data access
 }
 
 export interface ToolResponse {
@@ -37,6 +38,15 @@ export async function resolveCallerRole(
   if (args._callerRole && typeof args._callerRole === "string") {
     const role = args._callerRole as Role;
     const memberId = (args._callerId as string) || "test-user";
+    // For testing: look up childName if _callerId is provided
+    if (args._callerId && typeof args._callerId === "string") {
+      const state = new StateManager();
+      const members = await state.loadMembers();
+      const member = members.find((m) => m.id === args._callerId && m.active);
+      if (member) {
+        return { role, memberId, childName: member.childName };
+      }
+    }
     return { role, memberId };
   }
 
@@ -48,7 +58,7 @@ export async function resolveCallerRole(
       (m) => m.id === args._callerId && m.active
     );
     if (member) {
-      return { role: member.role as Role, memberId: member.id };
+      return { role: member.role as Role, memberId: member.id, childName: member.childName };
     }
   }
 
@@ -93,6 +103,20 @@ export function stripInternalArgs<T extends Record<string, unknown>>(
 ): Omit<T, "_callerRole" | "_callerId"> {
   const { _callerRole, _callerId, ...rest } = args;
   return rest as Omit<T, "_callerRole" | "_callerId">;
+}
+
+/**
+ * Get child scope for a caller. Returns the childName if the caller
+ * is a learner (restricts data to their child only). Returns null
+ * for manager/co-parent (see all children).
+ */
+export function getChildScope(callerCtx: CallerContext): string | null {
+  if (callerCtx.role === ROLES.LEARNER && callerCtx.childName) {
+    return callerCtx.childName;
+  }
+  // Manager and co-parent see all children
+  // Family and advisor are limited by tool access, not child scope
+  return null;
 }
 
 /**

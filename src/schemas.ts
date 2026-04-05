@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // === Enums ===
 
-export const RoleEnum = z.enum(["manager", "co-parent", "family", "advisor"]);
+export const RoleEnum = z.enum(["manager", "co-parent", "family", "advisor", "learner"]);
 export type RoleType = z.infer<typeof RoleEnum>;
 
 export const CategoryEnum = z.enum(["education", "health", "personal"]);
@@ -37,11 +37,22 @@ export type FamilyConfig = z.infer<typeof FamilyConfigSchema>;
 
 // === Achievement ===
 
+export const AchievementSourceEnum = z.enum([
+  "manual",
+  "openMAIC",
+  "fitbit",
+  "apple-health",
+  "self-report",
+  "parent-attested",
+]);
+export type AchievementSource = z.infer<typeof AchievementSourceEnum>;
+
 export const AchievementInputSchema = z.object({
   childName: z.string().min(1),
   category: CategoryEnum,
   description: z.string().min(1),
   score: z.number().min(0).max(100),
+  source: AchievementSourceEnum.default("manual").optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 export type AchievementInput = z.infer<typeof AchievementInputSchema>;
@@ -53,6 +64,7 @@ export const AchievementRecordSchema = z.object({
   description: z.string(),
   score: z.number(),
   amount: z.number().int(), // USDC earned (6-decimal units)
+  source: AchievementSourceEnum.default("manual"),
   verifiedBy: z.string(), // member ID
   verifiedAt: z.string().datetime(),
   distributed: z.boolean().default(false),
@@ -67,6 +79,8 @@ export const MemberSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
   role: RoleEnum,
+  childName: z.string().optional(), // populated when role is "learner" — scopes data access
+  walletAddress: z.string().optional(), // x402 payer address — maps HTTP caller to member
   apiKeyId: z.string().optional(), // OWS API key ID
   joinedAt: z.string().datetime(),
   lastActivity: z.string().datetime().optional(),

@@ -2,14 +2,14 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { StateManager } from "../engine/state.js";
 import { USDC } from "../constants.js";
-import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
+import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, getChildScope, rbacFields } from "../middleware/access-control.js";
 
 export function registerCheckSavingsTool(server: McpServer): void {
   server.tool(
     "check-savings",
     "Check savings vault details: locked amounts, release dates, and multiplier projections.",
     {
-      childName: z.string().describe("Name of the child"),
+      childName: z.string().optional().describe("Name of the child (learners see only their own data)"),
       ...rbacFields,
     },
     async (args) => {
@@ -30,8 +30,21 @@ export function registerCheckSavingsTool(server: McpServer): void {
           };
         }
 
-        const entries = await state.loadSavingsEntries(args.childName);
-        const streak = await state.loadStreak(args.childName);
+        // Child-scoped filtering: learner sees only their own data
+        const childScope = getChildScope(caller);
+        const targetChild = childScope || args.childName;
+
+        if (!targetChild) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({ success: false, error: "childName is required (or connect as a learner for automatic scoping)." }),
+            }],
+          };
+        }
+
+        const entries = await state.loadSavingsEntries(targetChild);
+        const streak = await state.loadStreak(targetChild);
 
         const locked = entries.filter((e) => !e.released);
         const released = entries.filter((e) => e.released);
@@ -63,7 +76,7 @@ export function registerCheckSavingsTool(server: McpServer): void {
             type: "text" as const,
             text: JSON.stringify({
               success: true,
-              childName: args.childName,
+              childName: targetChild,
               totalLockedUsd: (totalLocked / 10 ** USDC.DECIMALS).toFixed(2),
               totalReleasedUsd: (totalReleased / 10 ** USDC.DECIMALS).toFixed(2),
               lockedEntries: locked.length,
