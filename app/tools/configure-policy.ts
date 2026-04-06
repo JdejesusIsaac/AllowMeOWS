@@ -3,6 +3,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { StateManager } from "../../src/engine/state.js";
 import { WalletSetup } from "../../src/wallet/setup.js";
+import { FamilyKeyManager } from "../../src/keys/family-keys.js";
 import { CHAIN_IDS, USDC, DEFAULT_SAVINGS_PERCENT } from "../../src/constants.js";
 import { resolveHttpCaller, isHttpToolAuthorized, accessDenied } from "./_helpers.js";
 import type { ChildConfig, FamilyConfig } from "../../src/schemas.js";
@@ -63,21 +64,27 @@ const configurePolicy = tool({
         };
       });
 
+      // Resolve or create familyId for per-family key management
+      const existingConfig = await state.loadFamilyConfig();
+      const familyId = existingConfig?.familyId || randomUUID();
+
       const now = new Date().toISOString();
       const familyConfig: FamilyConfig = {
+        familyId,
         familyName: args.familyName,
         children,
-        createdAt: now,
+        createdAt: existingConfig?.createdAt || now,
         updatedAt: now,
         chainId,
         usdcAddress,
       };
 
-      const passphrase = process.env.OWS_PASSPHRASE;
-      if (passphrase) {
-        const setup = new WalletSetup();
-        await setup.initializeFamily(familyConfig, passphrase);
-      }
+      // Auto-resolve family encryption key (generates on first setup, retrieves on update)
+      const keyManager = new FamilyKeyManager();
+      const familyKey = keyManager.getOrGenerateFamilyKey(familyId);
+
+      const setup = new WalletSetup();
+      await setup.initializeFamily(familyConfig, familyKey);
 
       await state.saveFamilyConfig(familyConfig);
 
@@ -97,10 +104,8 @@ const configurePolicy = tool({
         familyName: args.familyName,
         network: args.useTestnet ? "Base Sepolia (testnet)" : "Base (mainnet)",
         children: summary,
-        walletsCreated: !!passphrase,
-        message: passphrase
-          ? `Family "${args.familyName}" configured! Wallets and policies are set up.`
-          : `Family "${args.familyName}" configured! Set OWS_PASSPHRASE env var to create wallets.`,
+        walletsCreated: true,
+        message: `Family "${args.familyName}" configured! Wallets and policies are set up.`,
       });
     } catch (error) {
       return JSON.stringify({

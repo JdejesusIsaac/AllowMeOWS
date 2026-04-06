@@ -3,6 +3,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { StateManager } from "../../src/engine/state.js";
 import { WalletDistributor } from "../../src/wallet/distributor.js";
+import { FamilyKeyManager } from "../../src/keys/family-keys.js";
 import { USDC, WALLET_NAMES } from "../../src/constants.js";
 import { resolveHttpCaller, isHttpToolAuthorized, accessDenied } from "./_helpers.js";
 
@@ -20,13 +21,23 @@ const releaseSavings = tool({
     }
     try {
       const state = new StateManager();
-      const passphrase = process.env.OWS_PASSPHRASE;
-      const distributor = new WalletDistributor(passphrase);
       const config = await state.loadFamilyConfig();
 
       if (!config) {
         return JSON.stringify({ success: false, error: "No family configured." });
       }
+
+      // Auto-resolve per-family encryption key (no passphrase prompt)
+      const keyManager = new FamilyKeyManager();
+      const familyId = config.familyId;
+      let passphrase: string | undefined;
+      if (familyId && keyManager.hasFamilyKey(familyId)) {
+        passphrase = keyManager.getFamilyKey(familyId);
+      } else if (process.env.OWS_PASSPHRASE) {
+        passphrase = process.env.OWS_PASSPHRASE;
+        console.error(`[keys] Using legacy OWS_PASSPHRASE for family. New families use per-family keys.`);
+      }
+      const distributor = new WalletDistributor(passphrase);
 
       const allEntries = await state.loadSavingsEntries();
       const now = new Date();
@@ -64,7 +75,7 @@ const releaseSavings = tool({
         let txHash: string | undefined;
         if (!args.dryRun) {
           if (!passphrase) {
-            return JSON.stringify({ success: false, error: "Set OWS_PASSPHRASE environment variable." });
+            return JSON.stringify({ success: false, error: "Family wallet not initialized. Run configure-policy first." });
           }
           if (totalMultiplied > 0) {
             const result = await distributor.transferUSDC(

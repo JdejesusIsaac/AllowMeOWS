@@ -69,6 +69,7 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     "get-funding-address",
     "release-savings",
     "connect-fitbit",
+    "convert-savings",
   ],
   [ROLES.CO_PARENT]: [
     "verify-achievement",

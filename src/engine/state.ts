@@ -11,6 +11,7 @@ import type {
   Invite,
   StreakData,
   SavingsEntry,
+  SavingsEntryInput,
   AuditEntry,
 } from "../schemas.js";
 import { STREAK } from "../constants.js";
@@ -201,9 +202,17 @@ export class StateManager {
     await writeJson("savings.json", entries);
   }
 
-  async addSavingsEntry(entry: SavingsEntry): Promise<void> {
+  async addSavingsEntry(entry: SavingsEntryInput): Promise<void> {
     const entries = await readJson<SavingsEntry[]>("savings.json", []);
-    entries.push(entry);
+    // Apply defaults for fields that have them
+    const full: SavingsEntry = {
+      asset: "USDC",
+      released: false,
+      multiplierAtDeposit: 1.0,
+      converted: false,
+      ...entry,
+    } as SavingsEntry;
+    entries.push(full);
     await this.saveSavingsEntries(entries);
   }
 

@@ -61,8 +61,8 @@ describe("H2: MCP tool registration", () => {
       expect(hasAccess, `Tool "${tool}" should exist in ROLE_TOOL_ACCESS`).toBe(true);
     }
 
-    // Verify count: manager has 11 tools
-    expect(managerTools.length).toBe(11);
+    // Verify count: manager has 12 tools (11 + convert-savings from Sprint 2.5)
+    expect(managerTools.length).toBe(12);
   });
 });
 

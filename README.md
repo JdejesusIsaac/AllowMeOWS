@@ -98,6 +98,7 @@ Other Agents   ←a2a→  │ (MCP)    │ server.ts│ wallets │
 | `get-funding-address` | Show the treasury wallet address for funding | Manager | $0.001 |
 | `release-savings` | Release matured savings with streak multiplier bonus | Manager | Free |
 | `connect-fitbit` | Get Fitbit OAuth URL to link a child's health data | Manager | Free |
+| `convert-savings` | Record a MoonPay swap result: USDC savings → PAXG (gold) | Manager | Free |
 
 ## Quick Start
 
@@ -134,7 +135,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 > Replace paths with your actual `npx` binary and project location.
 > Find your npx path with: `which npx`
 
-Restart Claude Desktop. You'll see 11 tools available.
+Restart Claude Desktop. You'll see 12 tools available.
 
 ### First conversation
 
@@ -199,7 +200,7 @@ child  role   random
 | `savings-vault` | Locked savings with streak multiplier bonus |
 | `gift-fund` | Family members contribute gifts here |
 
-**OWS-managed wallets** are created when you first configure with a passphrase. Children can alternatively use **external wallet addresses** (MetaMask, Coinbase, etc.) — just provide the address during setup and OWS wallet creation is skipped for that child.
+**OWS-managed wallets** are created automatically when you first run `configure-policy`. Children can alternatively use **external wallet addresses** (MetaMask, Coinbase, etc.) — just provide the address during setup and OWS wallet creation is skipped for that child.
 
 Distribution uses OWS for secure key storage (`exportWallet`) and viem for transaction construction, signing, and broadcast — giving full control over nonce management, gas estimation, and EIP-1559 formatting.
 
@@ -321,11 +322,68 @@ moonpay auth login
 
 1. **Fiat on-ramp to treasury** — Parent says *"Add $50 to the treasury."* Claude calls `get-funding-address` (AllowanceAgent) → gets treasury wallet address → calls MoonPay buy (fiat → USDC → treasury address). Parent pays via Apple Pay/card on MoonPay's hosted checkout.
 
-2. **Savings diversification preview** — Parent says *"Show me Maya's savings options."* Claude calls `check-savings` (AllowanceAgent) → $25 locked → calls MoonPay `discover-tokens` → shows PAXG (gold), ETH, BTC prices → parent decides. Actual conversion via `convert-savings` planned for Sprint 2.5.
+2. **Savings diversification** — Parent says *"Convert half of Maya's savings to gold."* Claude calls `check-savings` (AllowanceAgent) → $25 locked → calls MoonPay swap (USDC→PAXG) → calls `convert-savings` (AllowanceAgent) to record the result. See [Savings Diversification](#savings-diversification-usdc--paxg-gold) for the full flow.
 
 3. **Combined portfolio view** — Parent says *"What does Maya have?"* Claude calls `check-savings` + `check-progress` (AllowanceAgent) → USDC position → calls MoonPay `discover-tokens` for price context → displays unified view: "$12.50 USDC savings (locked 67 days) + $4.40 earned this week."
 
-> **AllowanceAgent has zero MoonPay dependency.** No imports, no API calls, no shared state. Claude orchestrates both servers independently. `convert-savings` tool (Sprint 2.5) will record MoonPay swap results into the savings ledger.
+> **AllowanceAgent has zero MoonPay dependency.** No imports, no API calls, no shared state. Claude orchestrates both servers independently.
+
+### Savings Diversification (USDC → PAXG Gold)
+
+Parents can convert a child's USDC savings into gold-backed tokens (PAXG) via MoonPay. AllowanceAgent is the **ledger**, MoonPay is the **execution engine**, Claude is the **coordinator**.
+
+**Full orchestration flow:**
+
+```
+Parent: "Convert half of Maya's savings to gold"
+    │
+    ▼
+Claude → AllowanceAgent check-savings: $6.00 USDC locked for Maya
+    │
+    ▼
+Claude → MoonPay discover-tokens: get PAXG price → ~$4,660/oz
+    │
+    ▼
+Claude → MoonPay swap: $3.00 USDC (Base) → PAXG (Ethereum)
+    │     MoonPay handles: bridge + swap + routing
+    │     Returns: txHash, PAXG amount received (~0.000644 PAXG)
+    │
+    ▼
+Claude → AllowanceAgent convert-savings:
+    {
+      childName: "Maya",
+      usdcAmount: 3000000,
+      receivedAsset: "PAXG",
+      receivedAmount: "0.000644",
+      txHash: "0xabc...",
+      priceAtConversion: 4660.00
+    }
+    │
+    ▼
+AllowanceAgent internally:
+    1. Find Maya's USDC savings entries totaling ≥ $3.00
+    2. Mark consumed USDC entries as converted
+    3. Create new SavingsEntry with asset: "PAXG"
+    4. Audit log: "savings-converted" action
+    │
+    ▼
+Claude: "Done. Maya's savings vault now holds $3.00 in USDC and
+         0.000644 oz of gold (~$3.00 at today's price). Gold
+         doesn't earn the savings multiplier — it earns gold price
+         appreciation instead."
+```
+
+**Multi-asset display** — `check-savings` groups positions by asset:
+- **USDC:** locked amount, multiplier, release dates
+- **PAXG:** amount in oz, value at conversion price, educational note about price appreciation vs streak multipliers
+
+**Gold release** — When PAXG savings are released, AllowanceAgent marks them as released in the ledger and returns an orchestration message. Claude then coordinates MoonPay to swap PAXG back to USDC for transfer to the child's wallet. AllowanceAgent never executes Ethereum transactions directly.
+
+**Key design decisions:**
+- PAXG lives on Ethereum (not Base) — MoonPay handles the cross-chain swap
+- Gold doesn't earn streak multiplier (`multiplierAtDeposit: 1.0`) — it earns price appreciation
+- PAXG amounts stored as strings to avoid 18-decimal integer overflow
+- Zero MoonPay code in AllowanceAgent — Claude orchestrates everything
 
 ## Development
 
@@ -365,7 +423,8 @@ Endpoints:
 
 | Variable | Required | Description |
 |----------|:--------:|-------------|
-| `OWS_PASSPHRASE` | For wallets | Passphrase for OWS wallet operations + Fitbit token encryption |
+| `MASTER_KEY` | Optional | 256-bit hex key for encrypting per-family wallet keys. Auto-generated to `data/.master-key` if not set. Set this in Railway/Docker where filesystem is ephemeral. |
+| `OWS_PASSPHRASE` | Deprecated | Legacy passphrase for existing families set up before Sprint 2.75. Still works as fallback. New families use per-family keys from MASTER_KEY. |
 | `ALLOWANCE_AGENT_URL` | For HTTP | Public URL of the server (e.g. `https://allowanceagent.app`) |
 | `FITBIT_CLIENT_ID` | For Fitbit | AllowMe LLC Fitbit developer app client ID |
 | `FITBIT_CLIENT_SECRET` | For Fitbit | AllowMe LLC Fitbit developer app secret |
@@ -377,7 +436,7 @@ Endpoints:
 
 ```
 src/                         Core business logic (stdio transport)
-  index.ts                   MCP server entry point (11 tools registered)
+  index.ts                   MCP server entry point (12 tools registered)
   constants.ts               Chain IDs, USDC addresses, roles, RBAC matrix
   schemas.ts                 Zod schemas for all data types
   middleware/
@@ -392,10 +451,13 @@ src/                         Core business logic (stdio transport)
     manager.ts               Role → OWS policy mapping, API key CRUD
   invites/
     system.ts                Human-readable invite codes, validation
+  keys/
+    master-key.ts            Master key resolution (env var → file → auto-generate)
+    family-keys.ts           Per-family key generation, encryption, retrieval
   fitbit/
     client.ts                Fitbit OAuth + Activity API client
-    token-store.ts           AES-256-GCM encrypted token storage
-  tools/                     11 MCP tool handlers
+    token-store.ts           AES-256-GCM encrypted token storage (uses MASTER_KEY)
+  tools/                     12 MCP tool handlers
 app/                         HTTP transport layer (aixyz adapter)
   server.ts                  AixyzServer + MCP + A2A + Fitbit OAuth endpoints
   agent.ts                   ToolLoopAgent for A2A interactions
@@ -439,10 +501,22 @@ Successfully tested on Base Sepolia testnet (Apr 2, 2026):
 - [x] **Fitbit OAuth** — one-tap health data connection per child
 - [x] **Category % validation** — budget percentages must sum ≤ 100%
 
+### Sprint 2.5 (Done)
+- [x] **Savings diversification (USDC → PAXG)** — parents convert savings to gold-backed tokens via MoonPay
+- [x] **Multi-asset savings display** — check-savings groups USDC and PAXG positions separately
+- [x] **PAXG release orchestration** — gold release handled gracefully via Claude + MoonPay
+- [x] **convert-savings tool** — Manager-only, records MoonPay swap results into the ledger
+
+### Sprint 2.75 (Done)
+- [x] **Server-managed per-family keys** — zero passphrase prompts in any user-facing flow
+- [x] **MASTER_KEY auto-resolution** — env var → file → auto-generate on first run
+- [x] **Per-family key isolation** — each family gets a unique 256-bit key, encrypted at rest
+- [x] **Backward compatible** — existing OWS_PASSPHRASE families continue to work
+- [x] **Fitbit encryption upgraded** — token store uses MASTER_KEY instead of OWS_PASSPHRASE
+
 ### Sprint 3 (Next)
 - [ ] **Roblox Robux redemption** — children can convert USDC earnings to Robux
 - [ ] **OpenMAIC integration** — Claude orchestrates verified classroom achievements
-- [ ] **MoonPay peer MCP** — fiat on-ramp + savings diversification to gold/PAXG
 - [ ] **LegacyLink estate vault** — dead-man's-switch + conditional release
 - [ ] **GiftFlow** — streak bonuses trigger automated gift purchases
 

@@ -43,7 +43,7 @@ export function registerGetFundingAddressTool(server: McpServer): void {
               type: "text" as const,
               text: JSON.stringify({
                 success: false,
-                error: `Wallet "${walletName}" not found. Run configure-policy with a passphrase first to create wallets.`,
+                error: `Wallet "${walletName}" not found. Run configure-policy first to create wallets.`,
               }),
             }],
           };

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { StateManager } from "../engine/state.js";
 import { WalletDistributor } from "../wallet/distributor.js";
+import { FamilyKeyManager } from "../keys/family-keys.js";
 import { USDC, WALLET_NAMES } from "../constants.js";
 import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
 
@@ -22,8 +23,6 @@ export function registerReleaseSavingsTool(server: McpServer): void {
       }
       try {
         const state = new StateManager();
-        const passphrase = process.env.OWS_PASSPHRASE;
-        const distributor = new WalletDistributor(passphrase);
 
         const config = await state.loadFamilyConfig();
         if (!config) {
@@ -35,13 +34,26 @@ export function registerReleaseSavingsTool(server: McpServer): void {
           };
         }
 
+        // Auto-resolve per-family encryption key (no passphrase prompt)
+        const keyManager = new FamilyKeyManager();
+        const familyId = config.familyId;
+        let passphrase: string | undefined;
+        if (familyId && keyManager.hasFamilyKey(familyId)) {
+          passphrase = keyManager.getFamilyKey(familyId);
+        } else if (process.env.OWS_PASSPHRASE) {
+          passphrase = process.env.OWS_PASSPHRASE;
+          console.error(`[keys] Using legacy OWS_PASSPHRASE for family. New families use per-family keys.`);
+        }
+        const distributor = new WalletDistributor(passphrase);
+
         // Load all savings entries (not filtered by child yet, so we can save them all back)
         const allEntries = await state.loadSavingsEntries();
         const now = new Date();
 
-        // Find expired, unreleased entries
+        // Find expired, unreleased, non-converted entries
         const readyEntries = allEntries.filter((e) => {
           if (e.released) return false;
+          if (e.converted) return false;
           if (new Date(e.lockUntil) > now) return false;
           if (args.childName && e.childName.toLowerCase() !== args.childName.toLowerCase()) return false;
           return true;
@@ -74,6 +86,7 @@ export function registerReleaseSavingsTool(server: McpServer): void {
           baseAmountUsd: string;
           multipliedAmountUsd: string;
           txHash?: string;
+          paxgReleased?: { entries: number; totalOz: string; message: string };
         }> = [];
 
         for (const [childName, entries] of byChild) {
@@ -82,10 +95,14 @@ export function registerReleaseSavingsTool(server: McpServer): void {
           );
           if (!childConfig) continue;
 
-          // Apply multiplier at deposit time for each entry
+          // Split USDC vs PAXG entries
+          const usdcEntries = entries.filter((e) => (e.asset || "USDC") === "USDC");
+          const paxgEntries = entries.filter((e) => e.asset === "PAXG");
+
+          // Apply multiplier at deposit time for USDC entries only
           let totalMultiplied = 0;
           let totalBase = 0;
-          for (const entry of entries) {
+          for (const entry of usdcEntries) {
             const multiplied = Math.round(entry.amount * entry.multiplierAtDeposit);
             totalMultiplied += multiplied;
             totalBase += entry.amount;
@@ -100,13 +117,13 @@ export function registerReleaseSavingsTool(server: McpServer): void {
                   type: "text" as const,
                   text: JSON.stringify({
                     success: false,
-                    error: "Wallet passphrase not configured. Set the OWS_PASSPHRASE environment variable.",
+                    error: "Family wallet not initialized. Run configure-policy first.",
                   }),
                 }],
               };
             }
 
-            // Transfer from savings vault to child wallet
+            // Transfer USDC from savings vault to child wallet
             if (totalMultiplied > 0) {
               const result = await distributor.transferUSDC(
                 WALLET_NAMES.SAVINGS_VAULT,
@@ -119,12 +136,19 @@ export function registerReleaseSavingsTool(server: McpServer): void {
               txHash = result.txHash;
             }
 
-            // Mark entries as released
+            // Mark USDC entries as released
             const releaseTime = new Date().toISOString();
-            for (const entry of entries) {
+            for (const entry of usdcEntries) {
               entry.released = true;
               entry.releasedAt = releaseTime;
             }
+
+            // Mark PAXG entries as released (ledger only — no on-chain transfer)
+            for (const entry of paxgEntries) {
+              entry.released = true;
+              entry.releasedAt = releaseTime;
+            }
+
             await state.saveSavingsEntries(allEntries);
 
             // Audit log
@@ -135,7 +159,8 @@ export function registerReleaseSavingsTool(server: McpServer): void {
               actor: caller.memberId,
               details: {
                 childName,
-                entriesReleased: entries.length,
+                usdcEntriesReleased: usdcEntries.length,
+                paxgEntriesReleased: paxgEntries.length,
                 baseAmount: totalBase,
                 multipliedAmount: totalMultiplied,
               },
@@ -144,22 +169,40 @@ export function registerReleaseSavingsTool(server: McpServer): void {
             });
           }
 
+          // Build PAXG release info
+          const paxgReleased = paxgEntries.length > 0
+            ? {
+                entries: paxgEntries.length,
+                totalOz: paxgEntries.reduce((sum, e) => sum + parseFloat(e.receivedAmount || "0"), 0).toFixed(6),
+                message: "Gold release requires MoonPay swap — Claude will handle the conversion back to USDC for transfer to the child's wallet.",
+              }
+            : undefined;
+
           results.push({
             childName,
-            entriesReleased: entries.length,
+            entriesReleased: usdcEntries.length + paxgEntries.length,
             baseAmountUsd: (totalBase / 10 ** USDC.DECIMALS).toFixed(2),
             multipliedAmountUsd: (totalMultiplied / 10 ** USDC.DECIMALS).toFixed(2),
             txHash,
+            paxgReleased,
           });
         }
 
         const totalReleased = results.reduce((sum, r) => sum + r.entriesReleased, 0);
         const summary = results
-          .map(
-            (r) =>
-              `${r.childName}: ${r.entriesReleased} entries, $${r.baseAmountUsd} base → $${r.multipliedAmountUsd} with multiplier` +
-              (r.txHash ? ` [tx: ${r.txHash.slice(0, 10)}...]` : "")
-          )
+          .map((r) => {
+            let line = `${r.childName}: ${r.entriesReleased} entries`;
+            if (r.baseAmountUsd !== "0.00") {
+              line += `, $${r.baseAmountUsd} base → $${r.multipliedAmountUsd} with multiplier`;
+            }
+            if (r.txHash) {
+              line += ` [tx: ${r.txHash.slice(0, 10)}...]`;
+            }
+            if (r.paxgReleased) {
+              line += `\n  PAXG: ${r.paxgReleased.totalOz} oz (${r.paxgReleased.entries} entries) — ${r.paxgReleased.message}`;
+            }
+            return line;
+          })
           .join("\n");
 
         return {

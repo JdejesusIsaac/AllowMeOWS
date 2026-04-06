@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { StateManager } from "../engine/state.js";
 import { PolicyEngine } from "../engine/policy.js";
 import { WalletDistributor } from "../wallet/distributor.js";
+import { FamilyKeyManager } from "../keys/family-keys.js";
 import { USDC, WALLET_NAMES } from "../constants.js";
 import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
 
@@ -24,8 +25,6 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
       try {
         const state = new StateManager();
         const engine = new PolicyEngine();
-        const passphrase = process.env.OWS_PASSPHRASE;
-        const distributor = new WalletDistributor(passphrase);
 
         const config = await state.loadFamilyConfig();
         if (!config) {
@@ -36,6 +35,19 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
             }],
           };
         }
+
+        // Auto-resolve per-family encryption key (no passphrase prompt)
+        const keyManager = new FamilyKeyManager();
+        const familyId = config.familyId;
+        let passphrase: string | undefined;
+        if (familyId && keyManager.hasFamilyKey(familyId)) {
+          passphrase = keyManager.getFamilyKey(familyId);
+        } else if (process.env.OWS_PASSPHRASE) {
+          // Backward compat: legacy family without per-family key
+          passphrase = process.env.OWS_PASSPHRASE;
+          console.error(`[keys] Using legacy OWS_PASSPHRASE for family. New families use per-family keys.`);
+        }
+        const distributor = new WalletDistributor(passphrase);
 
         // Get pending achievements
         const achievements = await state.loadAchievements();
@@ -99,7 +111,7 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
                   type: "text" as const,
                   text: JSON.stringify({
                     success: false,
-                    error: "Wallet passphrase not configured. Set the OWS_PASSPHRASE environment variable.",
+                    error: "Family wallet not initialized. Run configure-policy first.",
                   }),
                 }],
               };

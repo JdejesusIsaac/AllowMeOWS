@@ -1,7 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { StateManager } from "../engine/state.js";
 import { WalletSetup } from "../wallet/setup.js";
+import { FamilyKeyManager } from "../keys/family-keys.js";
 import { USDC, CHAIN_IDS, DEFAULT_SAVINGS_PERCENT } from "../constants.js";
 import type { FamilyConfig, ChildConfig } from "../schemas.js";
 import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
@@ -70,22 +72,28 @@ export function registerConfigurePolicyTool(server: McpServer): void {
           };
         });
 
+        // Resolve or create familyId for per-family key management
+        const existingConfig = await state.loadFamilyConfig();
+        const familyId = existingConfig?.familyId || randomUUID();
+
         const now = new Date().toISOString();
         const familyConfig: FamilyConfig = {
+          familyId,
           familyName: args.familyName,
           children,
-          createdAt: now,
+          createdAt: existingConfig?.createdAt || now,
           updatedAt: now,
           chainId,
           usdcAddress,
         };
 
-        // Initialize wallets + policies via OWS if passphrase available (first-time setup)
-        const passphrase = process.env.OWS_PASSPHRASE;
-        if (passphrase) {
-          const setup = new WalletSetup();
-          await setup.initializeFamily(familyConfig, passphrase);
-        }
+        // Auto-resolve family encryption key (generates on first setup, retrieves on update)
+        const keyManager = new FamilyKeyManager();
+        const familyKey = keyManager.getOrGenerateFamilyKey(familyId);
+
+        // Initialize wallets + policies via OWS using the per-family key
+        const setup = new WalletSetup();
+        await setup.initializeFamily(familyConfig, familyKey);
 
         // Save family config
         await state.saveFamilyConfig(familyConfig);
@@ -115,10 +123,8 @@ export function registerConfigurePolicyTool(server: McpServer): void {
                 familyName: args.familyName,
                 network: args.useTestnet ? "Base Sepolia (testnet)" : "Base (mainnet)",
                 children: summary,
-                walletsCreated: passphrase ? true : false,
-                message: passphrase
-                  ? `Family "${args.familyName}" configured! Wallets and policies are set up. You're ready to verify achievements.`
-                  : `Family "${args.familyName}" configured! Set OWS_PASSPHRASE env var and run again to create wallets, or use the setup script.`,
+                walletsCreated: true,
+                message: `Family "${args.familyName}" configured! Wallets and policies are set up. You're ready to verify achievements.`,
               }),
             },
           ],

@@ -1,9 +1,14 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveMasterKey } from "../keys/master-key.js";
+import { DATA_DIR } from "../constants.js";
 
-const DATA_DIR = join(process.cwd(), "data");
-const TOKEN_FILE = join(DATA_DIR, "fitbit-tokens.json");
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const projectRoot = join(__dirname, "..", "..");
+const dataDir = join(projectRoot, DATA_DIR);
+const TOKEN_FILE = join(dataDir, "fitbit-tokens.json");
 const ALGORITHM = "aes-256-gcm";
 
 export interface FitbitTokens {
@@ -22,12 +27,12 @@ interface EncryptedEntry {
   childName: string; // stored in plaintext for lookup
 }
 
-function deriveKey(passphrase: string): Buffer {
-  return scryptSync(passphrase, "allowance-fitbit-salt", 32);
+function deriveKey(masterKey: Buffer): Buffer {
+  return scryptSync(masterKey, "allowance-fitbit-salt", 32);
 }
 
-function encrypt(plaintext: string, passphrase: string): { iv: string; tag: string; data: string } {
-  const key = deriveKey(passphrase);
+function encrypt(plaintext: string, masterKey: Buffer): { iv: string; tag: string; data: string } {
+  const key = deriveKey(masterKey);
   const iv = randomBytes(16);
   const cipher = createCipheriv(ALGORITHM, key, iv);
   let encrypted = cipher.update(plaintext, "utf8", "hex");
@@ -36,8 +41,8 @@ function encrypt(plaintext: string, passphrase: string): { iv: string; tag: stri
   return { iv: iv.toString("hex"), tag: tag.toString("hex"), data: encrypted };
 }
 
-function decrypt(encrypted: { iv: string; tag: string; data: string }, passphrase: string): string {
-  const key = deriveKey(passphrase);
+function decrypt(encrypted: { iv: string; tag: string; data: string }, masterKey: Buffer): string {
+  const key = deriveKey(masterKey);
   const decipher = createDecipheriv(ALGORITHM, key, Buffer.from(encrypted.iv, "hex"));
   decipher.setAuthTag(Buffer.from(encrypted.tag, "hex"));
   let decrypted = decipher.update(encrypted.data, "hex", "utf8");
@@ -46,18 +51,16 @@ function decrypt(encrypted: { iv: string; tag: string; data: string }, passphras
 }
 
 export class FitbitTokenStore {
-  private passphrase: string;
+  private masterKey: Buffer;
 
-  constructor(passphrase?: string) {
-    const pp = passphrase || process.env.OWS_PASSPHRASE;
-    if (!pp) throw new Error("OWS_PASSPHRASE required for Fitbit token encryption");
-    this.passphrase = pp;
+  constructor(masterKey?: Buffer) {
+    this.masterKey = masterKey ?? resolveMasterKey();
   }
 
   async saveTokens(tokens: FitbitTokens): Promise<void> {
     const entries = await this.loadAllEntries();
     const plaintext = JSON.stringify(tokens);
-    const encrypted = encrypt(plaintext, this.passphrase);
+    const encrypted = encrypt(plaintext, this.masterKey);
     const entry: EncryptedEntry = { ...encrypted, childName: tokens.childName };
 
     // Replace existing entry for this child, or add new
@@ -68,7 +71,7 @@ export class FitbitTokenStore {
       entries.push(entry);
     }
 
-    await mkdir(DATA_DIR, { recursive: true });
+    await mkdir(dataDir, { recursive: true });
     await writeFile(TOKEN_FILE, JSON.stringify(entries, null, 2));
   }
 
@@ -78,7 +81,7 @@ export class FitbitTokenStore {
     if (!entry) return null;
 
     try {
-      const plaintext = decrypt({ iv: entry.iv, tag: entry.tag, data: entry.data }, this.passphrase);
+      const plaintext = decrypt({ iv: entry.iv, tag: entry.tag, data: entry.data }, this.masterKey);
       return JSON.parse(plaintext) as FitbitTokens;
     } catch {
       return null;

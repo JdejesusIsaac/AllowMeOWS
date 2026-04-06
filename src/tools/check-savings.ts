@@ -46,15 +46,23 @@ export function registerCheckSavingsTool(server: McpServer): void {
         const entries = await state.loadSavingsEntries(targetChild);
         const streak = await state.loadStreak(targetChild);
 
-        const locked = entries.filter((e) => !e.released);
-        const released = entries.filter((e) => e.released);
+        // Filter out converted entries (they've been consumed by a conversion)
+        const active = entries.filter((e) => !e.converted);
+        const locked = active.filter((e) => !e.released);
+        const released = active.filter((e) => e.released);
 
-        const totalLocked = locked.reduce((sum, e) => sum + e.amount, 0);
-        const totalReleased = released.reduce((sum, e) => sum + e.amount, 0);
+        // Split by asset
+        const usdcLocked = locked.filter((e) => (e.asset || "USDC") === "USDC");
+        const paxgLocked = locked.filter((e) => e.asset === "PAXG");
 
-        // Calculate upcoming releases
+        const totalUsdcLocked = usdcLocked.reduce((sum, e) => sum + e.amount, 0);
+        const totalReleased = released
+          .filter((e) => (e.asset || "USDC") === "USDC")
+          .reduce((sum, e) => sum + e.amount, 0);
+
+        // Calculate upcoming USDC releases
         const now = new Date();
-        const upcoming = locked
+        const upcoming = usdcLocked
           .filter((e) => new Date(e.lockUntil) > now)
           .sort((a, b) => new Date(a.lockUntil).getTime() - new Date(b.lockUntil).getTime())
           .slice(0, 5)
@@ -68,8 +76,31 @@ export function registerCheckSavingsTool(server: McpServer): void {
             multiplierAtDeposit: e.multiplierAtDeposit,
           }));
 
-        // Ready to release
-        const readyToRelease = locked.filter((e) => new Date(e.lockUntil) <= now);
+        // Ready to release (USDC only — PAXG requires orchestration)
+        const readyToRelease = usdcLocked.filter((e) => new Date(e.lockUntil) <= now);
+
+        // Build PAXG position
+        const paxgPosition = paxgLocked.length > 0
+          ? {
+              totalAmount: `${paxgLocked.reduce((sum, e) => sum + parseFloat(e.receivedAmount || "0"), 0).toFixed(6)} oz`,
+              valueAtConversion: `$${paxgLocked.reduce((sum, e) => sum + parseFloat(e.receivedAmount || "0") * (e.priceAtConversion || 0), 0).toFixed(2)}`,
+              entries: paxgLocked.length,
+              note: "Gold doesn't earn the savings multiplier — it earns price appreciation.",
+            }
+          : undefined;
+
+        // Build response with multi-asset positions
+        const positions: Record<string, unknown> = {
+          USDC: {
+            totalLocked: `$${(totalUsdcLocked / 10 ** USDC.DECIMALS).toFixed(2)}`,
+            entries: usdcLocked.length,
+            readyToRelease: readyToRelease.length,
+            upcomingReleases: upcoming,
+          },
+        };
+        if (paxgPosition) {
+          positions.PAXG = paxgPosition;
+        }
 
         return {
           content: [{
@@ -77,12 +108,12 @@ export function registerCheckSavingsTool(server: McpServer): void {
             text: JSON.stringify({
               success: true,
               childName: targetChild,
-              totalLockedUsd: (totalLocked / 10 ** USDC.DECIMALS).toFixed(2),
+              positions,
+              totalLockedUsd: (totalUsdcLocked / 10 ** USDC.DECIMALS).toFixed(2),
               totalReleasedUsd: (totalReleased / 10 ** USDC.DECIMALS).toFixed(2),
               lockedEntries: locked.length,
               readyToRelease: readyToRelease.length,
               currentMultiplier: streak?.multiplier ?? 1.0,
-              upcomingReleases: upcoming,
               message:
                 readyToRelease.length > 0
                   ? `${readyToRelease.length} savings entries are ready to release!`

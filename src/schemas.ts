@@ -26,6 +26,7 @@ export const ChildConfigSchema = z.object({
 export type ChildConfig = z.infer<typeof ChildConfigSchema>;
 
 export const FamilyConfigSchema = z.object({
+  familyId: z.string().uuid().optional(), // auto-generated per-family key identifier (Sprint 2.75)
   familyName: z.string().min(1),
   children: z.array(ChildConfigSchema),
   createdAt: z.string().datetime(),
@@ -118,17 +119,27 @@ export type StreakData = z.infer<typeof StreakDataSchema>;
 
 // === Savings ===
 
+export const SavingsAssetEnum = z.enum(["USDC", "PAXG"]);
+export type SavingsAsset = z.infer<typeof SavingsAssetEnum>;
+
 export const SavingsEntrySchema = z.object({
   id: z.string().uuid(),
   childName: z.string(),
-  amount: z.number().int(), // USDC (6-decimal)
+  amount: z.number().int(), // USDC (6-decimal) or PAXG smallest unit
+  asset: SavingsAssetEnum.default("USDC"),
   depositedAt: z.string().datetime(),
   lockUntil: z.string().datetime(),
   released: z.boolean().default(false),
   releasedAt: z.string().datetime().optional(),
   multiplierAtDeposit: z.number().default(1.0),
+  converted: z.boolean().default(false),
+  convertedFrom: z.string().optional(), // original entry ID if this is a conversion result
+  conversionTxHash: z.string().optional(), // MoonPay swap tx hash
+  priceAtConversion: z.number().optional(), // USD price per unit at conversion time
+  receivedAmount: z.string().optional(), // PAXG amount as string (18-decimal, avoid overflow)
 });
 export type SavingsEntry = z.infer<typeof SavingsEntrySchema>;
+export type SavingsEntryInput = z.input<typeof SavingsEntrySchema>;
 
 // === Audit Log ===
 
@@ -150,6 +161,7 @@ export const AuditEntrySchema = z.object({
     "wallet-created",
     "policy-created",
     "external-wallet-registered",
+    "savings-converted",
   ]),
   actor: z.string(), // member ID or "system"
   details: z.record(z.unknown()),

@@ -49,7 +49,7 @@ ROLES:
 - Learner: See own progress/savings, self-report achievements
 
 IMPORTANT RULES:
-- Never share wallet private keys or passphrases
+- Never share wallet private keys
 - Always confirm before distributing real funds (suggest dryRun first)
 - When verifying achievements, include the source (manual, self-report, fitbit, openMAIC)
 - Learners can only see their own child's data

@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { resolveMasterKey } from "./keys/master-key.js";
 import { registerConfigurePolicyTool } from "./tools/configure-policy.js";
 import { registerVerifyAchievementTool } from "./tools/verify-achievement.js";
 import { registerDistributeAllowanceTool } from "./tools/distribute-allowance.js";
@@ -11,6 +12,15 @@ import { registerManageMembersTool } from "./tools/manage-members.js";
 import { registerGetFundingAddressTool } from "./tools/get-funding-address.js";
 import { registerReleaseSavingsTool } from "./tools/release-savings.js";
 import { registerConnectFitbitTool } from "./tools/connect-fitbit.js";
+import { registerConvertSavingsTool } from "./tools/convert-savings.js";
+// Resolve master encryption key at startup (auto-generates if needed)
+try {
+  resolveMasterKey();
+} catch (err) {
+  console.error("[AllowanceAgent] FATAL: Could not resolve master key:", err);
+  process.exit(1);
+}
+
 const server = new McpServer({
   name: "allowance-agent",
   version: "0.1.0",
@@ -28,6 +38,7 @@ registerManageMembersTool(server);
 registerGetFundingAddressTool(server);
 registerReleaseSavingsTool(server);
 registerConnectFitbitTool(server);
+registerConvertSavingsTool(server);
 
 // Connect via stdio transport
 const transport = new StdioServerTransport();

@@ -1,7 +1,16 @@
 import { AixyzServer } from "aixyz/server";
 import { useA2A } from "aixyz/server/adapters/a2a";
 import { AixyzMCP } from "aixyz/server/adapters/mcp";
+import { resolveMasterKey } from "../src/keys/master-key.js";
 import * as agent from "./agent";
+
+// Resolve master encryption key at startup (auto-generates if needed)
+try {
+  resolveMasterKey();
+} catch (err) {
+  console.error("[AllowanceAgent] FATAL: Could not resolve master key:", err);
+  process.exit(1);
+}
 
 // Import tools for MCP exposure
 import configurePolicy from "./tools/configure-policy";
