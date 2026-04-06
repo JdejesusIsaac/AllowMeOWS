@@ -1,0 +1,372 @@
+# AllowanceAgent — research.md (Sprint 2)
+
+## Phase 0a: Problem Framing
+
+### Problem Statement
+AllowanceAgent MVP works for a single parent on a single machine (stdio transport). The child — the primary user of the education side — has no role in the system and cannot interact with AllowanceAgent from their own device. Revenue gating (x402) is not implemented because it requires HTTP transport. Five bugs from the Sprint 1 evaluation remain unresolved: hardcoded actor, no category % validation, no savings release, ERC-20 policy gap, and passphrase handling.
+
+### "What Is" Statement
+Sprint 1 shipped 9 MCP tools, 84 passing tests, live USDC transfers on Base Sepolia, four-role RBAC, and human-readable invite codes. But the system is parent-only: Maya is a row in `family-config.json`, not a participant. The stdio transport means only the parent's Claude Desktop can connect. x402 revenue is deferred. The achievement `source` field doesn't exist, so there's no distinction between verified (OpenMAIC) and self-reported achievements.
+
+### Solution Hypothesis
+Sprint 2 adds three capabilities: (1) **Learner role** — the child connects from their own Claude account, sees their own progress, self-reports achievements with source tagging, and completes OpenMAIC lessons that Claude orchestrates between the two MCP servers. (2) **HTTP transport** — AllowanceAgent runs as a Streamable HTTP server so multiple devices (parent + child + family) can connect simultaneously. (3) **x402 micropayment gating** — revenue-generating tool calls are x402-gated over HTTP. Plus five bug fixes from Sprint 1 evaluation.
+
+### Scope Boundary — Sprint 2
+
+**In scope:**
+- Learner role (5th role) with child-scoped data access
+- `source` field on achievements (openMAIC, fitbit, self-report, parent-attested, manual)
+- HTTP transport (Streamable HTTP via Express) alongside existing stdio
+- x402 micropayment gating on paid tools
+- Savings release tool (`release-savings`)
+- Category budget % validation (sum ≤ 100)
+- Fix hardcoded `actor: "manager"` → use caller context
+- Fix OWS policy ERC-20 recipient enforcement
+- Passphrase handling improvement (prompted per session, not stored in tool args)
+- README: OpenMAIC orchestration pattern documentation
+- `childName` field on Member schema for Learner scoping
+
+**Out of scope:**
+- OpenMAIC MCP wrapper (separate package / community contribution)
+- Fitbit/Apple Health API integration (V2.5)
+- GiftFlow sub-agent (V2.5)
+- Milestone NFTs (V2.5)
+- Multi-child leaderboard (V2.5)
+- Trust-level weighting on achievement sources (V2.5)
+- Frontend dashboard (V3)
+
+---
+
+## Phase 0b: Technical Research
+
+### 1. HTTP Transport — Streamable HTTP for MCP
+
+**Relevance:** Multi-device access (parent + child + family members) requires HTTP transport. x402 requires HTTP headers. stdio only supports single-process local connections.
+
+**Key Findings:**
+
+MCP SDK provides `StreamableHTTPServerTransport` for HTTP-based connections. The server can support both stdio (local dev / Claude Desktop) and HTTP (remote / multi-user) simultaneously.
+
+**Server pattern (dual transport):**
+```typescript
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import express from "express";
+
+const server = new McpServer({ name: "allowance-agent", version: "0.2.0" });
+
+// Register all tools on the same server instance...
+
+// Transport A: stdio (local Claude Desktop)
+if (process.env.TRANSPORT === "stdio") {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}
+
+// Transport B: HTTP (remote clients, x402 compatible)
+if (process.env.TRANSPORT === "http") {
+  const app = express();
+  app.post("/mcp", async (req, res) => {
+    const transport = new StreamableHTTPServerTransport("/mcp", res);
+    await server.connect(transport);
+    await transport.handleRequest(req, res);
+  });
+  app.listen(3001, () => console.error("[AllowanceAgent] HTTP on :3001"));
+}
+```
+
+**Actionable Decision:** Support both transports via `TRANSPORT` env var. Default to stdio for backward compat with existing Claude Desktop config. HTTP mode for multi-user + x402. Set `ALLOWANCE_AGENT_URL` env var in HTTP mode so `invite-member` can include the server URL in join instructions.
+
+### 1b. Invite Delivery + Child Connection
+
+**Relevance:** The invite code only works if the child receives it AND connects their Claude to the AllowanceAgent server. These are two separate problems.
+
+**Problem 1 — Code delivery:** `invite-member` returns the code in Claude's response. The parent must deliver it to the child. Three realistic paths:
+
+- **Path A (current):** Parent tells child directly — in person, phone call, or text
+- **Path B (recommended):** Claude sends via `message_compose` — parent says "text it to her," Claude drafts an SMS with the server URL + invite code
+- **Path C (future):** Email notification — requires SendGrid/Resend infrastructure, not worth Sprint 2 complexity
+
+**Decision:** Path B is the Sprint 2 default. `invite-member` response includes a `joinMessage` field with pre-formatted text Claude can send:
+
+```json
+{
+  "inviteCode": "MAYA-LEARN-8K3W",
+  "serverUrl": "https://allowance.familygarcia.com/mcp",
+  "joinMessage": "Your mom set up your allowance! Connect your Claude to: https://allowance.familygarcia.com/mcp — then tell Claude: MAYA-LEARN-8K3W",
+  "message": "Invite code for Maya: MAYA-LEARN-8K3W. Want me to text this to her?"
+}
+```
+
+The `serverUrl` comes from `ALLOWANCE_AGENT_URL` env var. If unset (stdio mode), invite-member omits `serverUrl` and `joinMessage` — returns code only (Path A).
+
+**Problem 2 — Child connects Claude to server:** Three documented paths based on child's age and technical ability:
+
+1. **Parent sets up device (ages 6-10):** Parent physically edits the child's Claude Desktop config or connects via Claude.ai MCP settings. Takes 2 minutes.
+2. **Child self-configures (ages 11+):** Child adds MCP server URL to their Claude Desktop config JSON following texted instructions.
+3. **Parent texts join instructions (any age):** Parent says "text it to Maya." Claude sends `joinMessage` via `message_compose`. The message contains both the server URL and the invite code — everything the child (or parent helping the child) needs.
+
+**Actionable Decision:** Document all three paths in README with example Claude Desktop config blocks for both parent and child.
+
+### 2. x402 Micropayment Gating over HTTP
+
+**Relevance:** Revenue model. Each paid tool call costs USDC via x402 protocol.
+
+**Key Findings:**
+
+The `x402-mcp` package provides `createPaidMcpHandler` which wraps MCP tool registration with `paidTool()`. However, it requires Streamable HTTP transport — NOT compatible with stdio.
+
+**Integration approach:**
+```typescript
+import { createPaidMcpHandler } from "x402-mcp";
+
+// x402-gated HTTP mode
+const handler = createPaidMcpHandler(
+  (server) => {
+    server.paidTool("verify-achievement", { price: "$0.02" }, schema, handler);
+    server.paidTool("distribute-allowance", { price: "$0.10" }, schema, handler);
+    server.paidTool("check-progress", { price: "$0.01" }, schema, handler);
+    server.paidTool("check-savings", { price: "$0.01" }, schema, handler);
+    // Free tools use regular server.tool()
+    server.tool("configure-policy", schema, handler);
+    server.tool("invite-member", schema, handler);
+    server.tool("accept-invite", schema, handler);
+    server.tool("manage-members", schema, handler);
+    server.tool("get-funding-address", schema, handler);
+    server.tool("release-savings", schema, handler); // new tool, free
+  },
+  { recipient: process.env.X402_RECIPIENT_WALLET }
+);
+```
+
+**Pricing table:**
+| Tool | Price | Rationale |
+|------|-------|-----------|
+| `configure-policy` | Free | Onboarding |
+| `verify-achievement` | $0.02 | Value event |
+| `distribute-allowance` | $0.10 | Core revenue |
+| `check-progress` | $0.01 | Low-friction read |
+| `check-savings` | $0.01 | Low-friction read |
+| `invite-member` | Free | Growth |
+| `accept-invite` | Free | Growth |
+| `manage-members` | Free | Admin |
+| `get-funding-address` | Free | Admin |
+| `release-savings` | Free | Value delivery (child gets paid) |
+
+**Fallback:** stdio mode skips x402 entirely (local = free). x402 only applies in HTTP mode.
+
+### 2b. Claude Custom Connectors — Mobile Onboarding Path
+
+**Relevance:** The primary onboarding path for non-technical parents. Claude's connector system allows free users to add one remote MCP server that syncs across mobile, desktop, and web.
+
+**Key Findings:**
+
+Claude custom connectors are available on free, Pro, Max, Team, and Enterprise plans. Free users get one custom connector. Remote MCP servers connect through Anthropic's cloud infrastructure — the server must be publicly accessible over HTTPS.
+
+**Mobile support:** Claude iOS and Android support remote MCP servers added via claude.ai. Users cannot add new servers directly from mobile — they must add via the claude.ai website, then it syncs to mobile automatically.
+
+**Setup flow for a parent (Pro/Free):**
+1. Navigate to `claude.ai/settings/connectors`
+2. Click "Add custom connector"
+3. Paste AllowanceAgent's MCP server URL
+4. Click "Add"
+5. In Claude app: tap "+" → Connectors → enable AllowanceAgent
+
+**Team/Enterprise flow (B2B — schools):**
+Owner adds AllowanceAgent connector once in Organization Settings → Connectors. Every member sees it in their personal Connectors list and individually connects with one tap. This is the Success Academy onboarding path — IT admin adds once, every parent self-serves.
+
+**Interactive connectors (V2.5+ opportunity):** Connectors can display inline cards and fullscreen interactive interfaces in conversations. AllowanceAgent could render progress dashboards, savings charts, and streak visualizations directly in the chat — not just text summaries.
+
+**Actionable Decision:** Build an onboarding landing page (`allowanceagent.app/join`) that walks parents through the connector setup with copy-to-clipboard URL and annotated screenshots. The page is the bridge between "I heard about AllowanceAgent" and "I'm talking to Claude about my kid's allowance."
+
+### 2c. Fitbit OAuth — Server-Side Consumer Access
+
+**Relevance:** Health achievement verification requires fitness data. Fitbit's API uses OAuth 2.0. Asking parents to register developer apps or manage API keys is a non-starter.
+
+**Key Findings:**
+
+**The standard Fitbit developer flow** (register app, get client ID, implement OAuth, manage tokens) requires 7 steps of developer-grade work. Parents won't do any of it.
+
+**The consumer-grade solution:** AllowMe LLC registers ONE Fitbit developer application. Every family uses this single app registration. The parent's experience is: tap a link → see Fitbit's consent screen → tap Allow → done.
+
+**OAuth flow:**
+```
+Parent taps: allowanceagent.app/fitbit/connect?child=maya
+  → Redirect to: api.fitbit.com/oauth2/authorize
+      ?client_id=ALLOWME_FITBIT_APP_ID
+      &redirect_uri=https://allowanceagent.app/fitbit/callback
+      &scope=activity
+      &response_type=code
+  → Parent authorizes on Fitbit consent screen
+  → Fitbit redirects to: allowanceagent.app/fitbit/callback?code=AUTH_CODE
+  → Server exchanges code for access_token + refresh_token
+  → Tokens encrypted (AES-256-GCM, key from OWS_PASSPHRASE) and stored per child
+  → Parent redirected to success page
+```
+
+**Token lifecycle:**
+- Access tokens expire after 8 hours
+- Refresh tokens are long-lived
+- AllowanceAgent auto-refreshes on expiry — parent never re-authorizes unless they revoke
+- Tokens stored in `data/fitbit-tokens.json`, encrypted at rest
+
+**API query:** `GET /1/user/-/activities/date/{date}.json` returns steps, active minutes, distance, calories. AllowanceAgent maps step count to a health achievement score (e.g., 10,000 steps = score 100, linear scale).
+
+**Env vars:** `FITBIT_CLIENT_ID`, `FITBIT_CLIENT_SECRET` — set once on server, never exposed to users.
+
+**Actionable Decision:** Build Fitbit OAuth into AllowanceAgent's HTTP server (same Express app). One MCP tool (`connect-fitbit`) returns the OAuth URL. Two HTTP endpoints handle the redirect flow. Token storage reuses the existing `OWS_PASSPHRASE` encryption pattern. Fitbit is an enhancement, not a dependency — AllowanceAgent works fully without it via manual self-report.
+
+### 3. Learner Role — Child as System Participant
+
+**Relevance:** The child needs their own role to interact with AllowanceAgent from their own Claude account.
+
+**Role specification:**
+
+| Aspect | Learner |
+|--------|---------|
+| Who | The child earning the allowance |
+| Wallet scope | None (Learner doesn't sign transactions) |
+| Tool access | check-progress (own data), check-savings (own data), verify-achievement (self-report), accept-invite |
+| Restrictions | Cannot see other children's data, cannot distribute, cannot configure, cannot invite, cannot manage |
+| Source tagging | Achievements from Learner come in as `source: "self-report"` unless from a verified source like OpenMAIC |
+
+**Child-scoped data access:** When a Learner calls `check-progress` or `check-savings`, the middleware checks `caller.childName` and filters results to that child only. Manager sees all children. Co-parent sees all children. Learner sees only themselves.
+
+**Member schema addition:**
+```typescript
+childName: z.string().optional() // populated when role is "learner" — scopes data access
+```
+
+When `invite-member` is called with role "learner", the `childName` from the invite is carried through to the Member record on acceptance. This links the member to a specific child.
+
+**Learner self-reporting achievements:** The Learner CAN call `verify-achievement`, but the system automatically sets `source: "self-report"` regardless of what the caller provides (defense against the child claiming `source: "openMAIC"` without proof). Only Manager and Co-parent can set `source: "parent-attested"`. Only Claude's orchestration layer sets `source: "openMAIC"` after actually calling OpenMAIC APIs.
+
+**Wait — source trust enforcement:**
+The source field trust enforcement should NOT happen in AllowanceAgent's tool handler. Here's why: when Maya's Claude calls OpenMAIC (HTTP Option B), gets a verified quiz score, and then calls `verify-achievement` with `source: "openMAIC"`, AllowanceAgent has no way to verify that Claude actually called OpenMAIC. It's trusting Claude's orchestration.
+
+This is acceptable for MVP because:
+1. Claude is a trusted intermediary — it won't fabricate OpenMAIC results
+2. The `metadata.classroomId` is logged for audit — a parent can spot-check
+3. True cryptographic verification (OpenMAIC signing quiz results) is a V3 concern
+
+For Sprint 2, the pragmatic approach: **Allow the source field from any caller, but log it transparently. The mother's review step during distribution is the trust gate.**
+
+### 4. Achievement Source Field
+
+**Relevance:** Distinguishes verified from self-reported achievements in the audit trail.
+
+**Schema changes:**
+
+```typescript
+// AchievementInputSchema — add source
+source: z.enum(["manual", "openMAIC", "fitbit", "apple-health", "self-report", "parent-attested"])
+  .default("manual")
+  .optional()
+
+// AchievementRecordSchema — add source
+source: z.enum(["manual", "openMAIC", "fitbit", "apple-health", "self-report", "parent-attested"])
+  .default("manual")
+```
+
+**Check-progress output change:** When returning achievement summaries, include source distribution so the parent sees at a glance:
+```json
+{
+  "education": {
+    "earned": "$4.40",
+    "source": "openMAIC (verified)",
+    "details": "Introduction to Fractions, 88%"
+  },
+  "health": {
+    "earned": "$4.10",
+    "source": "self-report",
+    "details": "8,200 steps"
+  }
+}
+```
+
+### 5. Savings Release Tool
+
+**Relevance:** Bug #3 from Sprint 1 evaluation. Savings entries currently lock forever.
+
+**Design:**
+- New MCP tool: `release-savings`
+- Checks all savings entries where `lockUntil < now` and `released === false`
+- Applies streak multiplier at deposit time (`multiplierAtDeposit`)
+- Transfers multiplied amount from savings-vault to child wallet via OWS/viem
+- Marks entries as released
+- Manager only (child can see their savings, but release is a financial operation)
+
+### 6. Bug Fixes
+
+**Bug 1 — Hardcoded actor:**
+Pass `callerCtx.memberId` from `withAccessControl` through to audit entries in `verify-achievement.ts` and `distribute-allowance.ts`. The RBAC middleware already resolves this correctly — it's just not being used.
+
+**Bug 2 — Category budget % validation:**
+Add validation in `configure-policy.ts`:
+```typescript
+const totalPct = child.educationPct + child.healthPct + child.personalPct;
+if (totalPct > 100) {
+  return { error: `Category percentages sum to ${totalPct}% — must be ≤ 100%` };
+}
+```
+
+**Bug 3 — No savings release:** Covered by new `release-savings` tool above.
+
+**Bug 4 — OWS policy ERC-20 recipient check:**
+Update `allowance-policy.py` manager branch to decode ERC-20 `transfer(to, amount)` calldata and check the decoded `to` against `authorized_wallets`. The decode logic already exists in the policy (it extracts the amount) — just extend it to also check the recipient.
+
+**Bug 5 — Passphrase handling:**
+Move passphrase from per-tool-call argument to a session-level environment variable (`OWS_PASSPHRASE`). The parent sets it once when starting the server. Tools read from env, never from user input. For HTTP mode, passphrase is set in server config, not exposed to remote callers. This is a meaningful improvement without requiring OS keychain integration.
+
+### 7. MoonPay as Peer MCP Server (Zero Code — Documentation Only)
+
+**Relevance:** MoonPay provides fiat on-ramp, token swaps, and portfolio tracking as an MCP server. AllowanceAgent + MoonPay running side by side in Claude Desktop gives the parent a complete financial toolkit without any code integration.
+
+**Key Findings:**
+
+MoonPay CLI (`@moonpay/cli`) runs as an MCP server via `mp mcp`. It exposes wallet management, token swaps (same-chain + cross-chain via Swaps.xyz aggregator), fiat buy/sell, token discovery, price alerts, trading automation, and x402 payments. Multi-chain: Solana, Ethereum, Base, Polygon, Arbitrum, Optimism, BNB, Avalanche, TRON, Bitcoin.
+
+**Setup:** Three commands (`npm i -g @moonpay/cli`, `mp login`, `mp verify`), then add to Claude Desktop config alongside AllowanceAgent.
+
+**Three orchestration workflows for Sprint 2 README:**
+1. **Fiat on-ramp:** "Buy $50 USDC for Maya's treasury" → Claude calls MoonPay buy-crypto → gets AllowanceAgent get-funding-address → directs funds to treasury
+2. **Savings preview:** "What would Maya's savings look like in gold?" → Claude calls MoonPay discover-tokens for PAXG price → AllowanceAgent check-savings → Claude compares
+3. **Combined portfolio:** "Show me everything" → MoonPay check-wallet + AllowanceAgent check-progress → Claude synthesizes
+
+**PAXG (gold) note:** PAXG is an ERC-20 on Ethereum mainnet (~$4,660/oz, $2.4B market cap, Q1 2026). Not native to Base. USDC→PAXG requires cross-chain swap via MoonPay Swaps.xyz. OWS derives Ethereum addresses from the same mnemonic, so the treasury already has an Ethereum address. Sprint 2.5 adds `convert-savings` to record swap results in the savings ledger.
+
+**Actionable Decision:** Zero code changes in Sprint 2. Documentation only. `convert-savings` tool deferred to Sprint 2.5 mini-harness.
+
+---
+
+## Phase 0.5: Spike Validation
+
+### Spike Question
+Can the MCP SDK's `StreamableHTTPServerTransport` serve multiple concurrent clients (parent + child) with session isolation, and can `x402-mcp`'s `paidTool()` wrapper coexist with free `tool()` registrations on the same server?
+
+### Spike Rationale
+The entire Sprint depends on HTTP transport working for multi-user and x402 working for revenue. If sessions bleed state between parent and child, or if x402 gating breaks free tools, the sprint is blocked.
+
+### Spike Result
+**GO** — MCP SDK StreamableHTTPServerTransport creates isolated sessions per connection. x402-mcp's `createPaidMcpHandler` supports mixed paid/free tools. No blocker.
+
+---
+
+## Open Questions
+
+| Question | Status | Resolution |
+|----------|--------|------------|
+| StreamableHTTP supports concurrent sessions? | ✅ Resolved | Spike confirmed — session isolation per connection |
+| x402-mcp mixed paid/free tools? | ✅ Resolved | `paidTool()` + `tool()` coexist on same server |
+| Source field trust enforcement? | ✅ Resolved | Log transparently, parent review during distribution is the trust gate |
+| Learner self-report source override? | ✅ Resolved | AllowanceAgent logs what caller provides. Claude orchestration is trusted intermediary. |
+| Passphrase in HTTP mode? | ✅ Resolved | Server-side env var (`OWS_PASSPHRASE`). Never exposed to remote callers. |
+| How does Maya's Claude connect to HTTP server? | ✅ Resolved | Claude custom connectors: parent adds MCP URL at claude.ai/settings/connectors → syncs to mobile/desktop automatically. Free plan gets 1 connector. |
+| Can parent add MCP server from Claude mobile app directly? | ✅ Resolved | No. Must add via claude.ai website. Then syncs to mobile. Landing page guides through this. |
+| Can schools bulk-onboard families? | ✅ Resolved | Team/Enterprise plans: admin adds connector once in Organization Settings. All members see it and individually connect with one tap. |
+| How does Maya receive the invite code? | ✅ Resolved | `invite-member` returns joinMessage with serverUrl + code. Claude delivers via `message_compose`. |
+| What if ALLOWANCE_AGENT_URL is not set? | ✅ Resolved | Invite response omits serverUrl and joinMessage. Code-only invite still works. |
+| How do parents connect Fitbit without developer credentials? | ✅ Resolved | AllowMe LLC registers one Fitbit app. Parent taps one link → Fitbit consent screen → authorize → done. Server handles OAuth code exchange and token storage. |
+| Where are Fitbit tokens stored? | ✅ Resolved | `data/fitbit-tokens.json`, AES-256-GCM encrypted with key derived from `OWS_PASSPHRASE`. Auto-refresh on expiry. |
+| Can MoonPay swap USDC(Base) → PAXG(Ethereum) cross-chain? | 🔜 Spike needed (Sprint 2.5) | MoonPay Swaps.xyz supports cross-chain routes. Needs validation before convert-savings ships. |

@@ -1,0 +1,59 @@
+# AllowanceAgent — progress.md (Sprint 2)
+
+## Sprint 2: Learner Role + HTTP Transport + x402 + Bug Fixes
+
+### Approach Taken
+Three parallel workstreams: (A) Learner role with child-scoped data access and source-tagged achievements, (B) dual transport (stdio + HTTP) with x402 micropayment gating on paid tools, (C) five bug fixes from Sprint 1 evaluation. OpenMAIC integration is Claude-orchestrated — AllowanceAgent receives achievement data with source provenance, doesn't call OpenMAIC directly. New `release-savings` tool closes the locked-forever gap.
+
+### Workstream A: Learner Role + Source Tagging
+- [ ] A1: Add Learner role to constants (ROLES, ROLE_HINTS, ROLE_TOOL_ACCESS)
+- [ ] A2: Add `childName` to Member schema (Learner scoping)
+- [ ] A3: Add `source` field to achievement schemas (AchievementInput + AchievementRecord)
+- [ ] A4: Update `invite-member` — require childName for learner, add serverUrl + joinMessage to response
+- [ ] A5: Update `accept-invite` — copy childName from invite to member
+- [ ] A6: Child-scoped middleware (`getChildScope` in access-control.ts)
+- [ ] A7: Update `check-progress` — child-scoped filtering + source in response
+- [ ] A8: Update `check-savings` — child-scoped filtering
+- [ ] A9: Update `verify-achievement` — accept source, fix hardcoded actor (Bug #1 partial)
+- [ ] A10: Update `check-progress` response — source provenance per achievement
+- [ ] A11: Learner policy bundle in setup.ts
+
+### Workstream B: HTTP Transport + x402
+- [ ] B1: Add Express dependency
+- [ ] B2: Dual transport entry point (TRANSPORT env var: stdio | http)
+- [ ] B3: HTTP caller identification (X-Member-Id header → member lookup → role)
+- [ ] B4: x402 gating layer (paid tools in HTTP mode)
+- [ ] B5: x402 fallback for stdio (skip gating, all free)
+- [ ] B6: Health check endpoint (GET /health)
+- [ ] B7: CORS configuration
+
+### Workstream C: Bug Fixes + Quality
+- [ ] C1: Bug #1 — Fix hardcoded actor in distribute-allowance.ts
+- [ ] C2: Bug #2 — Category budget % validation (sum ≤ 100)
+- [ ] C3: Bug #3 — New `release-savings` tool (find expired, apply multiplier, transfer, mark released)
+- [ ] C4: Bug #4 — OWS policy ERC-20 recipient enforcement in allowance-policy.py
+- [ ] C5: Bug #5 — Passphrase from OWS_PASSPHRASE env var, remove from tool schemas
+- [ ] C6: README update (Learner role, HTTP setup, x402 config, Claude connector guide, OpenMAIC pattern, three child connection paths, MoonPay peer MCP integration guide, env var reference)
+- [ ] C7: Onboarding landing page — `allowanceagent.app/join` (3-step mobile-first, Claude connector screenshots, copy-to-clipboard URL, invited member variant)
+- [ ] C8: Fitbit OAuth flow — register AllowMe LLC Fitbit app, `/fitbit/connect` + `/fitbit/callback` endpoints, `connect-fitbit` MCP tool, encrypted token storage, auto-refresh, verify-achievement Fitbit API query
+
+### Workstream D: Tests
+- [ ] D1: Learner role RBAC unit tests (8 tests)
+- [ ] D2: Child-scoped data access tests (6 tests)
+- [ ] D3: Source field tests (5 tests)
+- [ ] D4: Savings release tests (5 tests)
+- [ ] D5: Category % validation tests (3 tests)
+- [ ] D6: Bug fix verification tests (3 tests)
+- [ ] D7: E2E — Learner flow (8 sequential steps)
+- [ ] D8: E2E — Cross-child isolation (5 tests)
+- [ ] D9: Fitbit OAuth flow tests (8 tests)
+
+### Current Blocker
+None — Sprint not yet started.
+
+### Failed Approaches
+_Sprint 1 failed approaches (carried forward for reference):_
+- OWS `signAndSend` for distributions → nonce mismanagement → replaced with viem walletClient
+- OWS `signTransaction` + manual broadcast → signature parsing issues → replaced with viem
+- `process.cwd()` for dataDir → fails in Claude Desktop → fixed with `import.meta.url`
+- MCP SDK global RBAC intercept → SDK doesn't support it → per-tool guard pattern
