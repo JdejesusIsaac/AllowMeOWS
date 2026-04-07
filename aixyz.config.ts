@@ -9,11 +9,11 @@ const config: AixyzConfig = {
     "with child-scoped data access and achievement source tracking.",
   version: "0.2.0",
   url: process.env.ALLOWANCE_AGENT_URL || undefined,
-  // x402 disabled for V1 onboarding
-  // x402: {
-  //   payTo: process.env.X402_RECIPIENT_WALLET || "0x0000000000000000000000000000000000000000",
-  //   network: process.env.X402_NETWORK ?? "eip155:8453",
-  // },
+  x402: {
+    // Disabled for V1 onboarding - empty config disables x402 middleware
+    payTo: "",
+    network: "",
+  },
   skills: [
     {
       id: "configure-allowance",
