@@ -3,34 +3,33 @@
   "version": "0.3.0",
   "description": "OWS-native MCP server for family allowance management — achievement-gated USDC distribution with 5-role RBAC",
   "type": "module",
-  "main": "src/index.ts",
-  "scripts": {
-    "start": "tsx src/index.ts",
-    "start:http": "bun app/server.ts",
-    "build": "tsc --noEmit",
-    "dev": "tsx watch src/index.ts",
-    "setup": "tsx src/wallet/setup.ts",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.66",
-    "@modelcontextprotocol/sdk": "^1.12.0",
-    "@open-wallet-standard/core": "^1.2.0",
-    "ai": "^6.0.146",
-    "aixyz": "^0.19.0",
-    "viem": "^2.23.0",
-    "zod": "^3.24.0"
-  },
-  "devDependencies": {
-    "@types/node": "^22.0.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
-  },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "start:http": "tsx app/server.ts",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "generate-key": "tsx src/keys/generate-master-key.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@open-wallet-standard/core": "^0.1.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "viem": "^2.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
   },
   "author": "AllowMe LLC (Juan Isaac)",
   "license": "MIT",

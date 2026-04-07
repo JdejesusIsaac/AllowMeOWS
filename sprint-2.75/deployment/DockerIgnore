@@ -1,0 +1,16 @@
+node_modules
+data
+.env
+.env.*
+.git
+.gitignore
+*.md
+!README.md
+tests
+.ows
+.master-key
+railway.toml
+.vscode
+.windsurf
+coverage
+dist

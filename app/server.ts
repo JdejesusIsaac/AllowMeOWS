@@ -3,6 +3,9 @@ import { useA2A } from "aixyz/server/adapters/a2a";
 import { AixyzMCP } from "aixyz/server/adapters/mcp";
 import { resolveMasterKey } from "../src/keys/master-key.js";
 import * as agent from "./agent";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
 
 // Resolve master encryption key at startup (auto-generates if needed)
 try {
@@ -185,13 +188,32 @@ server.express.get("/fitbit/callback", async (req: any, res: any) => {
 
 // ===== Start Listening =====
 const PORT = parseInt(process.env.PORT || "3000", 10);
-server.unstable_withIndexPage("/");
-server.express.listen(PORT, () => {
+// Serve landing page at GET /
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const publicDir = join(__dirname, "..", "public");
+const landingHtml = readFileSync(join(publicDir, "index.html"), "utf-8");
+
+server.express.get("/", (_req: any, res: any) => {
+  res.type("html").send(landingHtml);
+});
+
+const httpServer = server.express.listen(PORT, () => {
   console.log(`[AllowanceAgent] Server listening on http://localhost:${PORT}`);
   console.log(`  A2A:    http://localhost:${PORT}/agent`);
   console.log(`  MCP:    http://localhost:${PORT}/mcp`);
   console.log(`  Card:   http://localhost:${PORT}/.well-known/agent-card.json`);
   console.log(`  Health: http://localhost:${PORT}/health`);
+});
+
+// Graceful shutdown for Railway zero-downtime deploys
+process.on("SIGTERM", () => {
+  console.error("[AllowanceAgent] SIGTERM received, shutting down gracefully");
+  httpServer.close(() => {
+    console.error("[AllowanceAgent] Server closed");
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 10000);
 });
 
 export default server;

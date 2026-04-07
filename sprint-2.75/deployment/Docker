@@ -1,0 +1,54 @@
+# AllowanceAgent — Production Dockerfile
+# Pinned to Node 20 Alpine for minimal image size and deterministic builds
+
+# ---- Build stage ----
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies first (layer caching — deps change less often than code)
+COPY package.json package-lock.json ./
+RUN npm ci --production=false
+
+# Copy source
+COPY tsconfig.json ./
+COPY src/ ./src/
+COPY app/ ./app/
+COPY policies/ ./policies/
+
+# Typecheck (fail fast if types are broken)
+RUN npx tsc --noEmit
+
+# ---- Production stage ----
+FROM node:20-alpine AS production
+
+# Security: run as non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+WORKDIR /app
+
+# Copy dependencies from builder
+COPY --from=builder /app/node_modules ./node_modules
+
+# Copy source (tsx runs TypeScript directly — no compile step needed)
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/tsconfig.json ./
+COPY --from=builder /app/src/ ./src/
+COPY --from=builder /app/app/ ./app/
+COPY --from=builder /app/policies/ ./policies/
+
+# Create data directory with correct permissions
+RUN mkdir -p /app/data && chown -R appuser:appgroup /app/data
+
+# Switch to non-root user
+USER appuser
+
+# Railway injects PORT env var
+EXPOSE ${PORT:-3001}
+
+# Health check — Railway also checks /health but this adds container-level check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-3001}/health || exit 1
+
+# Start HTTP server
+CMD ["npx", "tsx", "app/server.ts"]

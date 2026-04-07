@@ -225,7 +225,7 @@ Best for older children (13+). Parent texts the server URL. Child adds it to Cla
   "mcpServers": {
     "allowance-agent": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "https://allowanceagent.app/mcp"]
+      "args": ["-y", "mcp-remote", "https://allowme.dev/mcp"]
     }
   }
 }
@@ -236,7 +236,7 @@ Then tells Claude: *"I have a code: MAYA-LEARN-8K3W"*
 **Path C: Parent texts join instructions via Claude**
 Best for any age. Parent says *"Text Maya her invite"* and Claude sends via `message_compose`:
 
-> Your Garcia family set up your allowance! Connect your Claude to: https://allowanceagent.app — then tell Claude: MAYA-LEARN-8K3W
+> Your Garcia family set up your allowance! Connect your Claude to: https://allowme.dev — then tell Claude: MAYA-LEARN-8K3W
 
 **Parent Claude Desktop config (stdio — local):**
 ```json
@@ -256,7 +256,7 @@ Best for any age. Parent says *"Text Maya her invite"* and Claude sends via `mes
   "mcpServers": {
     "allowance-agent": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "https://allowanceagent.app/mcp"]
+      "args": ["-y", "mcp-remote", "https://allowme.dev/mcp"]
     }
   }
 }
@@ -431,7 +431,7 @@ Endpoints:
 |----------|:--------:|-------------|
 | `MASTER_KEY` | Optional | 256-bit hex key for encrypting per-family wallet keys. Auto-generated to `data/.master-key` if not set. Set this in Railway/Docker where filesystem is ephemeral. |
 | `OWS_PASSPHRASE` | Deprecated | Legacy passphrase for existing families set up before Sprint 2.75. Still works as fallback. New families use per-family keys from MASTER_KEY. |
-| `ALLOWANCE_AGENT_URL` | For HTTP | Public URL of the server (e.g. `https://allowanceagent.app`) |
+| `ALLOWANCE_AGENT_URL` | For HTTP | Public URL of the server (e.g. `https://allowme.dev`) |
 | `FITBIT_CLIENT_ID` | For Fitbit | AllowMe LLC Fitbit developer app client ID |
 | `FITBIT_CLIENT_SECRET` | For Fitbit | AllowMe LLC Fitbit developer app secret |
 | `X402_RECIPIENT_WALLET` | For x402 | Wallet address that receives x402 micropayments |
