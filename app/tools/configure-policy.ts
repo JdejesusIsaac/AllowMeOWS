@@ -18,9 +18,10 @@ const configurePolicy = tool({
         name: z.string().describe("Child's name"),
         walletAddress: z.string().optional().describe("External EVM wallet address"),
         weeklyBudgetUsd: z.number().positive().describe("Weekly allowance in USD"),
-        educationPct: z.number().min(0).max(100).default(34),
-        healthPct: z.number().min(0).max(100).default(33),
-        personalPct: z.number().min(0).max(100).default(33),
+        categories: z.array(z.object({
+          name: z.string().min(1).max(50).describe("Category name (e.g. 'reading', 'AI subscriptions')"),
+          pct: z.number().min(0).max(100).describe("Percentage of weekly budget"),
+        })).min(1).max(10).describe("Budget categories with percentages (must sum to ≤ 100%)"),
         savingsPercent: z.number().min(0).max(100).default(DEFAULT_SAVINGS_PERCENT),
       })
     ).describe("Children to configure"),
@@ -38,7 +39,7 @@ const configurePolicy = tool({
 
       // Validate category percentages sum ≤ 100
       for (const child of args.children) {
-        const totalPct = child.educationPct + child.healthPct + child.personalPct;
+        const totalPct = child.categories.reduce((s, c) => s + c.pct, 0);
         if (totalPct > 100) {
           return JSON.stringify({
             success: false,
@@ -54,11 +55,11 @@ const configurePolicy = tool({
           walletName: `child-${child.name.toLowerCase()}`,
           walletAddress: child.walletAddress,
           weeklyBudget,
-          categoryBudgets: {
-            education: Math.round(weeklyBudget * (child.educationPct / 100)),
-            health: Math.round(weeklyBudget * (child.healthPct / 100)),
-            personal: Math.round(weeklyBudget * (child.personalPct / 100)),
-          },
+          categories: child.categories.map((cat) => ({
+            name: cat.name,
+            pct: cat.pct,
+            budget: Math.round(weeklyBudget * (cat.pct / 100)),
+          })),
           savingsPercent: child.savingsPercent,
           savingsLockDays: 90,
         };

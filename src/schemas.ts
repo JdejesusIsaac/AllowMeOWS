@@ -5,8 +5,16 @@ import { z } from "zod";
 export const RoleEnum = z.enum(["manager", "co-parent", "family", "advisor", "learner"]);
 export type RoleType = z.infer<typeof RoleEnum>;
 
+// Deprecated — kept for backward-compat migration only
 export const CategoryEnum = z.enum(["education", "health", "personal"]);
 export type CategoryType = z.infer<typeof CategoryEnum>;
+
+export const CategoryEntrySchema = z.object({
+  name: z.string().min(1).max(50),
+  pct: z.number().min(0).max(100),
+  budget: z.number().int().nonnegative(), // USDC in 6-decimal units
+});
+export type CategoryEntry = z.infer<typeof CategoryEntrySchema>;
 
 // === Family Config ===
 
@@ -15,11 +23,13 @@ export const ChildConfigSchema = z.object({
   walletName: z.string(),
   walletAddress: z.string().optional(), // External EVM address — skips OWS wallet creation if provided
   weeklyBudget: z.number().int().positive(), // USDC in 6-decimal units
+  categories: z.array(CategoryEntrySchema).min(1).max(10).optional(),
+  // Deprecated — legacy format, auto-migrated to categories[] on load
   categoryBudgets: z.object({
     education: z.number().int().nonnegative(),
     health: z.number().int().nonnegative(),
     personal: z.number().int().nonnegative(),
-  }),
+  }).optional(),
   savingsPercent: z.number().min(0).max(100).default(20),
   savingsLockDays: z.number().int().nonnegative().default(90),
 });
@@ -50,7 +60,7 @@ export type AchievementSource = z.infer<typeof AchievementSourceEnum>;
 
 export const AchievementInputSchema = z.object({
   childName: z.string().min(1),
-  category: CategoryEnum,
+  category: z.string().min(1),
   description: z.string().min(1),
   score: z.number().min(0).max(100),
   source: AchievementSourceEnum.default("manual").optional(),
@@ -61,7 +71,7 @@ export type AchievementInput = z.infer<typeof AchievementInputSchema>;
 export const AchievementRecordSchema = z.object({
   id: z.string().uuid(),
   childName: z.string(),
-  category: CategoryEnum,
+  category: z.string().min(1),
   description: z.string(),
   score: z.number(),
   amount: z.number().int(), // USDC earned (6-decimal units)

@@ -11,7 +11,7 @@ import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFie
 export function registerConfigurePolicyTool(server: McpServer): void {
   server.tool(
     "configure-policy",
-    "Set up or update allowance rules for your family. Example: 'Maya gets $15/week, $5 per category, 20% savings.'",
+    "Set up or update allowance rules for your family. Example: 'Maya gets $15/week: 40% reading, 35% movement, 25% creativity, 20% savings.'",
     {
       familyName: z.string().describe("Your family name"),
       children: z.array(
@@ -19,9 +19,10 @@ export function registerConfigurePolicyTool(server: McpServer): void {
           name: z.string().describe("Child's name"),
           walletAddress: z.string().optional().describe("External EVM wallet address (e.g. MetaMask). If omitted, OWS creates a wallet for this child."),
           weeklyBudgetUsd: z.number().positive().describe("Weekly allowance in USD (e.g. 15 for $15)"),
-          educationPct: z.number().min(0).max(100).default(34).describe("% of budget for education"),
-          healthPct: z.number().min(0).max(100).default(33).describe("% of budget for health"),
-          personalPct: z.number().min(0).max(100).default(33).describe("% of budget for personal development"),
+          categories: z.array(z.object({
+            name: z.string().min(1).max(50).describe("Category name (e.g. 'reading', 'movement', 'AI subscriptions')"),
+            pct: z.number().min(0).max(100).describe("Percentage of weekly budget for this category"),
+          })).min(1).max(10).describe("Budget categories with percentages (must sum to ≤ 100%)"),
           savingsPercent: z.number().min(0).max(100).default(DEFAULT_SAVINGS_PERCENT).describe("% of earned allowance routed to savings"),
         })
       ).describe("Children to configure"),
@@ -38,9 +39,9 @@ export function registerConfigurePolicyTool(server: McpServer): void {
         const chainId = args.useTestnet ? CHAIN_IDS.BASE_SEPOLIA : CHAIN_IDS.BASE_MAINNET;
         const usdcAddress = args.useTestnet ? USDC.BASE_SEPOLIA : USDC.BASE_MAINNET;
 
-        // C2: Validate category budget percentages sum ≤ 100
+        // Validate category budget percentages sum ≤ 100
         for (const child of args.children) {
-          const totalPct = child.educationPct + child.healthPct + child.personalPct;
+          const totalPct = child.categories.reduce((s, c) => s + c.pct, 0);
           if (totalPct > 100) {
             return {
               content: [{
@@ -62,11 +63,11 @@ export function registerConfigurePolicyTool(server: McpServer): void {
             walletName: `child-${child.name.toLowerCase()}`,
             walletAddress: child.walletAddress, // undefined if OWS-managed
             weeklyBudget,
-            categoryBudgets: {
-              education: Math.round(weeklyBudget * (child.educationPct / 100)),
-              health: Math.round(weeklyBudget * (child.healthPct / 100)),
-              personal: Math.round(weeklyBudget * (child.personalPct / 100)),
-            },
+            categories: child.categories.map((cat) => ({
+              name: cat.name,
+              pct: cat.pct,
+              budget: Math.round(weeklyBudget * (cat.pct / 100)),
+            })),
             savingsPercent: child.savingsPercent,
             savingsLockDays: 90,
           };
@@ -105,12 +106,12 @@ export function registerConfigurePolicyTool(server: McpServer): void {
 
         const summary = children
           .map(
-            (c) =>
-              `${c.name}: $${(c.weeklyBudget / 10 ** USDC.DECIMALS).toFixed(2)}/week ` +
-              `(Ed: $${(c.categoryBudgets.education / 10 ** USDC.DECIMALS).toFixed(2)}, ` +
-              `Health: $${(c.categoryBudgets.health / 10 ** USDC.DECIMALS).toFixed(2)}, ` +
-              `Personal: $${(c.categoryBudgets.personal / 10 ** USDC.DECIMALS).toFixed(2)}) ` +
-              `— ${c.savingsPercent}% to savings`
+            (c) => {
+              const catSummary = c.categories!.map(
+                (cat) => `${cat.name}: $${(cat.budget / 10 ** USDC.DECIMALS).toFixed(2)}`
+              ).join(", ");
+              return `${c.name}: $${(c.weeklyBudget / 10 ** USDC.DECIMALS).toFixed(2)}/week (${catSummary}) — ${c.savingsPercent}% to savings`;
+            }
           )
           .join("\n");
 

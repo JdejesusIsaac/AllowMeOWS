@@ -46,13 +46,19 @@ Parents configure rules in plain English. Claude handles the rest: wallet creati
 
 **Example:**
 
-> "Set up Maya with $15/week. Split it evenly across education, health, and personal. Put 20% into savings."
+**Family:**
+> "Set up Maya with $15/week. 50% reading, 30% sports, 20% art. Put 20% into savings."
 
-> "Maya finished her science project — 90 out of 100."
+**Business:**
+> "Set up AI allowance for the engineering team. $50/week. 60% AI subscriptions, 25% compute, 15% training."
+
+> "Maya finished her reading goal — 90 out of 100."
 
 > "Distribute what Maya has earned." → USDC sent on-chain
 
 > "Invite Grandma Rosa so she can see Maya's progress."
+
+Category names are user-defined strings, not enums. The same engine works for families, businesses, and teams.
 
 Children can use **OWS-managed wallets** (created automatically) or **external wallets** (MetaMask, Coinbase, etc.) — the parent chooses per child during setup.
 

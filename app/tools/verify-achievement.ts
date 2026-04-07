@@ -3,14 +3,14 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { StateManager } from "../../src/engine/state.js";
 import { PolicyEngine } from "../../src/engine/policy.js";
-import { CategoryEnum, AchievementSourceEnum } from "../../src/schemas.js";
+import { AchievementSourceEnum } from "../../src/schemas.js";
 import { resolveHttpCaller, isHttpToolAuthorized, accessDenied } from "./_helpers.js";
 const verifyAchievement = tool({
   description:
-    "Verify a child's achievement in education, health, or personal development. Calculates USDC reward with streak bonus. Supports source tracking (manual, self-report, fitbit, openMAIC).",
+    "Verify a child's achievement. Category must match a configured category name. Calculates USDC reward with streak bonus. Supports source tracking (manual, self-report, fitbit, openMAIC).",
   inputSchema: z.object({
     childName: z.string().min(1).describe("Child's name"),
-    category: CategoryEnum.describe("Achievement category"),
+    category: z.string().min(1).describe("Achievement category (must match a configured category name)"),
     description: z.string().min(1).describe("What the child accomplished"),
     score: z.number().min(0).max(100).describe("Achievement score (0-100)"),
     source: AchievementSourceEnum.default("manual").optional().describe("How this achievement was reported"),
@@ -41,8 +41,15 @@ const verifyAchievement = tool({
         return JSON.stringify({ success: false, error: "Learners can only report achievements for themselves." });
       }
 
+      // Validate category exists in child's config
+      const validCats = childConfig.categories?.map((c) => c.name) || [];
+      const matchedCat = validCats.find((n) => n.toLowerCase() === args.category.toLowerCase());
+      if (!matchedCat) {
+        return JSON.stringify({ success: false, error: `Category '${args.category}' not configured. Available: ${validCats.join(", ")}` });
+      }
+
       const streak = await state.updateStreak(args.childName);
-      const baseAmount = engine.evaluateAchievement(args.score, args.category, childConfig);
+      const baseAmount = engine.evaluateAchievement(args.score, matchedCat, childConfig);
       const amount = Math.round(baseAmount * streak.multiplier);
       const source = args.source || "manual";
 

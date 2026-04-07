@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { DATA_DIR } from "../constants.js";
 import type {
   FamilyConfig,
+  ChildConfig,
   AchievementRecord,
   Member,
   Invite,
@@ -46,10 +47,38 @@ async function writeJson<T>(filename: string, data: T): Promise<void> {
   await rename(tmpPath, filepath);
 }
 
+/**
+ * Auto-migrate legacy categoryBudgets → categories[] format.
+ * If a child has categoryBudgets but no categories, convert and remove old field.
+ */
+function migrateLegacyCategories(config: FamilyConfig): { config: FamilyConfig; migrated: boolean } {
+  let migrated = false;
+  for (const child of config.children) {
+    if (!child.categories && child.categoryBudgets) {
+      const wb = child.weeklyBudget;
+      child.categories = [
+        { name: "education", pct: wb > 0 ? Math.round((child.categoryBudgets.education / wb) * 100) : 0, budget: child.categoryBudgets.education },
+        { name: "health", pct: wb > 0 ? Math.round((child.categoryBudgets.health / wb) * 100) : 0, budget: child.categoryBudgets.health },
+        { name: "personal", pct: wb > 0 ? Math.round((child.categoryBudgets.personal / wb) * 100) : 0, budget: child.categoryBudgets.personal },
+      ];
+      delete (child as Record<string, unknown>).categoryBudgets;
+      console.error(`[state] Migrated legacy category format for ${child.name}`);
+      migrated = true;
+    }
+  }
+  return { config, migrated };
+}
+
 export class StateManager {
   // === Family Config ===
   async loadFamilyConfig(): Promise<FamilyConfig | null> {
-    return readJson<FamilyConfig | null>("family-config.json", null);
+    const raw = await readJson<FamilyConfig | null>("family-config.json", null);
+    if (!raw) return null;
+    const { config, migrated } = migrateLegacyCategories(raw);
+    if (migrated) {
+      await this.saveFamilyConfig(config);
+    }
+    return config;
   }
 
   async saveFamilyConfig(config: FamilyConfig): Promise<void> {

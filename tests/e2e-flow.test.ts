@@ -58,11 +58,11 @@ describe("E2E: Full Allowance Flow", () => {
           name: "Maya",
           walletName: "child-maya",
           weeklyBudget: 15_000_000, // $15 USDC
-          categoryBudgets: {
-            education: 5_000_000,
-            health: 5_000_000,
-            personal: 5_000_000,
-          },
+          categories: [
+            { name: "education", pct: 33, budget: 5_000_000 },
+            { name: "health", pct: 33, budget: 5_000_000 },
+            { name: "personal", pct: 33, budget: 5_000_000 },
+          ],
           savingsPercent: 20,
           savingsLockDays: 90,
         },
@@ -70,11 +70,11 @@ describe("E2E: Full Allowance Flow", () => {
           name: "Alex",
           walletName: "child-alex",
           weeklyBudget: 10_000_000, // $10 USDC
-          categoryBudgets: {
-            education: 4_000_000,
-            health: 3_000_000,
-            personal: 3_000_000,
-          },
+          categories: [
+            { name: "education", pct: 40, budget: 4_000_000 },
+            { name: "health", pct: 30, budget: 3_000_000 },
+            { name: "personal", pct: 30, budget: 3_000_000 },
+          ],
           savingsPercent: 15,
           savingsLockDays: 60,
         },

@@ -34,7 +34,11 @@ describe("StateManager", () => {
             name: "Maya",
             walletName: "child-maya",
             weeklyBudget: 15_000_000,
-            categoryBudgets: { education: 5_000_000, health: 5_000_000, personal: 5_000_000 },
+            categories: [
+              { name: "education", pct: 33, budget: 5_000_000 },
+              { name: "health", pct: 33, budget: 5_000_000 },
+              { name: "personal", pct: 33, budget: 5_000_000 },
+            ],
             savingsPercent: 20,
             savingsLockDays: 90,
           },

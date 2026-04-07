@@ -8,11 +8,11 @@ const mockChild: ChildConfig = {
   name: "Maya",
   walletName: "child-maya",
   weeklyBudget: 15_000_000, // $15.00
-  categoryBudgets: {
-    education: 5_000_000, // $5.00
-    health: 5_000_000,
-    personal: 5_000_000,
-  },
+  categories: [
+    { name: "education", pct: 33, budget: 5_000_000 },
+    { name: "health", pct: 33, budget: 5_000_000 },
+    { name: "personal", pct: 33, budget: 5_000_000 },
+  ],
   savingsPercent: 20,
   savingsLockDays: 90,
 };
@@ -51,7 +51,11 @@ describe("PolicyEngine.evaluateAchievement", () => {
   it("handles unequal category budgets", () => {
     const unequalChild: ChildConfig = {
       ...mockChild,
-      categoryBudgets: { education: 10_000_000, health: 3_000_000, personal: 2_000_000 },
+      categories: [
+        { name: "education", pct: 67, budget: 10_000_000 },
+        { name: "health", pct: 20, budget: 3_000_000 },
+        { name: "personal", pct: 13, budget: 2_000_000 },
+      ],
     };
     expect(engine.evaluateAchievement(100, "education", unequalChild)).toBe(10_000_000);
     expect(engine.evaluateAchievement(100, "health", unequalChild)).toBe(3_000_000);

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { StateManager } from "../engine/state.js";
 import { PolicyEngine } from "../engine/policy.js";
-import { CategoryEnum, AchievementSourceEnum } from "../schemas.js";
+import { AchievementSourceEnum } from "../schemas.js";
 import type { AchievementRecord } from "../schemas.js";
 import { USDC } from "../constants.js";
 import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
@@ -11,10 +11,10 @@ import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFie
 export function registerVerifyAchievementTool(server: McpServer): void {
   server.tool(
     "verify-achievement",
-    "Verify a child's achievement in education, health, or personal development. This queues the achievement for allowance distribution.",
+    "Verify a child's achievement. Category must match one of the child's configured categories (e.g. 'reading', 'movement'). Queues the achievement for allowance distribution.",
     {
       childName: z.string().describe("Name of the child"),
-      category: CategoryEnum.describe("Achievement category"),
+      category: z.string().min(1).describe("Achievement category (must match a configured category name)"),
       description: z.string().describe("What the child accomplished"),
       score: z.number().min(0).max(100).describe("Achievement score (0-100)"),
       source: AchievementSourceEnum.default("manual").optional().describe("Achievement source: manual, openMAIC, fitbit, apple-health, self-report, parent-attested"),
@@ -73,10 +73,25 @@ export function registerVerifyAchievementTool(server: McpServer): void {
           };
         }
 
+        // Validate category exists in child's config
+        const validCats = childConfig.categories?.map((c) => c.name) || [];
+        const matchedCat = validCats.find((n) => n.toLowerCase() === args.category.toLowerCase());
+        if (!matchedCat) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({
+                success: false,
+                error: `Category '${args.category}' not configured. Available: ${validCats.join(", ")}`,
+              }),
+            }],
+          };
+        }
+
         // Evaluate achievement amount
         const amount = engine.evaluateAchievement(
           args.score,
-          args.category,
+          matchedCat,
           childConfig
         );
 

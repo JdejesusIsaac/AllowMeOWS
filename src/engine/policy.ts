@@ -1,4 +1,4 @@
-import type { ChildConfig, CategoryType } from "../schemas.js";
+import type { ChildConfig } from "../schemas.js";
 import { USDC } from "../constants.js";
 
 export class PolicyEngine {
@@ -8,12 +8,20 @@ export class PolicyEngine {
    */
   evaluateAchievement(
     score: number,
-    category: CategoryType,
+    category: string,
     childConfig: ChildConfig
   ): number {
-    const categoryBudget = childConfig.categoryBudgets[category];
+    const entry = childConfig.categories?.find(
+      (c) => c.name.toLowerCase() === category.toLowerCase()
+    );
+    if (!entry) {
+      const available = childConfig.categories?.map((c) => c.name).join(", ") || "none";
+      throw new Error(
+        `Category '${category}' not configured. Available: ${available}`
+      );
+    }
     // Linear mapping: score/100 * category budget
-    const amount = Math.round((score / 100) * categoryBudget);
+    const amount = Math.round((score / 100) * entry.budget);
     return amount;
   }
 

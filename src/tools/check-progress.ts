@@ -66,13 +66,15 @@ export function registerCheckProgressTool(server: McpServer): void {
           const distributed = thisWeek.filter((a) => a.distributed).reduce((sum, a) => sum + a.amount, 0);
           const pending = thisWeek.filter((a) => !a.distributed).reduce((sum, a) => sum + a.amount, 0);
 
-          // Category breakdown with source provenance
-          const byCat: Record<string, { earned: number; details: Array<{ description: string; score: number; amount: number; source: string; verifiedBy: string }> }> = {
-            education: { earned: 0, details: [] },
-            health: { earned: 0, details: [] },
-            personal: { earned: 0, details: [] },
-          };
+          // Category breakdown with source provenance — dynamic from config
+          const byCat: Record<string, { earned: number; details: Array<{ description: string; score: number; amount: number; source: string; verifiedBy: string }> }> = {};
+          for (const cat of child.categories || []) {
+            byCat[cat.name] = { earned: 0, details: [] };
+          }
           for (const a of thisWeek) {
+            if (!byCat[a.category]) {
+              byCat[a.category] = { earned: 0, details: [] };
+            }
             byCat[a.category].earned += a.amount;
             byCat[a.category].details.push({
               description: a.description,
@@ -97,38 +99,21 @@ export function registerCheckProgressTool(server: McpServer): void {
             totalEarnedUsd: (totalEarned / 10 ** USDC.DECIMALS).toFixed(2),
             distributedUsd: (distributed / 10 ** USDC.DECIMALS).toFixed(2),
             pendingUsd: (pending / 10 ** USDC.DECIMALS).toFixed(2),
-            categories: {
-              education: {
-                earned: `$${(byCat.education.earned / 10 ** USDC.DECIMALS).toFixed(2)}`,
-                budget: `$${(child.categoryBudgets.education / 10 ** USDC.DECIMALS).toFixed(2)}`,
-                achievements: byCat.education.details.map((d) => ({
-                  description: d.description,
-                  score: d.score,
-                  amountUsd: (d.amount / 10 ** USDC.DECIMALS).toFixed(2),
-                  source: d.source,
-                })),
-              },
-              health: {
-                earned: `$${(byCat.health.earned / 10 ** USDC.DECIMALS).toFixed(2)}`,
-                budget: `$${(child.categoryBudgets.health / 10 ** USDC.DECIMALS).toFixed(2)}`,
-                achievements: byCat.health.details.map((d) => ({
-                  description: d.description,
-                  score: d.score,
-                  amountUsd: (d.amount / 10 ** USDC.DECIMALS).toFixed(2),
-                  source: d.source,
-                })),
-              },
-              personal: {
-                earned: `$${(byCat.personal.earned / 10 ** USDC.DECIMALS).toFixed(2)}`,
-                budget: `$${(child.categoryBudgets.personal / 10 ** USDC.DECIMALS).toFixed(2)}`,
-                achievements: byCat.personal.details.map((d) => ({
-                  description: d.description,
-                  score: d.score,
-                  amountUsd: (d.amount / 10 ** USDC.DECIMALS).toFixed(2),
-                  source: d.source,
-                })),
-              },
-            },
+            categories: Object.fromEntries(
+              (child.categories || []).map((cat) => {
+                const catData = byCat[cat.name] || { earned: 0, details: [] };
+                return [cat.name, {
+                  earned: `$${(catData.earned / 10 ** USDC.DECIMALS).toFixed(2)}`,
+                  budget: `$${(cat.budget / 10 ** USDC.DECIMALS).toFixed(2)}`,
+                  achievements: catData.details.map((d) => ({
+                    description: d.description,
+                    score: d.score,
+                    amountUsd: (d.amount / 10 ** USDC.DECIMALS).toFixed(2),
+                    source: d.source,
+                  })),
+                }];
+              })
+            ),
             achievementsThisWeek: thisWeek.length,
             totalAchievements: childAchievements.length,
             streak: streak
