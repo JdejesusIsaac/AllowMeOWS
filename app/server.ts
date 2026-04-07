@@ -53,27 +53,22 @@ useA2A(server, agent);
 console.log("[AllowanceAgent] Creating MCP...");
 const mcp = new AixyzMCP(server);
 
-// --- Paid tools (x402 gated) ---
-// Only manager power tools that move money or change membership are gated.
-// These are what external agents (OpenMAIC, MoonPay) pay for.
+// --- All tools free (x402 disabled for V1 onboarding) ---
+// Re-enable x402 gating when there are paying agent-to-agent users.
 await mcp.register("distribute-allowance", {
   default: distributeAllowance,
-  accepts: { scheme: "exact", price: "$0.01" },
 });
 
 await mcp.register("manage-members", {
   default: manageMembers,
-  accepts: { scheme: "exact", price: "$0.005" },
 });
 
 await mcp.register("get-funding-address", {
   default: getFundingAddress,
-  accepts: { scheme: "exact", price: "$0.001" },
 });
 
 await mcp.register("invite-member", {
   default: inviteMember,
-  accepts: { scheme: "exact", price: "$0.003" },
 });
 
 // --- Free tools (no x402 gating) ---
