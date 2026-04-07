@@ -41,8 +41,9 @@ COPY --from=builder /app/app/ ./app/
 COPY --from=builder /app/public/ ./public/
 COPY --from=builder /app/policies/ ./policies/
 
-# Create data directory with correct permissions
+# Create data + OWS directories with correct permissions
 RUN mkdir -p /app/data && chown -R appuser:appgroup /app/data
+RUN mkdir -p /home/appuser/.ows && chown -R appuser:appgroup /home/appuser/.ows
 
 # Switch to non-root user
 USER appuser

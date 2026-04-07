@@ -28,8 +28,16 @@ import { registerConvertSavingsTool } from "../src/tools/convert-savings.js";
 try {
   resolveMasterKey();
 } catch (err) {
-  console.error("[AllowanceAgent] FATAL: Could not resolve master key:", err);
+  console.error("[AllowanceAgent] Failed to resolve master key:", err);
   process.exit(1);
+}
+
+// ===== Ensure data directory is writable (Railway Volume mounts can override permissions) =====
+try {
+  mkdirSync("data", { recursive: true });
+  accessSync("data", constants.W_OK);
+} catch {
+  console.error("[AllowanceAgent] WARNING: data/ directory not writable. Check volume permissions.");
 }
 
 // ===== Crash guard =====
