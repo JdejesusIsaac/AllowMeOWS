@@ -10,9 +10,9 @@ const config: AixyzConfig = {
   version: "0.2.0",
   url: process.env.ALLOWANCE_AGENT_URL || undefined,
   x402: {
-    // Disabled for V1 onboarding - empty config disables x402 middleware
-    payTo: "",
-    network: "",
+    // Disabled for V1 onboarding - zero address disables x402 middleware
+    payTo: "0x0000000000000000000000000000000000000000",
+    network: "eip155:8453",
   },
   skills: [
     {
