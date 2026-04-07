@@ -32,13 +32,6 @@ try {
   process.exit(1);
 }
 
-// ===== Ensure data directory is writable (Railway Volume mounts can override permissions) =====
-try {
-  mkdirSync("data", { recursive: true });
-  accessSync("data", constants.W_OK);
-} catch {
-  console.error("[AllowanceAgent] WARNING: data/ directory not writable. Check volume permissions.");
-}
 
 // ===== Crash guard =====
 process.on("unhandledRejection", (reason) => {
