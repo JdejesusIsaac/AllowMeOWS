@@ -24,8 +24,6 @@ RUN bunx tsc --noEmit
 # ---- Production stage ----
 FROM oven/bun:1 AS production
 
-# Security: run as non-root user (disabled for testing - run as root)
-# RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 
 WORKDIR /app
 
@@ -41,12 +39,9 @@ COPY --from=builder /app/app/ ./app/
 COPY --from=builder /app/public/ ./public/
 COPY --from=builder /app/policies/ ./policies/
 
-# Create data + OWS directories with correct permissions
-RUN mkdir -p /app/data && chown -R appuser:appgroup /app/data
-RUN mkdir -p /home/appuser/.ows && chown -R appuser:appgroup /home/appuser/.ows
+# Create directories for root user
+RUN mkdir -p /app/data /root/.ows
 
-# Switch to non-root user (disabled for testing - run as root)
-# USER appuser
 
 # Railway injects PORT env var
 EXPOSE ${PORT:-3001}
