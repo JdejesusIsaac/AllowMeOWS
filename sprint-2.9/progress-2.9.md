@@ -242,3 +242,33 @@ _Brief snapshot of Sprint 2.75 exit state for context_
 - ✅ Open bug fixed in Sprint 2.9: multi-tenancy gap closed — every family owns its own `data/families/{familyId}/` directory; `accept-invite` routes to the invite's family via MemberIndex, not the default root config
 - ✅ Sprint 2.75 production deployment on Railway live, auto-restart working, data persistent across deploys
 - ✅ 187 tests passing (pre-Sprint 2.9 baseline) → 246 tests passing after Sprint 2.9
+
+## Post-Deploy Hotfix — Priority 5 Legacy Fallback Removal (April 24, 2026 PM)
+
+### Bug discovered in live production
+
+Within minutes of deploying Sprint 2.9 to `allowme.dev`, a different failure surfaced from the same root cause that motivated this sprint. Adding the MCP URL to Claude + ChatGPT both resolved to the *same* treasury wallet. Investigation confirmed: the transitional `resolveCallerRole` Priority 5 block (designed as backward-compat for the Sprint 2.75 → 2.9 migration) was promoting any unauthenticated caller to Manager of the sole registered family. With the server exposed publicly, that turned into a full authorization bypass — any MCP client could reach the first-configured family's treasury, balances, and all tool surface area.
+
+Worse, the fallback's self-deactivation ("disables once a second family exists") meant the onboarding flow was fundamentally broken: User 2 creating a family would lock User 1 out of the MCP config they'd been using, since User 1's unauthenticated requests would suddenly return null across the board.
+
+### Fix
+
+- **`src/middleware/access-control.ts`**: deleted lines 138-154 (Priority 5 block). `resolveCallerRole` now returns null for any request that doesn't match Priorities 1-4 (X-Member-Id header, ?setup= query, `_callerId` lookup, or `_callerRole`+`_familyId` test-mode). `withAccessControl` routes null callers to the two `UNIDENTIFIED_CALLER_TOOLS` (configure-policy + accept-invite); everything else gets `buildNoIdentityResponse`.
+- **`app/tools/_helpers.ts`**: removed the parallel single-family Manager fallback at the bottom of `resolveHttpCaller`. The aixyz-side resolver is now symmetric with the primary HTTP path — no payer + no index match → null, period. Multi-family-safe walletAddress scan preserved.
+- **Test migrations** (4 tests, 3 files): `access-control.test.ts`, `http-transport.test.ts`, `multi-tenant-e2e.test.ts` all had assertions that asserted `legacy-manager` was returned. Flipped to `toBeNull()` with inline comments explaining the security rationale so future readers understand why these tests changed polarity.
+- **`tests/e2e-flow.test.ts`**: Step 1 had a bare `resolveCallerRole({})` call that implicitly relied on Priority 5. Migrated to explicit `{ _callerRole: "manager", _familyId: FAMILY_ID }` matching the pattern used by Steps 2-9 in the same file.
+
+### Validation
+
+- ✅ 246/246 tests pass, 0 new regressions
+- ✅ `tsc --noEmit -p tsconfig.json` clean
+- Production verification pending after redeploy: confirm unauthenticated tool calls now return `buildNoIdentityResponse` and `configure-policy` still works from a null-caller bootstrap
+
+### What this means for existing MCP clients
+
+Any Claude/ChatGPT config currently pointing at `https://allowme.dev/mcp` (no `?setup=` query) will start getting "No caller identity" errors for every tool except `configure-policy`. To re-authenticate, the user calls `configure-policy` (bootstrap path accepts null caller), gets back a `mcpUrl` with embedded setup code, and updates their MCP connector URL. Existing families on the volume keep their data — only the auth config needs updating.
+
+### Failed Approaches considered
+
+- **SAAS_MODE env var flag**: rejected as over-engineering. Exposing the server publicly is the only configuration that actually works for this project; a private self-hosted instance would still want identity-scoped tools for future multi-family use.
+- **HTTP-layer gatekeeper middleware**: deferred to Sprint 3.0 as part of the session-token work. The in-dispatcher null-caller check in `withAccessControl` is sufficient defense for now.

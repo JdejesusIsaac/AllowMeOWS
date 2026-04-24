@@ -137,13 +137,15 @@ describe("H6-H7: HTTP member resolution", () => {
     expect(caller).toBeNull();
   });
 
-  it("H6b: resolveHttpCaller with no payer and one family uses legacy fallback", async () => {
+  it("H6b: resolveHttpCaller with no payer returns null even when one family exists (hotfix)", async () => {
+    // Sprint 2.9 hotfix: the single-family Manager fallback on the aixyz
+    // side has been removed. A request with no x402 payer and no session
+    // identity now returns null regardless of how many families exist.
+    // This prevents unauthenticated MCP clients from reaching the first
+    // family's treasury when the server is exposed publicly.
     await state.createFamilyDir(FAMILY_ID);
     const caller = await resolveHttpCaller();
-    expect(caller).not.toBeNull();
-    expect(caller!.role).toBe("manager");
-    expect(caller!.memberId).toBe("legacy-manager");
-    expect(caller!.familyId).toBe(FAMILY_ID);
+    expect(caller).toBeNull();
   });
 
   it("H7: isHttpToolAuthorized enforces RBAC for HTTP callers", () => {

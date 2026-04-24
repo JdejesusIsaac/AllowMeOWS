@@ -49,10 +49,13 @@ describe("E2E: Full Allowance Flow", () => {
 
   // === Step 1: Configure family policy ===
   it("1. Manager configures family policy", async () => {
-    // Simulate configure-policy tool logic
-    const caller = await resolveCallerRole({}); // defaults to manager
-    expect(caller.role).toBe("manager");
-    expect(isToolAuthorized("configure-policy", caller.role)).toBe(true);
+    // Sprint 2.9 hotfix: the bare resolveCallerRole({}) call used to default
+    // to a single-family Manager via Priority 5. That fallback is gone, so
+    // tests must explicitly pass _callerRole + _familyId (same pattern as
+    // Steps 2-9 in this file).
+    const caller = await resolveCallerRole({ _callerRole: "manager", _familyId: FAMILY_ID });
+    expect(caller!.role).toBe("manager");
+    expect(isToolAuthorized("configure-policy", caller!.role)).toBe(true);
 
     familyConfig = {
       familyName: "TestFamily",

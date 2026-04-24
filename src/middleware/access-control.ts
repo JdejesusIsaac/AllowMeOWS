@@ -49,15 +49,20 @@ export const UNIDENTIFIED_CALLER_TOOLS = new Set<string>([
  * cannot be identified. Returning null is a first-class state — it means
  * "stranger, treat carefully". See `withAccessControl` for null-caller handling.
  *
- * Priority chain (Sprint 2.9):
+ * Priority chain (Sprint 2.9 hotfix):
  *   1. `X-Member-Id` HTTP header (backward compat with Sprint 2 tests)
  *   2. `?setup=CODE` HTTP URL query param
  *   3. `_callerId` tool arg (stdio + test mode) — looked up in MemberIndex
  *   4. `_callerRole` + `_familyId` tool args (pure test mode — no persistence)
- *   5. Legacy single-family fallback: if the server has exactly ONE family,
- *      treat unidentified callers as that family's Manager. Logs a warning.
- *      Auto-deactivates once a second family is created.
- *   6. null — no identity.
+ *   5. null — no identity.
+ *
+ * The transitional "legacy single-family fallback" that previously promoted
+ * unidentified callers to Manager of the sole family has been removed. It
+ * was a security bypass when the server is exposed as a public SaaS
+ * (any MCP client could reach the first family's treasury). Every tool call
+ * on a multi-user deployment now requires an explicit identity via one of
+ * Priorities 1-4, or falls into the UNIDENTIFIED_CALLER_TOOLS allow-list
+ * (currently `configure-policy` and `accept-invite`).
  *
  * Sprint 3.0 will prepend Priority 0 — session tokens issued by the verify
  * page — pushing setup codes to Priority 2. Both paths coexist.
@@ -135,25 +140,11 @@ export async function resolveCallerRole(
     }
   }
 
-  // Priority 5: Legacy single-family fallback — transitional backward compat.
-  // Only activates when the server has exactly one family. This preserves
-  // existing users' MCP configs during the Sprint 2.75 → 2.9 transition. The
-  // moment a second family is created, this fallback deactivates and all
-  // unidentified callers get null.
-  const families = await state.listFamilies();
-  if (families.length === 1) {
-    console.error(
-      "[auth:legacy] Unidentified request resolved to sole family. " +
-        "Users should update their MCP config with a setup code."
-    );
-    return {
-      role: ROLES.MANAGER,
-      memberId: "legacy-manager",
-      familyId: families[0],
-    };
-  }
-
-  // Priority 6: null — stranger. Only `configure-policy` may proceed.
+  // Priority 5: null — stranger. Only `configure-policy` and `accept-invite`
+  // may proceed (see UNIDENTIFIED_CALLER_TOOLS). All other tools are rejected
+  // by `withAccessControl` with `buildNoIdentityResponse`, which points the
+  // caller at the two legitimate onboarding paths (configure-policy to create
+  // a family, or ?setup=CODE to authenticate as an existing member).
   return null;
 }
 

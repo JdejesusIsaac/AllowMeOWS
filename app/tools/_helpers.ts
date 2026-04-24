@@ -2,18 +2,19 @@
  * Shared helpers for aixyz tool wrappers.
  * Underscore prefix — ignored by aixyz auto-discovery.
  *
- * Sprint 2.9: aixyz tools are legacy and not wired into the primary HTTP
- * transport (app/server.ts uses src/tools/ directly). These helpers continue
- * to compile against the multi-tenant StateManager API by resolving familyId
- * through the single-family fallback (identical semantics to the legacy
- * resolver in src/middleware/access-control.ts).
+ * Sprint 2.9 hotfix: aixyz tools are legacy and not wired into the primary
+ * HTTP transport (app/server.ts uses src/tools/ directly). These helpers
+ * continue to compile against the multi-tenant StateManager API but no
+ * longer fall through to a single-family Manager fallback — that was a
+ * public-SaaS security bypass. Unidentified callers return null; the
+ * wrapper emits accessDenied so the caller is told to bootstrap via
+ * configure-policy or provide an explicit setup code.
  *
  * Sprint 2.9 note on getPayer: earlier versions of aixyz shipped a session
  * plugin exposing a per-request payer getter. That export was removed in
  * aixyz v0.19+, and the primary HTTP transport no longer depends on it. We
- * stub getPayer to always return undefined; callers fall through to the
- * single-family legacy fallback inside resolveHttpCaller, which is the
- * correct behavior for the remaining aixyz tool surface.
+ * stub getPayer to always return undefined; any aixyz request therefore
+ * yields a null caller and must come through configure-policy first.
  */
 import { StateManager } from "../../src/engine/state.js";
 import { MemberIndex } from "../../src/identity/member-index.js";
@@ -32,41 +33,40 @@ export interface HttpCallerContext {
 /**
  * Resolve caller identity from x402 payer address.
  *
- * Priority chain:
+ * Priority chain (Sprint 2.9 hotfix):
  *   1. payer → MemberIndex lookup → CallerContext (multi-family safe)
- *   2. payer matches a member's walletAddress in the single remaining family
- *   3. No payer or no match → legacy single-family fallback as Manager
- *   4. No families registered → null (caller must call configure-policy)
+ *   2. payer matches a member's walletAddress in any registered family
+ *   3. No payer or no match → null (caller must bootstrap via configure-policy
+ *      or supply an explicit setup code in the MCP URL)
  */
 export async function resolveHttpCaller(): Promise<HttpCallerContext | null> {
   const state = new StateManager();
   const index = new MemberIndex();
   const payer = getPayer();
 
-  if (payer) {
-    const entry = await index.get(payer);
-    if (entry) {
-      const member = await state.loadMember(entry.familyId, payer);
-      if (member) {
-        return {
-          memberId: payer,
-          role: entry.role as RoleType,
-          familyId: entry.familyId,
-          childName: member.childName,
-        };
-      }
+  if (!payer) {
+    return null;
+  }
+
+  const entry = await index.get(payer);
+  if (entry) {
+    const member = await state.loadMember(entry.familyId, payer);
+    if (member) {
+      return {
+        memberId: payer,
+        role: entry.role as RoleType,
+        familyId: entry.familyId,
+        childName: member.childName,
+      };
     }
   }
 
+  // Scan every registered family for a member whose walletAddress matches the
+  // payer. Multi-family safe — if the payer is a member of two families, the
+  // first match wins (unlikely in practice, but deterministic given a stable
+  // family listing order).
   const families = await state.listFamilies();
-  if (families.length !== 1) {
-    // 0 families → nothing to resolve. 2+ families → cannot disambiguate
-    // without identity. Both yield null; the tool wrapper must handle it.
-    return null;
-  }
-  const familyId = families[0];
-
-  if (payer) {
+  for (const familyId of families) {
     const members = await state.loadMembers(familyId);
     const member = members.find(
       (m) => m.active && m.walletAddress?.toLowerCase() === payer.toLowerCase()
@@ -81,13 +81,7 @@ export async function resolveHttpCaller(): Promise<HttpCallerContext | null> {
     }
   }
 
-  // Legacy single-family fallback (treats unidentified callers as Manager of
-  // the sole family). Matches resolveCallerRole Priority 5.
-  return {
-    memberId: payer || "legacy-manager",
-    role: "manager" as RoleType,
-    familyId,
-  };
+  return null;
 }
 
 /**

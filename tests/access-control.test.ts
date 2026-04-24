@@ -86,12 +86,15 @@ describe("resolveCallerRole (Sprint 2.9)", () => {
     expect(result).toBeNull();
   });
 
-  it("returns legacy single-family fallback when exactly one family exists", async () => {
+  it("returns null with no identity even when one family exists (no legacy Manager fallback)", async () => {
+    // Sprint 2.9 hotfix: the legacy single-family fallback has been removed.
+    // A stranger hitting a server with exactly one family used to be auto-
+    // promoted to that family's Manager, which was a public-SaaS security
+    // bypass. Now an unidentified caller always returns null regardless of
+    // how many families exist.
     await createTestFamily({ familyName: "SoloFamily" });
     const result = await resolveCallerRole({});
-    expect(result).not.toBeNull();
-    expect(result!.role).toBe(ROLES.MANAGER);
-    expect(result!.memberId).toBe("legacy-manager");
+    expect(result).toBeNull();
   });
 
   it("returns null with no identity and multiple families (fallback deactivates)", async () => {
@@ -121,13 +124,13 @@ describe("resolveCallerRole (Sprint 2.9)", () => {
     expect(result!.familyId).toBe(family.familyId);
   });
 
-  it("returns null for unknown _callerId (no default Manager fallback)", async () => {
+  it("returns null for unknown _callerId even with one family present", async () => {
+    // Sprint 2.9 hotfix: an unknown _callerId used to fall through to the
+    // legacy single-family fallback. That fallback has been removed, so the
+    // caller is now correctly treated as a stranger.
     await createTestFamily();
     const result = await resolveCallerRole({ _callerId: "nonexistent-id" });
-    // With one family present, the legacy single-family fallback activates
-    // (member-id doesn't match, so the resolver falls through to Priority 5).
-    expect(result).not.toBeNull();
-    expect(result!.memberId).toBe("legacy-manager");
+    expect(result).toBeNull();
   });
 
   it("_callerRole without _familyId falls through (pure test-mode requires both)", async () => {

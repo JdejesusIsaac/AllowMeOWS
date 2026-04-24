@@ -119,11 +119,17 @@ describe("BR: April 24 Bug Reproduction (Sprint 2.9)", () => {
     expect(caller).toBeNull();
   });
 
-  it("BR2: unidentified caller + existing family triggers legacy fallback (single-family transitional path)", async () => {
+  it("BR2: unidentified caller + existing family returns null (hotfix — no legacy Manager fallback)", async () => {
+    // Sprint 2.9 hotfix: previously a stranger hitting a server with one
+    // family was auto-promoted to that family's Manager ("legacy-manager"
+    // sentinel). That was a public-SaaS bypass — an attacker adding the
+    // MCP URL to their Claude would inherit access to the first family's
+    // treasury. The fallback has been deleted; unidentified callers now
+    // always get null and are routed to the UNIDENTIFIED_CALLER_TOOLS
+    // allow-list (configure-policy + accept-invite only).
     await createTestFamily({ familyName: "Isaac" });
     const caller = await resolveCallerRole({});
-    expect(caller).not.toBeNull();
-    expect(caller!.memberId).toBe("legacy-manager"); // not the Isaac Manager — sentinel only
+    expect(caller).toBeNull();
   });
 
   it("BR3: unidentified caller + 2 families deactivates the legacy fallback (bug repro defense)", async () => {
@@ -189,11 +195,13 @@ describe("ID: Identity resolution — extended coverage", () => {
     expect(caller).toBeNull();
   });
 
-  it("ID5: no identity + exactly one family returns legacy single-family fallback", async () => {
-    const f = await createTestFamily({ familyName: "Isaac" });
+  it("ID5: no identity + exactly one family returns null (hotfix: legacy fallback removed)", async () => {
+    // Sprint 2.9 hotfix: see BR2. The Priority 5 single-family fallback is
+    // gone because it leaked the first family's Manager role to any
+    // unauthenticated MCP caller on public deployments.
+    await createTestFamily({ familyName: "Isaac" });
     const caller = await resolveCallerRole({});
-    expect(caller?.familyId).toBe(f.familyId);
-    expect(caller?.memberId).toBe("legacy-manager");
+    expect(caller).toBeNull();
   });
 
   it("ID6: _callerRole + _familyId test-mode pass-through works without persistence", async () => {
