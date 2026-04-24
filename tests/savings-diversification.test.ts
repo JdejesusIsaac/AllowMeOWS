@@ -5,6 +5,8 @@ import { randomUUID } from "node:crypto";
 import { StateManager } from "../src/engine/state.js";
 import type { SavingsEntry, FamilyConfig } from "../src/schemas.js";
 
+const FAMILY_ID = "a0000000-0000-0000-0000-000000000001";
+
 const testDataDir = join(process.cwd(), "data");
 
 // Helper: create a standard family config for tests
@@ -59,6 +61,7 @@ describe("Savings Diversification — Unit Tests", () => {
     await rm(testDataDir, { recursive: true, force: true });
     await mkdir(testDataDir, { recursive: true });
     state = new StateManager();
+    await state.createFamilyDir(FAMILY_ID);
   });
 
   afterEach(async () => {
@@ -67,7 +70,7 @@ describe("Savings Diversification — Unit Tests", () => {
 
   it("G1: Existing savings entries default to asset: USDC", async () => {
     // Create an entry without explicit asset field (backward compat)
-    await state.addSavingsEntry({
+    await state.addSavingsEntry(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       amount: 3_000_000,
@@ -77,23 +80,23 @@ describe("Savings Diversification — Unit Tests", () => {
       multiplierAtDeposit: 1.0,
     });
 
-    const entries = await state.loadSavingsEntries("Maya");
+    const entries = await state.loadSavingsEntries(FAMILY_ID, "Maya");
     expect(entries).toHaveLength(1);
     expect(entries[0].asset).toBe("USDC");
     expect(entries[0].converted).toBe(false);
   });
 
   it("G2: convert-savings with sufficient USDC balance creates PAXG entry", async () => {
-    await state.saveFamilyConfig(makeConfig());
+    await state.saveFamilyConfig(FAMILY_ID, makeConfig());
 
     // Add two USDC entries totaling $6.00
     const entry1 = makeUsdcEntry("Maya", 3_000_000, { lockDaysFromNow: 60 });
     const entry2 = makeUsdcEntry("Maya", 3_000_000, { lockDaysFromNow: 60 });
-    await state.addSavingsEntry(entry1);
-    await state.addSavingsEntry(entry2);
+    await state.addSavingsEntry(FAMILY_ID, entry1);
+    await state.addSavingsEntry(FAMILY_ID, entry2);
 
     // Simulate convert-savings: convert $3.00 USDC to PAXG
-    const allEntries = await state.loadSavingsEntries();
+    const allEntries = await state.loadSavingsEntries(FAMILY_ID);
     const usdcEntries = allEntries.filter(
       (e) => e.childName === "Maya" && !e.released && !e.converted && (e.asset || "USDC") === "USDC"
     );
@@ -125,10 +128,10 @@ describe("Savings Diversification — Unit Tests", () => {
       receivedAmount: "0.000644",
     };
     allEntries.push(paxgEntry);
-    await state.saveSavingsEntries(allEntries);
+    await state.saveSavingsEntries(FAMILY_ID, allEntries);
 
     // Verify
-    const after = await state.loadSavingsEntries("Maya");
+    const after = await state.loadSavingsEntries(FAMILY_ID, "Maya");
     const converted = after.filter((e) => e.converted);
     const paxg = after.filter((e) => e.asset === "PAXG");
     const activeUsdc = after.filter((e) => !e.converted && (e.asset || "USDC") === "USDC");
@@ -144,12 +147,12 @@ describe("Savings Diversification — Unit Tests", () => {
   });
 
   it("G3: convert-savings with insufficient USDC balance returns error", async () => {
-    await state.saveFamilyConfig(makeConfig());
+    await state.saveFamilyConfig(FAMILY_ID, makeConfig());
 
     // Add only $2.00
-    await state.addSavingsEntry(makeUsdcEntry("Maya", 2_000_000, { lockDaysFromNow: 60 }));
+    await state.addSavingsEntry(FAMILY_ID, makeUsdcEntry("Maya", 2_000_000, { lockDaysFromNow: 60 }));
 
-    const entries = await state.loadSavingsEntries("Maya");
+    const entries = await state.loadSavingsEntries(FAMILY_ID, "Maya");
     const available = entries
       .filter((e) => !e.released && !e.converted && (e.asset || "USDC") === "USDC")
       .reduce((sum, e) => sum + e.amount, 0);
@@ -165,9 +168,9 @@ describe("Savings Diversification — Unit Tests", () => {
   });
 
   it("G4: convert-savings for nonexistent child returns error", async () => {
-    await state.saveFamilyConfig(makeConfig());
+    await state.saveFamilyConfig(FAMILY_ID, makeConfig());
 
-    const config = await state.loadFamilyConfig();
+    const config = await state.loadFamilyConfig(FAMILY_ID);
     const childConfig = config!.children.find(
       (c) => c.name.toLowerCase() === "ghost".toLowerCase()
     );
@@ -177,10 +180,10 @@ describe("Savings Diversification — Unit Tests", () => {
 
   it("G5: check-savings groups entries by asset (USDC + PAXG)", async () => {
     // Add USDC entry
-    await state.addSavingsEntry(makeUsdcEntry("Maya", 3_000_000, { lockDaysFromNow: 60 }));
+    await state.addSavingsEntry(FAMILY_ID, makeUsdcEntry("Maya", 3_000_000, { lockDaysFromNow: 60 }));
 
     // Add PAXG entry
-    await state.addSavingsEntry({
+    await state.addSavingsEntry(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       amount: 0,
@@ -195,7 +198,7 @@ describe("Savings Diversification — Unit Tests", () => {
       conversionTxHash: "0xabc123",
     });
 
-    const entries = await state.loadSavingsEntries("Maya");
+    const entries = await state.loadSavingsEntries(FAMILY_ID, "Maya");
     const active = entries.filter((e) => !e.converted);
     const usdc = active.filter((e) => (e.asset || "USDC") === "USDC" && !e.released);
     const paxg = active.filter((e) => e.asset === "PAXG" && !e.released);
@@ -207,9 +210,9 @@ describe("Savings Diversification — Unit Tests", () => {
   });
 
   it("G6: check-savings with USDC only shows no PAXG section", async () => {
-    await state.addSavingsEntry(makeUsdcEntry("Maya", 5_000_000, { lockDaysFromNow: 30 }));
+    await state.addSavingsEntry(FAMILY_ID, makeUsdcEntry("Maya", 5_000_000, { lockDaysFromNow: 30 }));
 
-    const entries = await state.loadSavingsEntries("Maya");
+    const entries = await state.loadSavingsEntries(FAMILY_ID, "Maya");
     const active = entries.filter((e) => !e.converted);
     const paxg = active.filter((e) => e.asset === "PAXG" && !e.released);
 
@@ -221,7 +224,7 @@ describe("Savings Diversification — Unit Tests", () => {
 
   it("G7: Audit entry created for savings-converted action", async () => {
     // Simulate audit entry creation
-    await state.addAuditEntry({
+    await state.addAuditEntry(FAMILY_ID, {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
       action: "savings-converted",
@@ -240,7 +243,7 @@ describe("Savings Diversification — Unit Tests", () => {
       amount: 3_000_000,
     });
 
-    const log = await state.loadAuditLog();
+    const log = await state.loadAuditLog(FAMILY_ID);
     const convertEntries = log.filter((e) => e.action === "savings-converted");
     expect(convertEntries).toHaveLength(1);
     expect(convertEntries[0].details.childName).toBe("Maya");
@@ -273,6 +276,7 @@ describe("E2E: Savings Diversification Flow", () => {
     await rm(testDataDir, { recursive: true, force: true });
     await mkdir(testDataDir, { recursive: true });
     state = new StateManager();
+    await state.createFamilyDir(FAMILY_ID);
   });
 
   afterEach(async () => {
@@ -281,9 +285,9 @@ describe("E2E: Savings Diversification Flow", () => {
 
   it("E1: Configure family with Maya ($15/week, 20% savings)", async () => {
     const config = makeConfig();
-    await state.saveFamilyConfig(config);
+    await state.saveFamilyConfig(FAMILY_ID, config);
 
-    const loaded = await state.loadFamilyConfig();
+    const loaded = await state.loadFamilyConfig(FAMILY_ID);
     expect(loaded).not.toBeNull();
     expect(loaded!.children).toHaveLength(1);
     expect(loaded!.children[0].name).toBe("Maya");
@@ -292,9 +296,9 @@ describe("E2E: Savings Diversification Flow", () => {
   });
 
   it("E2: Deposit $3.00 savings (USDC, locked 90 days)", async () => {
-    await state.saveFamilyConfig(makeConfig());
+    await state.saveFamilyConfig(FAMILY_ID, makeConfig());
 
-    await state.addSavingsEntry({
+    await state.addSavingsEntry(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       amount: 3_000_000,
@@ -304,16 +308,16 @@ describe("E2E: Savings Diversification Flow", () => {
       multiplierAtDeposit: 1.0,
     });
 
-    const entries = await state.loadSavingsEntries("Maya");
+    const entries = await state.loadSavingsEntries(FAMILY_ID, "Maya");
     expect(entries).toHaveLength(1);
     expect(entries[0].asset).toBe("USDC");
     expect(entries[0].amount).toBe(3_000_000);
   });
 
   it("E3: Second deposit brings total to $6.00 locked", async () => {
-    await state.saveFamilyConfig(makeConfig());
+    await state.saveFamilyConfig(FAMILY_ID, makeConfig());
 
-    await state.addSavingsEntry({
+    await state.addSavingsEntry(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       amount: 3_000_000,
@@ -322,7 +326,7 @@ describe("E2E: Savings Diversification Flow", () => {
       released: false,
       multiplierAtDeposit: 1.0,
     });
-    await state.addSavingsEntry({
+    await state.addSavingsEntry(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       amount: 3_000_000,
@@ -332,19 +336,19 @@ describe("E2E: Savings Diversification Flow", () => {
       multiplierAtDeposit: 1.0,
     });
 
-    const entries = await state.loadSavingsEntries("Maya");
+    const entries = await state.loadSavingsEntries(FAMILY_ID, "Maya");
     expect(entries).toHaveLength(2);
     const total = entries.reduce((sum, e) => sum + e.amount, 0);
     expect(total).toBe(6_000_000);
   });
 
   it("E4: Convert $3.00 to PAXG — original marked converted, PAXG entry created", async () => {
-    await state.saveFamilyConfig(makeConfig());
+    await state.saveFamilyConfig(FAMILY_ID, makeConfig());
 
     // Two deposits of $3 each
     const entry1Id = randomUUID();
     const entry2Id = randomUUID();
-    await state.addSavingsEntry({
+    await state.addSavingsEntry(FAMILY_ID, {
       id: entry1Id,
       childName: "Maya",
       amount: 3_000_000,
@@ -353,7 +357,7 @@ describe("E2E: Savings Diversification Flow", () => {
       released: false,
       multiplierAtDeposit: 1.0,
     });
-    await state.addSavingsEntry({
+    await state.addSavingsEntry(FAMILY_ID, {
       id: entry2Id,
       childName: "Maya",
       amount: 3_000_000,
@@ -364,7 +368,7 @@ describe("E2E: Savings Diversification Flow", () => {
     });
 
     // Convert $3.00 (first entry) to PAXG
-    const allEntries = await state.loadSavingsEntries();
+    const allEntries = await state.loadSavingsEntries(FAMILY_ID);
     const firstEntry = allEntries.find((e) => e.id === entry1Id)!;
     firstEntry.converted = true;
 
@@ -386,10 +390,10 @@ describe("E2E: Savings Diversification Flow", () => {
       receivedAmount: "0.000644",
     });
 
-    await state.saveSavingsEntries(allEntries);
+    await state.saveSavingsEntries(FAMILY_ID, allEntries);
 
     // Audit
-    await state.addAuditEntry({
+    await state.addAuditEntry(FAMILY_ID, {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
       action: "savings-converted",
@@ -407,7 +411,7 @@ describe("E2E: Savings Diversification Flow", () => {
     });
 
     // Verify
-    const after = await state.loadSavingsEntries("Maya");
+    const after = await state.loadSavingsEntries(FAMILY_ID, "Maya");
     const converted = after.filter((e) => e.converted);
     const paxg = after.filter((e) => e.asset === "PAXG");
     expect(converted).toHaveLength(1);
@@ -419,7 +423,7 @@ describe("E2E: Savings Diversification Flow", () => {
 
   it("E5: check-savings shows both USDC and PAXG positions", async () => {
     // Set up mixed portfolio directly
-    await state.addSavingsEntry({
+    await state.addSavingsEntry(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       amount: 3_000_000,
@@ -430,7 +434,7 @@ describe("E2E: Savings Diversification Flow", () => {
       multiplierAtDeposit: 1.0,
       converted: false,
     });
-    await state.addSavingsEntry({
+    await state.addSavingsEntry(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       amount: 0,
@@ -445,7 +449,7 @@ describe("E2E: Savings Diversification Flow", () => {
       conversionTxHash: "0xcheck_test",
     });
 
-    const entries = await state.loadSavingsEntries("Maya");
+    const entries = await state.loadSavingsEntries(FAMILY_ID, "Maya");
     const active = entries.filter((e) => !e.converted);
     const locked = active.filter((e) => !e.released);
 
@@ -470,7 +474,7 @@ describe("E2E: Savings Diversification Flow", () => {
     const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
     // Add expired USDC entry
-    await state.addSavingsEntry({
+    await state.addSavingsEntry(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       amount: 3_000_000,
@@ -483,7 +487,7 @@ describe("E2E: Savings Diversification Flow", () => {
     });
 
     // Add expired PAXG entry (lockUntil in the past)
-    await state.addSavingsEntry({
+    await state.addSavingsEntry(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       amount: 0,
@@ -498,7 +502,7 @@ describe("E2E: Savings Diversification Flow", () => {
       conversionTxHash: "0xrelease_test",
     });
 
-    const allEntries = await state.loadSavingsEntries();
+    const allEntries = await state.loadSavingsEntries(FAMILY_ID);
     const now = new Date();
 
     // Find ready entries (same logic as release-savings tool)
@@ -535,10 +539,10 @@ describe("E2E: Savings Diversification Flow", () => {
       entry.released = true;
       entry.releasedAt = new Date().toISOString();
     }
-    await state.saveSavingsEntries(allEntries);
+    await state.saveSavingsEntries(FAMILY_ID, allEntries);
 
     // Verify all marked released
-    const afterRelease = await state.loadSavingsEntries("Maya");
+    const afterRelease = await state.loadSavingsEntries(FAMILY_ID, "Maya");
     const stillUnreleased = afterRelease.filter((e) => !e.released && !e.converted);
     expect(stillUnreleased).toHaveLength(0);
   });

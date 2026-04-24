@@ -3,7 +3,11 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { StateManager } from "../engine/state.js";
 import { USDC } from "../constants.js";
-import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
+import {
+  withAccessControl,
+  buildNoIdentityResponse,
+  rbacFields,
+} from "../middleware/access-control.js";
 
 export function registerConvertSavingsTool(server: McpServer): void {
   server.tool(
@@ -18,14 +22,18 @@ export function registerConvertSavingsTool(server: McpServer): void {
       priceAtConversion: z.number().positive().describe("USD price per unit of received asset at time of swap (e.g. 4660.00 for PAXG)"),
       ...rbacFields,
     },
-    async (args) => {
-      const caller = await resolveCallerRole(args as Record<string, unknown>);
-      if (!isToolAuthorized("convert-savings", caller.role)) {
-        return buildAccessDeniedResponse("convert-savings", caller.role);
-      }
+    withAccessControl("convert-savings", async (args, caller) => {
+      if (!caller) return buildNoIdentityResponse("convert-savings");
+      const childName = args.childName as string;
+      const usdcAmount = args.usdcAmount as number;
+      const receivedAsset = args.receivedAsset as "PAXG";
+      const receivedAmount = args.receivedAmount as string;
+      const txHash = args.txHash as string;
+      const priceAtConversion = args.priceAtConversion as number;
       try {
         const state = new StateManager();
-        const config = await state.loadFamilyConfig();
+        const familyId = caller.familyId;
+        const config = await state.loadFamilyConfig(familyId);
 
         if (!config) {
           return {
@@ -38,7 +46,7 @@ export function registerConvertSavingsTool(server: McpServer): void {
 
         // Validate child exists in config
         const childConfig = config.children.find(
-          (c) => c.name.toLowerCase() === args.childName.toLowerCase()
+          (c) => c.name.toLowerCase() === childName.toLowerCase()
         );
         if (!childConfig) {
           return {
@@ -49,11 +57,11 @@ export function registerConvertSavingsTool(server: McpServer): void {
           };
         }
 
-        // Load all savings entries (need full list to save back)
-        const allEntries = await state.loadSavingsEntries();
+        // Load all savings entries for this family (need full list to save back)
+        const allEntries = await state.loadSavingsEntries(familyId);
         const childEntries = allEntries.filter(
           (e) =>
-            e.childName.toLowerCase() === args.childName.toLowerCase() &&
+            e.childName.toLowerCase() === childName.toLowerCase() &&
             !e.released &&
             !e.converted &&
             (e.asset === "USDC" || !e.asset) // backward compat: entries without asset field are USDC
@@ -62,13 +70,13 @@ export function registerConvertSavingsTool(server: McpServer): void {
         // Calculate available USDC balance
         const availableUsdc = childEntries.reduce((sum, e) => sum + e.amount, 0);
 
-        if (availableUsdc < args.usdcAmount) {
+        if (availableUsdc < usdcAmount) {
           return {
             content: [{
               type: "text" as const,
               text: JSON.stringify({
                 success: false,
-                error: `Insufficient USDC savings. Available: $${(availableUsdc / 10 ** USDC.DECIMALS).toFixed(2)}, requested: $${(args.usdcAmount / 10 ** USDC.DECIMALS).toFixed(2)}`,
+                error: `Insufficient USDC savings. Available: $${(availableUsdc / 10 ** USDC.DECIMALS).toFixed(2)}, requested: $${(usdcAmount / 10 ** USDC.DECIMALS).toFixed(2)}`,
               }),
             }],
           };
@@ -79,7 +87,7 @@ export function registerConvertSavingsTool(server: McpServer): void {
           (a, b) => new Date(a.depositedAt).getTime() - new Date(b.depositedAt).getTime()
         );
 
-        let remaining = args.usdcAmount;
+        let remaining = usdcAmount;
         const consumedEntryIds: string[] = [];
 
         for (const entry of sorted) {
@@ -111,7 +119,7 @@ export function registerConvertSavingsTool(server: McpServer): void {
         // Create new PAXG savings entry
         const paxgEntry = {
           id: randomUUID(),
-          childName: args.childName,
+          childName,
           amount: 0, // PAXG amount tracked as string in receivedAmount
           asset: "PAXG" as const,
           depositedAt: new Date().toISOString(),
@@ -120,39 +128,39 @@ export function registerConvertSavingsTool(server: McpServer): void {
           multiplierAtDeposit: 1.0, // Gold doesn't earn multiplier — it earns price appreciation
           converted: false,
           convertedFrom: consumedEntryIds.join(","),
-          conversionTxHash: args.txHash,
-          priceAtConversion: args.priceAtConversion,
-          receivedAmount: args.receivedAmount,
+          conversionTxHash: txHash,
+          priceAtConversion,
+          receivedAmount,
         };
         allEntries.push(paxgEntry);
 
         // Save all entries
-        await state.saveSavingsEntries(allEntries);
+        await state.saveSavingsEntries(familyId, allEntries);
 
         // Audit log
-        await state.addAuditEntry({
+        await state.addAuditEntry(familyId, {
           id: randomUUID(),
           timestamp: new Date().toISOString(),
           action: "savings-converted",
           actor: caller.memberId,
           details: {
-            childName: args.childName,
-            usdcConsumed: args.usdcAmount,
-            usdcConsumedUsd: (args.usdcAmount / 10 ** USDC.DECIMALS).toFixed(2),
-            receivedAsset: args.receivedAsset,
-            receivedAmount: args.receivedAmount,
-            priceAtConversion: args.priceAtConversion,
-            txHash: args.txHash,
+            childName,
+            usdcConsumed: usdcAmount,
+            usdcConsumedUsd: (usdcAmount / 10 ** USDC.DECIMALS).toFixed(2),
+            receivedAsset,
+            receivedAmount,
+            priceAtConversion,
+            txHash,
             consumedEntryIds,
           },
-          txHash: args.txHash,
-          amount: args.usdcAmount,
+          txHash,
+          amount: usdcAmount,
         });
 
         // Build position summary
         const remainingUsdc = allEntries.filter(
           (e) =>
-            e.childName.toLowerCase() === args.childName.toLowerCase() &&
+            e.childName.toLowerCase() === childName.toLowerCase() &&
             !e.released &&
             !e.converted &&
             (e.asset === "USDC" || !e.asset)
@@ -161,7 +169,7 @@ export function registerConvertSavingsTool(server: McpServer): void {
 
         const paxgEntries = allEntries.filter(
           (e) =>
-            e.childName.toLowerCase() === args.childName.toLowerCase() &&
+            e.childName.toLowerCase() === childName.toLowerCase() &&
             !e.released &&
             e.asset === "PAXG"
         );
@@ -172,10 +180,10 @@ export function registerConvertSavingsTool(server: McpServer): void {
             text: JSON.stringify({
               success: true,
               conversion: {
-                usdcConsumed: `$${(args.usdcAmount / 10 ** USDC.DECIMALS).toFixed(2)}`,
-                paxgReceived: `${args.receivedAmount} oz`,
-                priceAtConversion: `$${args.priceAtConversion.toFixed(2)}/oz`,
-                txHash: args.txHash,
+                usdcConsumed: `$${(usdcAmount / 10 ** USDC.DECIMALS).toFixed(2)}`,
+                paxgReceived: `${receivedAmount} oz`,
+                priceAtConversion: `$${priceAtConversion.toFixed(2)}/oz`,
+                txHash,
               },
               positionAfter: {
                 usdc: {
@@ -188,7 +196,7 @@ export function registerConvertSavingsTool(server: McpServer): void {
                   note: "Gold doesn't earn the savings multiplier — it earns price appreciation.",
                 },
               },
-              message: `Converted $${(args.usdcAmount / 10 ** USDC.DECIMALS).toFixed(2)} USDC to ${args.receivedAmount} oz PAXG for ${args.childName}. Gold earns price appreciation, not a streak multiplier.`,
+              message: `Converted $${(usdcAmount / 10 ** USDC.DECIMALS).toFixed(2)} USDC to ${receivedAmount} oz PAXG for ${childName}. Gold earns price appreciation, not a streak multiplier.`,
             }),
           }],
         };
@@ -203,6 +211,6 @@ export function registerConvertSavingsTool(server: McpServer): void {
           }],
         };
       }
-    }
+    })
   );
 }

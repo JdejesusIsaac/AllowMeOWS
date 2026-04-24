@@ -4,8 +4,10 @@ import { randomUUID } from "node:crypto";
 import { StateManager } from "../engine/state.js";
 import { InviteSystem } from "../invites/system.js";
 import { RoleManager } from "../roles/manager.js";
-import type { Member } from "../schemas.js";
-import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
+import { MemberIndex } from "../identity/member-index.js";
+import { SetupCodeStore } from "../identity/setup-codes.js";
+import type { Invite, Member } from "../schemas.js";
+import { withAccessControl, rbacFields } from "../middleware/access-control.js";
 
 export function registerAcceptInviteTool(server: McpServer): void {
   server.tool(
@@ -16,21 +18,35 @@ export function registerAcceptInviteTool(server: McpServer): void {
       name: z.string().describe("Your name"),
       ...rbacFields,
     },
-    async (args) => {
-      const caller = await resolveCallerRole(args as Record<string, unknown>);
-      if (!isToolAuthorized("accept-invite", caller.role)) {
-        return buildAccessDeniedResponse("accept-invite", caller.role);
-      }
+    withAccessControl("accept-invite", async (args, _caller) => {
+      // Note: accept-invite is in UNIDENTIFIED_CALLER_TOOLS — caller may be
+      // null (brand-new user) or an existing member of another family. In
+      // either case, the invite itself carries the target familyId and that's
+      // the family the new member is added to.
+      const code = args.code as string;
+      const name = args.name as string;
       try {
         const state = new StateManager();
         const inviteSystem = new InviteSystem();
         const roleManager = new RoleManager();
+        const index = new MemberIndex();
 
-        // Validate invite
-        const invites = await state.loadInvites();
-        const invite = inviteSystem.validateInvite(args.code, invites);
+        // Scan every family's invite list for this code. Invite codes are
+        // globally unique (CHILD-ROLE-4CHAR), so at most one family matches.
+        const familyIds = await state.listFamilies();
+        let matchingInvite: Invite | null = null;
+        let matchingFamilyId: string | null = null;
+        for (const fid of familyIds) {
+          const invites = await state.loadInvites(fid);
+          const candidate = inviteSystem.validateInvite(code, invites);
+          if (candidate) {
+            matchingInvite = candidate;
+            matchingFamilyId = fid;
+            break;
+          }
+        }
 
-        if (!invite) {
+        if (!matchingInvite || !matchingFamilyId) {
           return {
             content: [{
               type: "text" as const,
@@ -42,15 +58,15 @@ export function registerAcceptInviteTool(server: McpServer): void {
           };
         }
 
-        // Create OWS API key with role-mapped policy
-        const apiKeyResult = await roleManager.createRoleApiKey(
-          args.name,
-          invite.role
-        );
+        const invite = matchingInvite;
+        const familyId = matchingFamilyId;
 
-        // For learner invites, validate childName exists in family config
+        // Create OWS API key with role-mapped policy
+        const apiKeyResult = await roleManager.createRoleApiKey(name, invite.role);
+
+        // For learner invites, validate childName exists in target family config
         if (invite.role === "learner" && invite.childName) {
-          const config = await state.loadFamilyConfig();
+          const config = await state.loadFamilyConfig(familyId);
           if (config) {
             const childExists = config.children.some(
               (c) => c.name.toLowerCase() === invite.childName!.toLowerCase()
@@ -67,9 +83,10 @@ export function registerAcceptInviteTool(server: McpServer): void {
         }
 
         // Create member record (copy childName from invite for learner role)
+        const memberId = randomUUID();
         const member: Member = {
-          id: randomUUID(),
-          name: args.name,
+          id: memberId,
+          name,
           role: invite.role,
           childName: invite.role === "learner" ? invite.childName : undefined,
           apiKeyId: apiKeyResult?.id,
@@ -77,26 +94,43 @@ export function registerAcceptInviteTool(server: McpServer): void {
           active: true,
         };
 
-        await state.addMember(member);
+        await state.addMember(familyId, member);
 
-        // Mark invite as used
-        invite.used = true;
-        invite.usedBy = member.id;
-        invite.usedAt = new Date().toISOString();
-        await state.saveInvites(invites);
+        // Register in global member-index so future requests from this member
+        // (via X-Member-Id header, setup code, or _callerId arg) resolve to
+        // the right family and role.
+        await index.set(memberId, familyId, invite.role);
+
+        // Mark invite as used — reload the target family's invite list, flip
+        // the flag on the matching entry, and persist.
+        const invites = await state.loadInvites(familyId);
+        const toMark = invites.find((i) => i.code === invite.code);
+        if (toMark) {
+          toMark.used = true;
+          toMark.usedBy = memberId;
+          toMark.usedAt = new Date().toISOString();
+          await state.saveInvites(familyId, invites);
+        }
 
         // Audit
-        await state.addAuditEntry({
+        await state.addAuditEntry(familyId, {
           id: randomUUID(),
           timestamp: new Date().toISOString(),
           action: "invite-accepted",
-          actor: member.id,
+          actor: memberId,
           details: {
-            inviteCode: args.code,
-            name: args.name,
+            inviteCode: code,
+            name,
             role: invite.role,
           },
         });
+
+        // Issue a setup code so the new member can update their MCP URL and
+        // authenticate on subsequent requests.
+        const setupCodes = new SetupCodeStore();
+        const setupCode = await setupCodes.issue(memberId);
+        const baseUrl = process.env.ALLOWANCE_AGENT_URL || "https://allowme.dev";
+        const mcpUrl = `${baseUrl}/mcp?setup=${setupCode}`;
 
         const roleDescription: Record<string, string> = {
           manager: "full control over the family economy",
@@ -111,10 +145,18 @@ export function registerAcceptInviteTool(server: McpServer): void {
             type: "text" as const,
             text: JSON.stringify({
               success: true,
-              name: args.name,
+              name,
               role: invite.role,
               childName: member.childName,
-              message: `Welcome, ${args.name}! You're connected as a ${invite.role} member. You can ${roleDescription[invite.role]}.`,
+              familyId,
+              memberId,
+              setupCode,
+              mcpUrl,
+              message:
+                `Welcome, ${name}! You're connected as a ${invite.role} member. ` +
+                `You can ${roleDescription[invite.role]}. ` +
+                `To continue using AllowanceAgent in your own Claude, update your MCP connector URL to:\n\n${mcpUrl}\n\n` +
+                `The setup code expires in 48 hours.`,
             }),
           }],
         };
@@ -129,6 +171,6 @@ export function registerAcceptInviteTool(server: McpServer): void {
           }],
         };
       }
-    }
+    })
   );
 }

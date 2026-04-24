@@ -6,7 +6,11 @@ import { PolicyEngine } from "../engine/policy.js";
 import { AchievementSourceEnum } from "../schemas.js";
 import type { AchievementRecord } from "../schemas.js";
 import { USDC } from "../constants.js";
-import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
+import {
+  withAccessControl,
+  buildNoIdentityResponse,
+  rbacFields,
+} from "../middleware/access-control.js";
 
 export function registerVerifyAchievementTool(server: McpServer): void {
   server.tool(
@@ -21,17 +25,21 @@ export function registerVerifyAchievementTool(server: McpServer): void {
       metadata: z.record(z.unknown()).optional().describe("Optional metadata (e.g. classroomId, topic)"),
       ...rbacFields,
     },
-    async (args) => {
-      const caller = await resolveCallerRole(args as Record<string, unknown>);
-      if (!isToolAuthorized("verify-achievement", caller.role)) {
-        return buildAccessDeniedResponse("verify-achievement", caller.role);
-      }
+    withAccessControl("verify-achievement", async (args, caller) => {
+      if (!caller) return buildNoIdentityResponse("verify-achievement");
+      const childName = args.childName as string;
+      const category = args.category as string;
+      const description = args.description as string;
+      const score = args.score as number;
+      const source = (args.source as string | undefined) || "manual";
+      const metadata = args.metadata as Record<string, unknown> | undefined;
       try {
         const state = new StateManager();
         const engine = new PolicyEngine();
+        const familyId = caller.familyId;
 
         // Load family config
-        const config = await state.loadFamilyConfig();
+        const config = await state.loadFamilyConfig(familyId);
         if (!config) {
           return {
             content: [{
@@ -46,7 +54,7 @@ export function registerVerifyAchievementTool(server: McpServer): void {
 
         // Find child config
         const childConfig = config.children.find(
-          (c) => c.name.toLowerCase() === args.childName.toLowerCase()
+          (c) => c.name.toLowerCase() === childName.toLowerCase()
         );
         if (!childConfig) {
           return {
@@ -54,14 +62,14 @@ export function registerVerifyAchievementTool(server: McpServer): void {
               type: "text" as const,
               text: JSON.stringify({
                 success: false,
-                error: `Child "${args.childName}" not found. Configured children: ${config.children.map((c) => c.name).join(", ")}`,
+                error: `Child "${childName}" not found. Configured children: ${config.children.map((c) => c.name).join(", ")}`,
               }),
             }],
           };
         }
 
         // Learner can only verify achievements for their own child
-        if (caller.role === "learner" && caller.childName?.toLowerCase() !== args.childName.toLowerCase()) {
+        if (caller.role === "learner" && caller.childName?.toLowerCase() !== childName.toLowerCase()) {
           return {
             content: [{
               type: "text" as const,
@@ -75,14 +83,14 @@ export function registerVerifyAchievementTool(server: McpServer): void {
 
         // Validate category exists in child's config
         const validCats = childConfig.categories?.map((c) => c.name) || [];
-        const matchedCat = validCats.find((n) => n.toLowerCase() === args.category.toLowerCase());
+        const matchedCat = validCats.find((n) => n.toLowerCase() === category.toLowerCase());
         if (!matchedCat) {
           return {
             content: [{
               type: "text" as const,
               text: JSON.stringify({
                 success: false,
-                error: `Category '${args.category}' not configured. Available: ${validCats.join(", ")}`,
+                error: `Category '${category}' not configured. Available: ${validCats.join(", ")}`,
               }),
             }],
           };
@@ -90,13 +98,13 @@ export function registerVerifyAchievementTool(server: McpServer): void {
 
         // Evaluate achievement amount
         const amount = engine.evaluateAchievement(
-          args.score,
+          score,
           matchedCat,
           childConfig
         );
 
         // Update streak
-        const streak = await state.updateStreak(childConfig.name);
+        const streak = await state.updateStreak(familyId, childConfig.name);
 
         // Apply streak multiplier
         const multipliedAmount = Math.round(amount * streak.multiplier);
@@ -105,30 +113,30 @@ export function registerVerifyAchievementTool(server: McpServer): void {
         const record: AchievementRecord = {
           id: randomUUID(),
           childName: childConfig.name,
-          category: args.category,
-          description: args.description,
-          score: args.score,
+          category,
+          description,
+          score,
           amount: multipliedAmount,
-          source: args.source || "manual",
+          source: source as AchievementRecord["source"],
           verifiedBy: caller.memberId,
           verifiedAt: new Date().toISOString(),
           distributed: false,
         };
 
-        await state.addAchievement(record);
+        await state.addAchievement(familyId, record);
 
         // Audit log
-        await state.addAuditEntry({
+        await state.addAuditEntry(familyId, {
           id: randomUUID(),
           timestamp: new Date().toISOString(),
           action: "verify-achievement",
           actor: caller.memberId,
           details: {
-            childName: args.childName,
-            category: args.category,
-            score: args.score,
-            source: args.source || "manual",
-            metadata: args.metadata,
+            childName,
+            category,
+            score,
+            source,
+            metadata,
             baseAmount: amount,
             multiplier: streak.multiplier,
             finalAmount: multipliedAmount,
@@ -144,16 +152,16 @@ export function registerVerifyAchievementTool(server: McpServer): void {
             text: JSON.stringify({
               success: true,
               childName: childConfig.name,
-              category: args.category,
-              score: args.score,
-              source: args.source || "manual",
+              category,
+              score,
+              source,
               baseAmountUsd: baseUsd,
               streakMultiplier: streak.multiplier,
               finalAmountUsd: amountUsd,
               currentStreak: streak.currentStreak,
               message: streak.multiplier > 1
-                ? `${childConfig.name} earned $${amountUsd} for ${args.category} (${args.score}/100). ${streak.currentStreak}-day streak gives ${streak.multiplier}x bonus! (base: $${baseUsd}). Ready for distribution.`
-                : `${childConfig.name} earned $${amountUsd} for ${args.category} (${args.score}/100). Ready for distribution.`,
+                ? `${childConfig.name} earned $${amountUsd} for ${category} (${score}/100). ${streak.currentStreak}-day streak gives ${streak.multiplier}x bonus! (base: $${baseUsd}). Ready for distribution.`
+                : `${childConfig.name} earned $${amountUsd} for ${category} (${score}/100). Ready for distribution.`,
             }),
           }],
         };
@@ -168,6 +176,6 @@ export function registerVerifyAchievementTool(server: McpServer): void {
           }],
         };
       }
-    }
+    })
   );
 }

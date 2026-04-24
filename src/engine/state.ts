@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename, readdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,15 +22,38 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, "..", "..");
 const dataDir = join(projectRoot, DATA_DIR);
 
+/**
+ * Returns the absolute path to the data directory.
+ */
+export function getDataDir(): string {
+  return dataDir;
+}
+
+/**
+ * Returns the absolute path to a family's scoped data directory:
+ * `{dataDir}/families/{familyId}/`.
+ */
+export function getFamilyDir(familyId: string): string {
+  return join(dataDir, "families", familyId);
+}
+
 async function ensureDataDir(): Promise<void> {
   if (!existsSync(dataDir)) {
     await mkdir(dataDir, { recursive: true });
   }
 }
 
-async function readJson<T>(filename: string, fallback: T): Promise<T> {
+async function ensureFamilyDir(familyId: string): Promise<void> {
   await ensureDataDir();
-  const filepath = join(dataDir, filename);
+  const familyDir = getFamilyDir(familyId);
+  if (!existsSync(familyDir)) {
+    await mkdir(familyDir, { recursive: true, mode: 0o700 });
+  }
+}
+
+async function readJson<T>(familyId: string, filename: string, fallback: T): Promise<T> {
+  await ensureFamilyDir(familyId);
+  const filepath = join(getFamilyDir(familyId), filename);
   try {
     const raw = await readFile(filepath, "utf-8");
     return JSON.parse(raw) as T;
@@ -39,9 +62,9 @@ async function readJson<T>(filename: string, fallback: T): Promise<T> {
   }
 }
 
-async function writeJson<T>(filename: string, data: T): Promise<void> {
-  await ensureDataDir();
-  const filepath = join(dataDir, filename);
+async function writeJson<T>(familyId: string, filename: string, data: T): Promise<void> {
+  await ensureFamilyDir(familyId);
+  const filepath = join(getFamilyDir(familyId), filename);
   const tmpPath = filepath + `.tmp.${randomUUID().slice(0, 8)}`;
   await writeFile(tmpPath, JSON.stringify(data, null, 2), "utf-8");
   await rename(tmpPath, filepath);
@@ -70,82 +93,128 @@ function migrateLegacyCategories(config: FamilyConfig): { config: FamilyConfig; 
 }
 
 export class StateManager {
+  // === Family Directory Management (Sprint 2.9) ===
+  /**
+   * Create a family's scoped data directory with restrictive permissions.
+   * Safe to call repeatedly.
+   */
+  async createFamilyDir(familyId: string): Promise<void> {
+    await ensureFamilyDir(familyId);
+  }
+
+  /**
+   * List all family IDs that have directories under `data/families/`.
+   * Returns an empty array if the families root does not exist.
+   */
+  async listFamilies(): Promise<string[]> {
+    const familiesRoot = join(dataDir, "families");
+    if (!existsSync(familiesRoot)) return [];
+    const entries = await readdir(familiesRoot);
+    const families: string[] = [];
+    for (const entry of entries) {
+      try {
+        const s = await stat(join(familiesRoot, entry));
+        if (s.isDirectory()) families.push(entry);
+      } catch {
+        // Skip entries we can't stat
+      }
+    }
+    return families;
+  }
+
+  /**
+   * Return true if the given family has been initialized (family-config.json exists).
+   */
+  async familyExists(familyId: string): Promise<boolean> {
+    const configPath = join(getFamilyDir(familyId), "family-config.json");
+    return existsSync(configPath);
+  }
+
   // === Family Config ===
-  async loadFamilyConfig(): Promise<FamilyConfig | null> {
-    const raw = await readJson<FamilyConfig | null>("family-config.json", null);
+  async loadFamilyConfig(familyId: string): Promise<FamilyConfig | null> {
+    const raw = await readJson<FamilyConfig | null>(familyId, "family-config.json", null);
     if (!raw) return null;
     const { config, migrated } = migrateLegacyCategories(raw);
     if (migrated) {
-      await this.saveFamilyConfig(config);
+      await this.saveFamilyConfig(familyId, config);
     }
     return config;
   }
 
-  async saveFamilyConfig(config: FamilyConfig): Promise<void> {
-    await writeJson("family-config.json", config);
+  async saveFamilyConfig(familyId: string, config: FamilyConfig): Promise<void> {
+    await writeJson(familyId, "family-config.json", config);
   }
 
   // === Achievements ===
-  async loadAchievements(): Promise<AchievementRecord[]> {
-    return readJson<AchievementRecord[]>("achievements.json", []);
+  async loadAchievements(familyId: string): Promise<AchievementRecord[]> {
+    return readJson<AchievementRecord[]>(familyId, "achievements.json", []);
   }
 
-  async saveAchievements(records: AchievementRecord[]): Promise<void> {
-    await writeJson("achievements.json", records);
+  async saveAchievements(familyId: string, records: AchievementRecord[]): Promise<void> {
+    await writeJson(familyId, "achievements.json", records);
   }
 
-  async addAchievement(record: AchievementRecord): Promise<void> {
-    const records = await this.loadAchievements();
+  async addAchievement(familyId: string, record: AchievementRecord): Promise<void> {
+    const records = await this.loadAchievements(familyId);
     records.push(record);
-    await this.saveAchievements(records);
+    await this.saveAchievements(familyId, records);
   }
 
   // === Members ===
-  async loadMembers(): Promise<Member[]> {
-    return readJson<Member[]>("members.json", []);
+  async loadMembers(familyId: string): Promise<Member[]> {
+    return readJson<Member[]>(familyId, "members.json", []);
   }
 
-  async saveMembers(members: Member[]): Promise<void> {
-    await writeJson("members.json", members);
+  async saveMembers(familyId: string, members: Member[]): Promise<void> {
+    await writeJson(familyId, "members.json", members);
   }
 
-  async addMember(member: Member): Promise<void> {
-    const members = await this.loadMembers();
+  async addMember(familyId: string, member: Member): Promise<void> {
+    const members = await this.loadMembers(familyId);
     members.push(member);
-    await this.saveMembers(members);
+    await this.saveMembers(familyId, members);
+  }
+
+  /**
+   * Lookup a single active member inside a family by id.
+   * Returns null if the member does not exist or is inactive.
+   */
+  async loadMember(familyId: string, memberId: string): Promise<Member | null> {
+    const members = await this.loadMembers(familyId);
+    return members.find((m) => m.id === memberId && m.active) ?? null;
   }
 
   // === Invites ===
-  async loadInvites(): Promise<Invite[]> {
-    return readJson<Invite[]>("invites.json", []);
+  async loadInvites(familyId: string): Promise<Invite[]> {
+    return readJson<Invite[]>(familyId, "invites.json", []);
   }
 
-  async saveInvites(invites: Invite[]): Promise<void> {
-    await writeJson("invites.json", invites);
+  async saveInvites(familyId: string, invites: Invite[]): Promise<void> {
+    await writeJson(familyId, "invites.json", invites);
   }
 
-  async addInvite(invite: Invite): Promise<void> {
-    const invites = await this.loadInvites();
+  async addInvite(familyId: string, invite: Invite): Promise<void> {
+    const invites = await this.loadInvites(familyId);
     invites.push(invite);
-    await this.saveInvites(invites);
+    await this.saveInvites(familyId, invites);
   }
 
   // === Streaks ===
-  async loadStreaks(): Promise<StreakData[]> {
-    return readJson<StreakData[]>("streaks.json", []);
+  async loadStreaks(familyId: string): Promise<StreakData[]> {
+    return readJson<StreakData[]>(familyId, "streaks.json", []);
   }
 
-  async saveStreaks(streaks: StreakData[]): Promise<void> {
-    await writeJson("streaks.json", streaks);
+  async saveStreaks(familyId: string, streaks: StreakData[]): Promise<void> {
+    await writeJson(familyId, "streaks.json", streaks);
   }
 
-  async loadStreak(childName: string): Promise<StreakData | null> {
-    const streaks = await this.loadStreaks();
+  async loadStreak(familyId: string, childName: string): Promise<StreakData | null> {
+    const streaks = await this.loadStreaks(familyId);
     return streaks.find((s) => s.childName.toLowerCase() === childName.toLowerCase()) ?? null;
   }
 
-  async initializeStreak(childName: string): Promise<void> {
-    const streaks = await this.loadStreaks();
+  async initializeStreak(familyId: string, childName: string): Promise<void> {
+    const streaks = await this.loadStreaks(familyId);
     const existing = streaks.find(
       (s) => s.childName.toLowerCase() === childName.toLowerCase()
     );
@@ -157,12 +226,12 @@ export class StateManager {
         multiplier: 1.0,
         weeklyAchievements: 0,
       });
-      await this.saveStreaks(streaks);
+      await this.saveStreaks(familyId, streaks);
     }
   }
 
-  async updateStreak(childName: string): Promise<StreakData> {
-    const streaks = await this.loadStreaks();
+  async updateStreak(familyId: string, childName: string): Promise<StreakData> {
+    const streaks = await this.loadStreaks(familyId);
     let streak = streaks.find(
       (s) => s.childName.toLowerCase() === childName.toLowerCase()
     );
@@ -214,25 +283,25 @@ export class StateManager {
       STREAK.MAX_MULTIPLIER
     );
 
-    await this.saveStreaks(streaks);
+    await this.saveStreaks(familyId, streaks);
     return streak;
   }
 
   // === Savings ===
-  async loadSavingsEntries(childName?: string): Promise<SavingsEntry[]> {
-    const all = await readJson<SavingsEntry[]>("savings.json", []);
+  async loadSavingsEntries(familyId: string, childName?: string): Promise<SavingsEntry[]> {
+    const all = await readJson<SavingsEntry[]>(familyId, "savings.json", []);
     if (childName) {
       return all.filter((e) => e.childName.toLowerCase() === childName.toLowerCase());
     }
     return all;
   }
 
-  async saveSavingsEntries(entries: SavingsEntry[]): Promise<void> {
-    await writeJson("savings.json", entries);
+  async saveSavingsEntries(familyId: string, entries: SavingsEntry[]): Promise<void> {
+    await writeJson(familyId, "savings.json", entries);
   }
 
-  async addSavingsEntry(entry: SavingsEntryInput): Promise<void> {
-    const entries = await readJson<SavingsEntry[]>("savings.json", []);
+  async addSavingsEntry(familyId: string, entry: SavingsEntryInput): Promise<void> {
+    const entries = await readJson<SavingsEntry[]>(familyId, "savings.json", []);
     // Apply defaults for fields that have them
     const full: SavingsEntry = {
       asset: "USDC",
@@ -242,17 +311,17 @@ export class StateManager {
       ...entry,
     } as SavingsEntry;
     entries.push(full);
-    await this.saveSavingsEntries(entries);
+    await this.saveSavingsEntries(familyId, entries);
   }
 
   // === Audit Log ===
-  async loadAuditLog(): Promise<AuditEntry[]> {
-    return readJson<AuditEntry[]>("audit-log.json", []);
+  async loadAuditLog(familyId: string): Promise<AuditEntry[]> {
+    return readJson<AuditEntry[]>(familyId, "audit-log.json", []);
   }
 
-  async addAuditEntry(entry: AuditEntry): Promise<void> {
-    const log = await this.loadAuditLog();
+  async addAuditEntry(familyId: string, entry: AuditEntry): Promise<void> {
+    const log = await this.loadAuditLog(familyId);
     log.push(entry);
-    await writeJson("audit-log.json", log);
+    await writeJson(familyId, "audit-log.json", log);
   }
 }

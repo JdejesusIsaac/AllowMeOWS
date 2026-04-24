@@ -7,6 +7,8 @@ import { FitbitClient } from "../src/fitbit/client.js";
 import { resolveHttpCaller, isHttpToolAuthorized, accessDenied } from "../app/tools/_helpers.js";
 import type { FamilyConfig, Member } from "../src/schemas.js";
 
+const FAMILY_ID = "a0000000-0000-0000-0000-000000000001";
+
 const testDataDir = join(process.cwd(), "data");
 
 /**
@@ -121,17 +123,27 @@ describe("H6-H7: HTTP member resolution", () => {
     await rm(testDataDir, { recursive: true, force: true });
     await mkdir(testDataDir, { recursive: true });
     state = new StateManager();
+    // Note: Sprint 2.9 tests in this block intentionally do NOT pre-create a
+    // family directory so H6 can exercise the "no families" path. Tests that
+    // need a family set one up explicitly.
   });
 
   afterEach(async () => {
     await rm(testDataDir, { recursive: true, force: true });
   });
 
-  it("H6: resolveHttpCaller with no payer defaults to manager", async () => {
-    // When no x402 payer is present (free tool or unauthenticated)
+  it("H6: resolveHttpCaller with no payer and no families returns null (Sprint 2.9)", async () => {
     const caller = await resolveHttpCaller();
-    expect(caller.role).toBe("manager");
-    expect(caller.memberId).toBe("anonymous");
+    expect(caller).toBeNull();
+  });
+
+  it("H6b: resolveHttpCaller with no payer and one family uses legacy fallback", async () => {
+    await state.createFamilyDir(FAMILY_ID);
+    const caller = await resolveHttpCaller();
+    expect(caller).not.toBeNull();
+    expect(caller!.role).toBe("manager");
+    expect(caller!.memberId).toBe("legacy-manager");
+    expect(caller!.familyId).toBe(FAMILY_ID);
   });
 
   it("H7: isHttpToolAuthorized enforces RBAC for HTTP callers", () => {

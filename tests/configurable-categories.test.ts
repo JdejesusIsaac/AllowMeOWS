@@ -5,6 +5,8 @@ import { StateManager } from "../src/engine/state.js";
 import { PolicyEngine } from "../src/engine/policy.js";
 import type { FamilyConfig, ChildConfig } from "../src/schemas.js";
 
+const FAMILY_ID = "a0000000-0000-0000-0000-000000000001";
+
 const testDataDir = join(process.cwd(), "data");
 
 describe("Configurable Categories", () => {
@@ -15,6 +17,7 @@ describe("Configurable Categories", () => {
     await rm(testDataDir, { recursive: true, force: true });
     await mkdir(testDataDir, { recursive: true });
     state = new StateManager();
+    await state.createFamilyDir(FAMILY_ID);
     engine = new PolicyEngine();
   });
 
@@ -46,8 +49,8 @@ describe("Configurable Categories", () => {
       usdcAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
     };
 
-    await state.saveFamilyConfig(config);
-    const loaded = await state.loadFamilyConfig();
+    await state.saveFamilyConfig(FAMILY_ID, config);
+    const loaded = await state.loadFamilyConfig(FAMILY_ID);
     expect(loaded).not.toBeNull();
     expect(loaded!.children[0].categories).toHaveLength(3);
     expect(loaded!.children[0].categories![0].name).toBe("reading");
@@ -133,9 +136,9 @@ describe("Configurable Categories", () => {
       chainId: "eip155:84532",
       usdcAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
     };
-    await state.saveFamilyConfig(config);
+    await state.saveFamilyConfig(FAMILY_ID, config);
 
-    const loaded = await state.loadFamilyConfig();
+    const loaded = await state.loadFamilyConfig(FAMILY_ID);
     const child = loaded!.children[0];
     const catNames = child.categories!.map((c) => c.name);
     expect(catNames).toEqual(["reading", "movement", "creativity"]);
@@ -168,12 +171,18 @@ describe("Configurable Categories", () => {
       usdcAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
     };
 
-    // Write legacy format directly to file (bypass saveFamilyConfig)
-    const filepath = join(testDataDir, "family-config.json");
+    // Sprint 2.9: write legacy-category format into the family-scoped path.
+    // The Sprint 2.75 → 2.9 migration (multi-tenant) runs at server startup;
+    // within the category-migration path, we just need the file in the right
+    // directory so loadFamilyConfig finds it.
+    const { mkdir } = await import("node:fs/promises");
+    const familyDir = join(testDataDir, "families", FAMILY_ID);
+    await mkdir(familyDir, { recursive: true });
+    const filepath = join(familyDir, "family-config.json");
     await writeFile(filepath, JSON.stringify(legacyConfig, null, 2), "utf-8");
 
     // Load triggers migration
-    const loaded = await state.loadFamilyConfig();
+    const loaded = await state.loadFamilyConfig(FAMILY_ID);
     expect(loaded).not.toBeNull();
     const child = loaded!.children[0];
 

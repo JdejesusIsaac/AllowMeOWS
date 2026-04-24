@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { resolveMasterKey } from "./keys/master-key.js";
+import { migrateToMultiTenant } from "./migrations/2.9-multi-tenant.js";
 import { registerConfigurePolicyTool } from "./tools/configure-policy.js";
 import { registerVerifyAchievementTool } from "./tools/verify-achievement.js";
 import { registerDistributeAllowanceTool } from "./tools/distribute-allowance.js";
@@ -13,11 +14,23 @@ import { registerGetFundingAddressTool } from "./tools/get-funding-address.js";
 import { registerReleaseSavingsTool } from "./tools/release-savings.js";
 import { registerConnectFitbitTool } from "./tools/connect-fitbit.js";
 import { registerConvertSavingsTool } from "./tools/convert-savings.js";
+
 // Resolve master encryption key at startup (auto-generates if needed)
 try {
   resolveMasterKey();
 } catch (err) {
   console.error("[AllowanceAgent] FATAL: Could not resolve master key:", err);
+  process.exit(1);
+}
+
+// Run Sprint 2.9 multi-tenant migration at startup. Idempotent — no-op if
+// already migrated or if the installation is fresh. Failing startup on
+// migration error is deliberate: partial state is recoverable, silent
+// corruption is not.
+try {
+  await migrateToMultiTenant();
+} catch (err) {
+  console.error("[AllowanceAgent] FATAL: Sprint 2.9 migration failed:", err);
   process.exit(1);
 }
 

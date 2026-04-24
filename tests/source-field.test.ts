@@ -6,6 +6,8 @@ import { StateManager } from "../src/engine/state.js";
 import { PolicyEngine } from "../src/engine/policy.js";
 import type { AchievementRecord } from "../src/schemas.js";
 
+const FAMILY_ID = "a0000000-0000-0000-0000-000000000001";
+
 const testDataDir = join(process.cwd(), "data");
 
 // ============================================================
@@ -18,6 +20,7 @@ describe("D3: Source Field", () => {
     await rm(testDataDir, { recursive: true, force: true });
     await mkdir(testDataDir, { recursive: true });
     state = new StateManager();
+    await state.createFamilyDir(FAMILY_ID);
   });
 
   afterEach(async () => {
@@ -37,9 +40,9 @@ describe("D3: Source Field", () => {
       verifiedAt: new Date().toISOString(),
       distributed: false,
     };
-    await state.addAchievement(record);
+    await state.addAchievement(FAMILY_ID, record);
 
-    const loaded = await state.loadAchievements();
+    const loaded = await state.loadAchievements(FAMILY_ID);
     expect(loaded).toHaveLength(1);
     expect(loaded[0].source).toBe("openMAIC");
   });
@@ -57,9 +60,9 @@ describe("D3: Source Field", () => {
       verifiedAt: new Date().toISOString(),
       distributed: false,
     };
-    await state.addAchievement(record);
+    await state.addAchievement(FAMILY_ID, record);
 
-    const loaded = await state.loadAchievements();
+    const loaded = await state.loadAchievements(FAMILY_ID);
     expect(loaded[0].source).toBe("self-report");
   });
 
@@ -76,15 +79,15 @@ describe("D3: Source Field", () => {
       verifiedAt: new Date().toISOString(),
       distributed: false,
     };
-    await state.addAchievement(record);
+    await state.addAchievement(FAMILY_ID, record);
 
-    const loaded = await state.loadAchievements();
+    const loaded = await state.loadAchievements(FAMILY_ID);
     expect(loaded[0].source).toBe("manual");
   });
 
   it("S4: check-progress includes source per achievement in response data", async () => {
     // Add achievements with different sources
-    await state.addAchievement({
+    await state.addAchievement(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       category: "education",
@@ -96,7 +99,7 @@ describe("D3: Source Field", () => {
       verifiedAt: new Date().toISOString(),
       distributed: false,
     });
-    await state.addAchievement({
+    await state.addAchievement(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       category: "health",
@@ -109,7 +112,7 @@ describe("D3: Source Field", () => {
       distributed: false,
     });
 
-    const achievements = await state.loadAchievements();
+    const achievements = await state.loadAchievements(FAMILY_ID);
     const sources = achievements.map((a) => a.source);
     expect(sources).toContain("openMAIC");
     expect(sources).toContain("self-report");
@@ -120,7 +123,7 @@ describe("D3: Source Field", () => {
 
   it("S5: Source field persists through distribution marking", async () => {
     const id = randomUUID();
-    await state.addAchievement({
+    await state.addAchievement(FAMILY_ID, {
       id,
       childName: "Maya",
       category: "education",
@@ -134,14 +137,14 @@ describe("D3: Source Field", () => {
     });
 
     // Simulate distribution — mark as distributed
-    const achievements = await state.loadAchievements();
+    const achievements = await state.loadAchievements(FAMILY_ID);
     achievements[0].distributed = true;
     achievements[0].distributedAt = new Date().toISOString();
     achievements[0].txHash = "0xfake123";
-    await state.saveAchievements(achievements);
+    await state.saveAchievements(FAMILY_ID, achievements);
 
     // Verify source survives
-    const after = await state.loadAchievements();
+    const after = await state.loadAchievements(FAMILY_ID);
     expect(after[0].distributed).toBe(true);
     expect(after[0].source).toBe("openMAIC");
     expect(after[0].txHash).toBe("0xfake123");

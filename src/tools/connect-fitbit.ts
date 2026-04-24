@@ -2,7 +2,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { FitbitClient } from "../fitbit/client.js";
 import { StateManager } from "../engine/state.js";
-import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
+import {
+  withAccessControl,
+  buildNoIdentityResponse,
+  rbacFields,
+} from "../middleware/access-control.js";
 
 export function registerConnectFitbitTool(server: McpServer): void {
   server.tool(
@@ -12,12 +16,12 @@ export function registerConnectFitbitTool(server: McpServer): void {
       childName: z.string().describe("Name of the child to connect Fitbit for"),
       ...rbacFields,
     },
-    async (args) => {
-      const caller = await resolveCallerRole(args as Record<string, unknown>);
-      if (!isToolAuthorized("connect-fitbit", caller.role)) {
-        return buildAccessDeniedResponse("connect-fitbit", caller.role);
-      }
+    withAccessControl("connect-fitbit", async (args, caller) => {
+      if (!caller) return buildNoIdentityResponse("connect-fitbit");
+      const childName = args.childName as string;
       try {
+        const familyId = caller.familyId;
+
         // Check Fitbit env vars
         if (!FitbitClient.isConfigured()) {
           return {
@@ -33,7 +37,7 @@ export function registerConnectFitbitTool(server: McpServer): void {
 
         // Verify child exists
         const state = new StateManager();
-        const config = await state.loadFamilyConfig();
+        const config = await state.loadFamilyConfig(familyId);
         if (!config) {
           return {
             content: [{
@@ -44,7 +48,7 @@ export function registerConnectFitbitTool(server: McpServer): void {
         }
 
         const childConfig = config.children.find(
-          (c) => c.name.toLowerCase() === args.childName.toLowerCase()
+          (c) => c.name.toLowerCase() === childName.toLowerCase()
         );
         if (!childConfig) {
           return {
@@ -52,16 +56,16 @@ export function registerConnectFitbitTool(server: McpServer): void {
               type: "text" as const,
               text: JSON.stringify({
                 success: false,
-                error: `Child "${args.childName}" not found. Configured children: ${config.children.map((c) => c.name).join(", ")}`,
+                error: `Child "${childName}" not found. Configured children: ${config.children.map((c) => c.name).join(", ")}`,
               }),
             }],
           };
         }
 
-        const client = new FitbitClient();
+        const client = new FitbitClient(familyId);
 
         // Check if already connected
-        const alreadyConnected = await client.isChildConnected(args.childName);
+        const alreadyConnected = await client.isChildConnected(childName);
         if (alreadyConnected) {
           return {
             content: [{
@@ -69,15 +73,15 @@ export function registerConnectFitbitTool(server: McpServer): void {
               text: JSON.stringify({
                 success: true,
                 alreadyConnected: true,
-                childName: args.childName,
-                message: `${args.childName}'s Fitbit is already connected! To reconnect, tap the link below.`,
-                connectUrl: client.getAuthUrl(args.childName),
+                childName,
+                message: `${childName}'s Fitbit is already connected! To reconnect, tap the link below.`,
+                connectUrl: client.getAuthUrl(childName),
               }),
             }],
           };
         }
 
-        const connectUrl = client.getAuthUrl(args.childName);
+        const connectUrl = client.getAuthUrl(childName);
 
         return {
           content: [{
@@ -85,9 +89,9 @@ export function registerConnectFitbitTool(server: McpServer): void {
             text: JSON.stringify({
               success: true,
               alreadyConnected: false,
-              childName: args.childName,
+              childName,
               connectUrl,
-              message: `Tap this link to connect ${args.childName}'s Fitbit:\n${connectUrl}\n\nYou'll see Fitbit's consent screen — tap "Allow" to authorize step tracking.`,
+              message: `Tap this link to connect ${childName}'s Fitbit:\n${connectUrl}\n\nYou'll see Fitbit's consent screen — tap "Allow" to authorize step tracking.`,
             }),
           }],
         };
@@ -102,6 +106,6 @@ export function registerConnectFitbitTool(server: McpServer): void {
           }],
         };
       }
-    }
+    })
   );
 }

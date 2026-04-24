@@ -5,7 +5,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { resolveMasterKey } from "../src/keys/master-key.js";
+import { migrateToMultiTenant } from "../src/migrations/2.9-multi-tenant.js";
 import { FitbitClient } from "../src/fitbit/client.js";
+import { runWithRequestContext } from "../src/middleware/request-context.js";
+import { StateManager } from "../src/engine/state.js";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
@@ -29,6 +32,14 @@ try {
   resolveMasterKey();
 } catch (err) {
   console.error("[AllowanceAgent] Failed to resolve master key:", err);
+  process.exit(1);
+}
+
+// ===== Run Sprint 2.9 multi-tenant migration at startup =====
+try {
+  await migrateToMultiTenant();
+} catch (err) {
+  console.error("[AllowanceAgent] FATAL: Sprint 2.9 migration failed:", err);
   process.exit(1);
 }
 
@@ -69,6 +80,18 @@ function createMcpServer(): McpServer {
   return server;
 }
 
+/**
+ * Build the per-request AsyncLocalStorage context so deeply-nested tool
+ * handlers can read auth headers (X-Member-Id) and URL query params
+ * (?setup=CODE) via `getRequestContext()`.
+ */
+function buildRequestContext(req: express.Request) {
+  return {
+    headers: req.headers as Record<string, string | string[] | undefined>,
+    query: req.query as Record<string, string | string[] | undefined>,
+  };
+}
+
 // ===== MCP endpoint: POST /mcp =====
 app.post("/mcp", async (req, res) => {
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
@@ -103,7 +126,9 @@ app.post("/mcp", async (req, res) => {
     return;
   }
 
-  await transport.handleRequest(req, res, req.body);
+  await runWithRequestContext(buildRequestContext(req), () =>
+    transport.handleRequest(req, res, req.body)
+  );
 });
 
 // ===== MCP endpoint: GET /mcp (SSE fallback for resumable streams) =====
@@ -113,7 +138,9 @@ app.get("/mcp", async (req, res) => {
     res.status(400).send("Invalid or missing session ID");
     return;
   }
-  await transports[sessionId].handleRequest(req, res);
+  await runWithRequestContext(buildRequestContext(req), () =>
+    transports[sessionId].handleRequest(req, res)
+  );
 });
 
 // ===== MCP endpoint: DELETE /mcp (session cleanup) =====
@@ -123,7 +150,9 @@ app.delete("/mcp", async (req, res) => {
     res.status(400).send("Invalid or missing session ID");
     return;
   }
-  await transports[sessionId].handleRequest(req, res);
+  await runWithRequestContext(buildRequestContext(req), () =>
+    transports[sessionId].handleRequest(req, res)
+  );
 });
 
 // ===== Health check =====
@@ -138,16 +167,37 @@ app.get("/health", (_req, res) => {
 });
 
 // ===== Fitbit OAuth endpoints =====
-app.get("/fitbit/connect", (req, res) => {
-  const childName = req.query.child as string;
+//
+// Sprint 2.9: Fitbit connections are scoped to a family. The `/fitbit/connect`
+// entry point now requires `?family=<familyId>&child=<name>`. Legacy callers
+// that only supply `?child=` are accepted when the server has exactly one
+// family (single-family fallback). The OAuth `state` param carries
+// "familyId:childName" so the callback can route tokens to the correct family.
+
+async function resolveFitbitFamilyId(requested?: string): Promise<string | null> {
+  if (requested) return requested;
+  const families = await new StateManager().listFamilies();
+  if (families.length === 1) return families[0];
+  return null;
+}
+
+app.get("/fitbit/connect", async (req, res) => {
+  const childName = req.query.child as string | undefined;
+  const requestedFamily = req.query.family as string | undefined;
   if (!childName) {
     return res.status(400).json({ error: "Missing ?child= query parameter" });
   }
   if (!FitbitClient.isConfigured()) {
     return res.status(503).json({ error: "Fitbit not configured." });
   }
+  const familyId = await resolveFitbitFamilyId(requestedFamily);
+  if (!familyId) {
+    return res.status(400).json({
+      error: "Missing ?family= query parameter (required when more than one family is registered)",
+    });
+  }
   try {
-    const client = new FitbitClient();
+    const client = new FitbitClient(familyId);
     res.redirect(client.getAuthUrl(childName));
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error" });
@@ -156,19 +206,40 @@ app.get("/fitbit/connect", (req, res) => {
 
 app.get("/fitbit/callback", async (req, res) => {
   const code = req.query.code as string;
-  const childName = req.query.state as string;
-  if (!code || !childName) {
+  const rawState = req.query.state as string;
+  if (!code || !rawState) {
     return res.status(400).send(`
       <html><body style="font-family:system-ui;max-width:500px;margin:40px auto;text-align:center">
         <h2>Connection Failed</h2>
-        <p>Missing authorization code or child name. Please try again.</p>
+        <p>Missing authorization code or state. Please try again.</p>
+      </body></html>
+    `);
+  }
+  // Sprint 2.9 state format: "familyId:childName". Legacy state format
+  // (childName alone) is accepted for backward compat with the single-family
+  // fallback.
+  let familyId: string | null;
+  let childName: string;
+  if (rawState.includes(":")) {
+    const [f, ...rest] = rawState.split(":");
+    familyId = f;
+    childName = rest.join(":");
+  } else {
+    childName = rawState;
+    familyId = await resolveFitbitFamilyId(undefined);
+  }
+  if (!familyId || !childName) {
+    return res.status(400).send(`
+      <html><body style="font-family:system-ui;max-width:500px;margin:40px auto;text-align:center">
+        <h2>Connection Failed</h2>
+        <p>Could not resolve which family this Fitbit connection belongs to. Re-run connect-fitbit from Claude.</p>
       </body></html>
     `);
   }
   try {
-    const client = new FitbitClient();
+    const client = new FitbitClient(familyId);
     await client.exchangeCode(code, childName);
-    console.log(`[Fitbit] Connected for child: ${childName}`);
+    console.log(`[Fitbit] Connected for child: ${childName} (family ${familyId})`);
     res.send(`
       <html><body style="font-family:system-ui;max-width:500px;margin:40px auto;text-align:center">
         <h2>Fitbit Connected!</h2>

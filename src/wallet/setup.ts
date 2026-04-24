@@ -160,6 +160,11 @@ export class WalletSetup {
   ): Promise<{ managerToken: string; wallets: string[] }> {
     const state = new StateManager();
     const createdWallets: string[] = [];
+    if (!config.familyId) {
+      throw new Error("WalletSetup.initializeFamily requires config.familyId (Sprint 2.9)");
+    }
+    const familyId = config.familyId;
+    await state.createFamilyDir(familyId);
 
     // 1. Create core wallets
     const coreWallets = [
@@ -174,7 +179,7 @@ export class WalletSetup {
         createdWallets.push(walletName);
         console.error(`[Setup] Created wallet: ${walletName} (${wallet.id})`);
 
-        await state.addAuditEntry({
+        await state.addAuditEntry(familyId, {
           id: randomUUID(),
           timestamp: new Date().toISOString(),
           action: "wallet-created",
@@ -192,7 +197,7 @@ export class WalletSetup {
     for (const child of config.children) {
       if (child.walletAddress) {
         console.error(`[Setup] Child "${child.name}" uses external address: ${child.walletAddress} — skipping OWS wallet creation`);
-        await state.addAuditEntry({
+        await state.addAuditEntry(familyId, {
           id: randomUUID(),
           timestamp: new Date().toISOString(),
           action: "external-wallet-registered",
@@ -208,7 +213,7 @@ export class WalletSetup {
         createdWallets.push(childWalletName);
         console.error(`[Setup] Created child wallet: ${childWalletName} (${wallet.id})`);
 
-        await state.addAuditEntry({
+        await state.addAuditEntry(familyId, {
           id: randomUUID(),
           timestamp: new Date().toISOString(),
           action: "wallet-created",
@@ -241,7 +246,7 @@ export class WalletSetup {
         createPolicy(JSON.stringify(policy), this.vaultPath);
         console.error(`[Setup] Created policy: ${policy.id}`);
 
-        await state.addAuditEntry({
+        await state.addAuditEntry(familyId, {
           id: randomUUID(),
           timestamp: new Date().toISOString(),
           action: "policy-created",
@@ -265,15 +270,24 @@ export class WalletSetup {
 
     console.error(`[Setup] Created Manager API key: ${managerKey.id}`);
 
-    // 7. Register manager as first member
-    await state.addMember({
-      id: randomUUID(),
-      name: config.familyName + " Manager",
-      role: "manager",
-      apiKeyId: managerKey.id,
-      joinedAt: new Date().toISOString(),
-      active: true,
-    });
+    // 7. Register a sentinel member record for the OWS manager key. This is a
+    // system-level record; the real per-user Manager Member is created by
+    // configure-policy (bootstrap path) or by invite acceptance. Only add the
+    // sentinel when no active Manager exists yet for this family.
+    const existingMembers = await state.loadMembers(familyId);
+    const hasActiveManager = existingMembers.some(
+      (m) => m.role === "manager" && m.active
+    );
+    if (!hasActiveManager) {
+      await state.addMember(familyId, {
+        id: randomUUID(),
+        name: config.familyName + " Manager",
+        role: "manager",
+        apiKeyId: managerKey.id,
+        joinedAt: new Date().toISOString(),
+        active: true,
+      });
+    }
 
     return {
       managerToken: managerKey.token,

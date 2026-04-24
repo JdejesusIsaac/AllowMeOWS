@@ -5,7 +5,11 @@ import { StateManager } from "../engine/state.js";
 import { WalletDistributor } from "../wallet/distributor.js";
 import { FamilyKeyManager } from "../keys/family-keys.js";
 import { USDC, WALLET_NAMES } from "../constants.js";
-import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
+import {
+  withAccessControl,
+  buildNoIdentityResponse,
+  rbacFields,
+} from "../middleware/access-control.js";
 
 export function registerReleaseSavingsTool(server: McpServer): void {
   server.tool(
@@ -16,15 +20,15 @@ export function registerReleaseSavingsTool(server: McpServer): void {
       dryRun: z.boolean().default(false).describe("Preview release without sending transactions"),
       ...rbacFields,
     },
-    async (args) => {
-      const caller = await resolveCallerRole(args as Record<string, unknown>);
-      if (!isToolAuthorized("release-savings", caller.role)) {
-        return buildAccessDeniedResponse("release-savings", caller.role);
-      }
+    withAccessControl("release-savings", async (args, caller) => {
+      if (!caller) return buildNoIdentityResponse("release-savings");
+      const requestedChild = args.childName as string | undefined;
+      const dryRun = args.dryRun as boolean;
       try {
         const state = new StateManager();
+        const familyId = caller.familyId;
 
-        const config = await state.loadFamilyConfig();
+        const config = await state.loadFamilyConfig(familyId);
         if (!config) {
           return {
             content: [{
@@ -34,11 +38,10 @@ export function registerReleaseSavingsTool(server: McpServer): void {
           };
         }
 
-        // Auto-resolve per-family encryption key (no passphrase prompt)
+        // Auto-resolve per-family encryption key scoped to this caller's family
         const keyManager = new FamilyKeyManager();
-        const familyId = config.familyId;
         let passphrase: string | undefined;
-        if (familyId && keyManager.hasFamilyKey(familyId)) {
+        if (keyManager.hasFamilyKey(familyId)) {
           passphrase = keyManager.getFamilyKey(familyId);
         } else if (process.env.OWS_PASSPHRASE) {
           passphrase = process.env.OWS_PASSPHRASE;
@@ -46,8 +49,9 @@ export function registerReleaseSavingsTool(server: McpServer): void {
         }
         const distributor = new WalletDistributor(passphrase);
 
-        // Load all savings entries (not filtered by child yet, so we can save them all back)
-        const allEntries = await state.loadSavingsEntries();
+        // Load all savings entries for this family (not filtered by child yet,
+        // so we can save them all back)
+        const allEntries = await state.loadSavingsEntries(familyId);
         const now = new Date();
 
         // Find expired, unreleased, non-converted entries
@@ -55,7 +59,7 @@ export function registerReleaseSavingsTool(server: McpServer): void {
           if (e.released) return false;
           if (e.converted) return false;
           if (new Date(e.lockUntil) > now) return false;
-          if (args.childName && e.childName.toLowerCase() !== args.childName.toLowerCase()) return false;
+          if (requestedChild && e.childName.toLowerCase() !== requestedChild.toLowerCase()) return false;
           return true;
         });
 
@@ -110,7 +114,7 @@ export function registerReleaseSavingsTool(server: McpServer): void {
 
           let txHash: string | undefined;
 
-          if (!args.dryRun) {
+          if (!dryRun) {
             if (!passphrase) {
               return {
                 content: [{
@@ -149,10 +153,10 @@ export function registerReleaseSavingsTool(server: McpServer): void {
               entry.releasedAt = releaseTime;
             }
 
-            await state.saveSavingsEntries(allEntries);
+            await state.saveSavingsEntries(familyId, allEntries);
 
             // Audit log
-            await state.addAuditEntry({
+            await state.addAuditEntry(familyId, {
               id: randomUUID(),
               timestamp: new Date().toISOString(),
               action: "savings-release",
@@ -210,10 +214,10 @@ export function registerReleaseSavingsTool(server: McpServer): void {
             type: "text" as const,
             text: JSON.stringify({
               success: true,
-              dryRun: args.dryRun,
+              dryRun,
               released: totalReleased,
               distributions: results,
-              message: args.dryRun
+              message: dryRun
                 ? `Preview:\n${summary}\n\nRun again with dryRun=false to execute.`
                 : `Released ${totalReleased} savings entries:\n${summary}`,
             }),
@@ -230,6 +234,6 @@ export function registerReleaseSavingsTool(server: McpServer): void {
           }],
         };
       }
-    }
+    })
   );
 }

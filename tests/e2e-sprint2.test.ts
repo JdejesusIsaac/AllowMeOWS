@@ -12,6 +12,8 @@ import {
 import { ROLES } from "../src/constants.js";
 import type { FamilyConfig, AchievementRecord, Member, Invite } from "../src/schemas.js";
 
+const FAMILY_ID = "a0000000-0000-0000-0000-000000000001";
+
 const testDataDir = join(process.cwd(), "data");
 
 // Shared test config
@@ -66,6 +68,7 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
     await rm(testDataDir, { recursive: true, force: true });
     await mkdir(testDataDir, { recursive: true });
     state = new StateManager();
+    await state.createFamilyDir(FAMILY_ID);
     engine = new PolicyEngine();
   });
 
@@ -75,26 +78,26 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
 
   it("Step 1: Mother configures family", async () => {
     config = makeGarciaConfig();
-    await state.saveFamilyConfig(config);
+    await state.saveFamilyConfig(FAMILY_ID, config);
 
     // Initialize streaks
     for (const child of config.children) {
-      await state.initializeStreak(child.name);
+      await state.initializeStreak(FAMILY_ID, child.name);
     }
 
-    const loaded = await state.loadFamilyConfig();
+    const loaded = await state.loadFamilyConfig(FAMILY_ID);
     expect(loaded).not.toBeNull();
     expect(loaded!.children).toHaveLength(2);
     expect(loaded!.children[0].name).toBe("Maya");
     expect(loaded!.children[1].name).toBe("Carlos");
 
-    const streaks = await state.loadStreaks();
+    const streaks = await state.loadStreaks(FAMILY_ID);
     expect(streaks).toHaveLength(2);
   });
 
   it("Step 2: Mother invites Maya as learner", async () => {
     config = makeGarciaConfig();
-    await state.saveFamilyConfig(config);
+    await state.saveFamilyConfig(FAMILY_ID, config);
 
     // Simulate invite creation
     inviteCode = "MAYA-LEARN-T3X7";
@@ -108,9 +111,9 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
       expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
       used: false,
     };
-    await state.addInvite(invite);
+    await state.addInvite(FAMILY_ID, invite);
 
-    const invites = await state.loadInvites();
+    const invites = await state.loadInvites(FAMILY_ID);
     expect(invites).toHaveLength(1);
     expect(invites[0].role).toBe("learner");
     expect(invites[0].childName).toBe("Maya");
@@ -119,10 +122,10 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
 
   it("Step 3: Maya accepts invite", async () => {
     config = makeGarciaConfig();
-    await state.saveFamilyConfig(config);
+    await state.saveFamilyConfig(FAMILY_ID, config);
 
     inviteCode = "MAYA-LEARN-T3X7";
-    await state.addInvite({
+    await state.addInvite(FAMILY_ID, {
       code: inviteCode,
       role: "learner",
       childName: "Maya",
@@ -135,7 +138,7 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
 
     // Accept invite
     mayaMemberId = randomUUID();
-    await state.addMember({
+    await state.addMember(FAMILY_ID, {
       id: mayaMemberId,
       name: "Maya",
       role: "learner",
@@ -145,28 +148,28 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
     });
 
     // Mark invite as used
-    const invites = await state.loadInvites();
+    const invites = await state.loadInvites(FAMILY_ID);
     invites[0].used = true;
     invites[0].usedBy = mayaMemberId;
     invites[0].usedAt = new Date().toISOString();
-    await state.saveInvites(invites);
+    await state.saveInvites(FAMILY_ID, invites);
 
-    const members = await state.loadMembers();
+    const members = await state.loadMembers(FAMILY_ID);
     const mayaMember = members.find((m) => m.id === mayaMemberId);
     expect(mayaMember).toBeDefined();
     expect(mayaMember!.role).toBe("learner");
     expect(mayaMember!.childName).toBe("Maya");
 
-    const updatedInvites = await state.loadInvites();
+    const updatedInvites = await state.loadInvites(FAMILY_ID);
     expect(updatedInvites[0].used).toBe(true);
   });
 
   it("Step 4: Maya checks her progress (child-scoped)", async () => {
     config = makeGarciaConfig();
-    await state.saveFamilyConfig(config);
+    await state.saveFamilyConfig(FAMILY_ID, config);
 
     mayaMemberId = randomUUID();
-    await state.addMember({
+    await state.addMember(FAMILY_ID, {
       id: mayaMemberId,
       name: "Maya",
       role: "learner",
@@ -185,7 +188,7 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
     expect(scope).toBe("Maya");
 
     // No achievements yet
-    const achievements = await state.loadAchievements();
+    const achievements = await state.loadAchievements(FAMILY_ID);
     const scoped = achievements.filter(
       (a) => a.childName.toLowerCase() === scope!.toLowerCase()
     );
@@ -194,10 +197,10 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
 
   it("Step 5: Maya self-reports an achievement", async () => {
     config = makeGarciaConfig();
-    await state.saveFamilyConfig(config);
+    await state.saveFamilyConfig(FAMILY_ID, config);
 
     mayaMemberId = randomUUID();
-    await state.addMember({
+    await state.addMember(FAMILY_ID, {
       id: mayaMemberId,
       name: "Maya",
       role: "learner",
@@ -208,7 +211,7 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
 
     // Maya self-reports
     const amount = engine.evaluateAchievement(100, "personal", config.children[0]);
-    const streak = await state.updateStreak("Maya");
+    const streak = await state.updateStreak(FAMILY_ID, "Maya");
     const multipliedAmount = Math.round(amount * streak.multiplier);
 
     const record: AchievementRecord = {
@@ -223,9 +226,9 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
       verifiedAt: new Date().toISOString(),
       distributed: false,
     };
-    await state.addAchievement(record);
+    await state.addAchievement(FAMILY_ID, record);
 
-    const loaded = await state.loadAchievements();
+    const loaded = await state.loadAchievements(FAMILY_ID);
     expect(loaded).toHaveLength(1);
     expect(loaded[0].source).toBe("self-report");
     expect(loaded[0].verifiedBy).toBe(mayaMemberId);
@@ -234,11 +237,11 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
 
   it("Step 6: Claude orchestrates OpenMAIC achievement (simulated)", async () => {
     config = makeGarciaConfig();
-    await state.saveFamilyConfig(config);
+    await state.saveFamilyConfig(FAMILY_ID, config);
 
     // OpenMAIC achievement via Claude orchestration
     const amount = engine.evaluateAchievement(88, "education", config.children[0]);
-    const streak = await state.updateStreak("Maya");
+    const streak = await state.updateStreak(FAMILY_ID, "Maya");
     const multipliedAmount = Math.round(amount * streak.multiplier);
 
     const record: AchievementRecord = {
@@ -253,10 +256,10 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
       verifiedAt: new Date().toISOString(),
       distributed: false,
     };
-    await state.addAchievement(record);
+    await state.addAchievement(FAMILY_ID, record);
 
     // Audit with metadata
-    await state.addAuditEntry({
+    await state.addAuditEntry(FAMILY_ID, {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
       action: "verify-achievement",
@@ -270,20 +273,20 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
       },
     });
 
-    const loaded = await state.loadAchievements();
+    const loaded = await state.loadAchievements(FAMILY_ID);
     expect(loaded[0].source).toBe("openMAIC");
 
-    const audit = await state.loadAuditLog();
+    const audit = await state.loadAuditLog(FAMILY_ID);
     expect(audit[0].details.source).toBe("openMAIC");
     expect((audit[0].details.metadata as any).classroomId).toBe("test-123");
   });
 
   it("Step 7: Mother checks progress (sees source provenance)", async () => {
     config = makeGarciaConfig();
-    await state.saveFamilyConfig(config);
+    await state.saveFamilyConfig(FAMILY_ID, config);
 
     // Add two achievements with different sources
-    await state.addAchievement({
+    await state.addAchievement(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       category: "personal",
@@ -295,7 +298,7 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
       verifiedAt: new Date().toISOString(),
       distributed: false,
     });
-    await state.addAchievement({
+    await state.addAchievement(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       category: "education",
@@ -309,10 +312,10 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
     });
 
     // Manager sees all children, all sources
-    const managerCaller = await resolveCallerRole({ _callerRole: "manager" });
+    const managerCaller = await resolveCallerRole({ _callerRole: "manager", _familyId: FAMILY_ID });
     expect(getChildScope(managerCaller)).toBeNull(); // sees all
 
-    const achievements = await state.loadAchievements();
+    const achievements = await state.loadAchievements(FAMILY_ID);
     const mayaAchievements = achievements.filter((a) => a.childName === "Maya");
     expect(mayaAchievements).toHaveLength(2);
 
@@ -323,10 +326,10 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
 
   it("Step 8: Mother distributes (dry-run) + Maya checks savings", async () => {
     config = makeGarciaConfig();
-    await state.saveFamilyConfig(config);
+    await state.saveFamilyConfig(FAMILY_ID, config);
 
     mayaMemberId = randomUUID();
-    await state.addMember({
+    await state.addMember(FAMILY_ID, {
       id: mayaMemberId,
       name: "Maya",
       role: "learner",
@@ -336,7 +339,7 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
     });
 
     // Add achievement
-    await state.addAchievement({
+    await state.addAchievement(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       category: "education",
@@ -350,7 +353,7 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
     });
 
     // Dry-run distribution calculation
-    const achievements = await state.loadAchievements();
+    const achievements = await state.loadAchievements(FAMILY_ID);
     const pending = achievements.filter((a) => !a.distributed && a.childName === "Maya");
     const total = pending.reduce((sum, a) => sum + a.amount, 0);
     const { childAmount, savingsAmount } = engine.calculateSavingsSplit(total, 20);
@@ -366,7 +369,7 @@ describe("D7: E2E Mother-Daughter Full Flow", () => {
     });
     expect(getChildScope(mayaCaller)).toBe("Maya");
 
-    const savings = await state.loadSavingsEntries("Maya");
+    const savings = await state.loadSavingsEntries(FAMILY_ID, "Maya");
     expect(savings).toHaveLength(0); // nothing distributed yet (dry-run)
   });
 });
@@ -383,14 +386,15 @@ describe("D8: E2E Cross-Child Isolation", () => {
     await rm(testDataDir, { recursive: true, force: true });
     await mkdir(testDataDir, { recursive: true });
     state = new StateManager();
+    await state.createFamilyDir(FAMILY_ID);
 
     // Setup: two-child family, both as learners
-    await state.saveFamilyConfig(makeGarciaConfig());
+    await state.saveFamilyConfig(FAMILY_ID, makeGarciaConfig());
 
     mayaMemberId = randomUUID();
     carlosMemberId = randomUUID();
 
-    await state.addMember({
+    await state.addMember(FAMILY_ID, {
       id: mayaMemberId,
       name: "Maya",
       role: "learner",
@@ -398,7 +402,7 @@ describe("D8: E2E Cross-Child Isolation", () => {
       joinedAt: new Date().toISOString(),
       active: true,
     });
-    await state.addMember({
+    await state.addMember(FAMILY_ID, {
       id: carlosMemberId,
       name: "Carlos",
       role: "learner",
@@ -408,7 +412,7 @@ describe("D8: E2E Cross-Child Isolation", () => {
     });
 
     // Add achievements for both
-    await state.addAchievement({
+    await state.addAchievement(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       category: "education",
@@ -420,7 +424,7 @@ describe("D8: E2E Cross-Child Isolation", () => {
       verifiedAt: new Date().toISOString(),
       distributed: false,
     });
-    await state.addAchievement({
+    await state.addAchievement(FAMILY_ID, {
       id: randomUUID(),
       childName: "Carlos",
       category: "health",
@@ -434,7 +438,7 @@ describe("D8: E2E Cross-Child Isolation", () => {
     });
 
     // Add savings for both
-    await state.addSavingsEntry({
+    await state.addSavingsEntry(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       amount: 1_000_000,
@@ -443,7 +447,7 @@ describe("D8: E2E Cross-Child Isolation", () => {
       released: false,
       multiplierAtDeposit: 1.0,
     });
-    await state.addSavingsEntry({
+    await state.addSavingsEntry(FAMILY_ID, {
       id: randomUUID(),
       childName: "Carlos",
       amount: 500_000,
@@ -466,7 +470,7 @@ describe("D8: E2E Cross-Child Isolation", () => {
     const scope = getChildScope(caller);
     expect(scope).toBe("Maya");
 
-    const all = await state.loadAchievements();
+    const all = await state.loadAchievements(FAMILY_ID);
     const scoped = all.filter((a) => a.childName.toLowerCase() === scope!.toLowerCase());
     expect(scoped).toHaveLength(1);
     expect(scoped[0].childName).toBe("Maya");
@@ -481,7 +485,7 @@ describe("D8: E2E Cross-Child Isolation", () => {
     const scope = getChildScope(caller);
     expect(scope).toBe("Carlos");
 
-    const all = await state.loadAchievements();
+    const all = await state.loadAchievements(FAMILY_ID);
     const scoped = all.filter((a) => a.childName.toLowerCase() === scope!.toLowerCase());
     expect(scoped).toHaveLength(1);
     expect(scoped[0].childName).toBe("Carlos");
@@ -489,11 +493,11 @@ describe("D8: E2E Cross-Child Isolation", () => {
   });
 
   it("ISO3: Manager calls check-progress — both Maya and Carlos returned", async () => {
-    const caller = await resolveCallerRole({ _callerRole: "manager" });
+    const caller = await resolveCallerRole({ _callerRole: "manager", _familyId: FAMILY_ID });
     const scope = getChildScope(caller);
     expect(scope).toBeNull(); // no restriction
 
-    const all = await state.loadAchievements();
+    const all = await state.loadAchievements(FAMILY_ID);
     expect(all).toHaveLength(2);
     const names = all.map((a) => a.childName);
     expect(names).toContain("Maya");
@@ -506,7 +510,7 @@ describe("D8: E2E Cross-Child Isolation", () => {
       _callerRole: "learner",
     });
     const scope = getChildScope(caller);
-    const savings = await state.loadSavingsEntries(scope!);
+    const savings = await state.loadSavingsEntries(FAMILY_ID, scope!);
     expect(savings).toHaveLength(1);
     expect(savings[0].childName).toBe("Maya");
   });

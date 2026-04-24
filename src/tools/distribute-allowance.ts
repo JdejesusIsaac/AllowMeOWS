@@ -6,7 +6,11 @@ import { PolicyEngine } from "../engine/policy.js";
 import { WalletDistributor } from "../wallet/distributor.js";
 import { FamilyKeyManager } from "../keys/family-keys.js";
 import { USDC, WALLET_NAMES } from "../constants.js";
-import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
+import {
+  withAccessControl,
+  buildNoIdentityResponse,
+  rbacFields,
+} from "../middleware/access-control.js";
 
 export function registerDistributeAllowanceTool(server: McpServer): void {
   server.tool(
@@ -17,16 +21,16 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
       dryRun: z.boolean().default(false).describe("Preview distribution without sending transactions"),
       ...rbacFields,
     },
-    async (args) => {
-      const caller = await resolveCallerRole(args as Record<string, unknown>);
-      if (!isToolAuthorized("distribute-allowance", caller.role)) {
-        return buildAccessDeniedResponse("distribute-allowance", caller.role);
-      }
+    withAccessControl("distribute-allowance", async (args, caller) => {
+      if (!caller) return buildNoIdentityResponse("distribute-allowance");
+      const requestedChild = args.childName as string | undefined;
+      const dryRun = args.dryRun as boolean;
       try {
         const state = new StateManager();
         const engine = new PolicyEngine();
+        const familyId = caller.familyId;
 
-        const config = await state.loadFamilyConfig();
+        const config = await state.loadFamilyConfig(familyId);
         if (!config) {
           return {
             content: [{
@@ -36,11 +40,10 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
           };
         }
 
-        // Auto-resolve per-family encryption key (no passphrase prompt)
+        // Auto-resolve per-family encryption key scoped to this caller's family
         const keyManager = new FamilyKeyManager();
-        const familyId = config.familyId;
         let passphrase: string | undefined;
-        if (familyId && keyManager.hasFamilyKey(familyId)) {
+        if (keyManager.hasFamilyKey(familyId)) {
           passphrase = keyManager.getFamilyKey(familyId);
         } else if (process.env.OWS_PASSPHRASE) {
           // Backward compat: legacy family without per-family key
@@ -50,10 +53,10 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
         const distributor = new WalletDistributor(passphrase);
 
         // Get pending achievements
-        const achievements = await state.loadAchievements();
+        const achievements = await state.loadAchievements(familyId);
         const pending = achievements.filter((a) => {
           if (a.distributed) return false;
-          if (args.childName) return a.childName.toLowerCase() === args.childName.toLowerCase();
+          if (requestedChild) return a.childName.toLowerCase() === requestedChild.toLowerCase();
           return true;
         });
 
@@ -104,7 +107,7 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
           let savingsTxHash: string | undefined;
           let savingsError: string | undefined;
 
-          if (!args.dryRun) {
+          if (!dryRun) {
             if (!passphrase) {
               return {
                 content: [{
@@ -143,7 +146,7 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
                 savingsTxHash = savingsResult.txHash;
 
                 // Record savings entry
-                await state.addSavingsEntry({
+                await state.addSavingsEntry(familyId, {
                   id: randomUUID(),
                   childName,
                   amount: savingsAmount,
@@ -152,7 +155,7 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
                     Date.now() + childConfig.savingsLockDays * 24 * 60 * 60 * 1000
                   ).toISOString(),
                   released: false,
-                  multiplierAtDeposit: (await state.loadStreak(childName))?.multiplier ?? 1.0,
+                  multiplierAtDeposit: (await state.loadStreak(familyId, childName))?.multiplier ?? 1.0,
                 });
               } catch (savErr) {
                 savingsError = savErr instanceof Error ? savErr.message : "Savings transfer failed";
@@ -166,10 +169,10 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
               ach.distributedAt = now;
               ach.txHash = txHash;
             }
-            await state.saveAchievements(achievements);
+            await state.saveAchievements(familyId, achievements);
 
             // Audit log
-            await state.addAuditEntry({
+            await state.addAuditEntry(familyId, {
               id: randomUUID(),
               timestamp: now,
               action: "distribute",
@@ -213,9 +216,9 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
             type: "text" as const,
             text: JSON.stringify({
               success: true,
-              dryRun: args.dryRun,
+              dryRun,
               distributions: results,
-              message: args.dryRun
+              message: dryRun
                 ? `Preview:\n${summary}\n\nRun again with dryRun=false to execute.`
                 : `Distributed:\n${summary}`,
             }),
@@ -232,6 +235,6 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
           }],
         };
       }
-    }
+    })
   );
 }

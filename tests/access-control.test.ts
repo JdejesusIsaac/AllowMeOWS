@@ -7,8 +7,8 @@ import {
   buildAccessDeniedResponse,
   stripInternalArgs,
 } from "../src/middleware/access-control.js";
-import { StateManager } from "../src/engine/state.js";
 import { ROLES } from "../src/constants.js";
+import { createTestFamily } from "./helpers/family.js";
 
 const testDataDir = join(process.cwd(), "data");
 
@@ -72,53 +72,67 @@ describe("isToolAuthorized", () => {
   });
 });
 
-describe("resolveCallerRole", () => {
+describe("resolveCallerRole (Sprint 2.9)", () => {
   beforeEach(async () => {
+    await rm(testDataDir, { recursive: true, force: true });
     await mkdir(testDataDir, { recursive: true });
   });
   afterEach(async () => {
     await rm(testDataDir, { recursive: true, force: true });
   });
 
-  it("defaults to manager when no role info provided", async () => {
+  it("returns null with no identity and no families (no default Manager)", async () => {
     const result = await resolveCallerRole({});
-    expect(result.role).toBe(ROLES.MANAGER);
-    expect(result.memberId).toBe("manager");
+    expect(result).toBeNull();
   });
 
-  it("uses explicit _callerRole override", async () => {
-    const result = await resolveCallerRole({ _callerRole: "co-parent" });
-    expect(result.role).toBe("co-parent");
+  it("returns legacy single-family fallback when exactly one family exists", async () => {
+    await createTestFamily({ familyName: "SoloFamily" });
+    const result = await resolveCallerRole({});
+    expect(result).not.toBeNull();
+    expect(result!.role).toBe(ROLES.MANAGER);
+    expect(result!.memberId).toBe("legacy-manager");
   });
 
-  it("uses explicit _callerId + _callerRole", async () => {
+  it("returns null with no identity and multiple families (fallback deactivates)", async () => {
+    await createTestFamily({ familyName: "Alice" });
+    await createTestFamily({ familyName: "Bob" });
+    const result = await resolveCallerRole({});
+    expect(result).toBeNull();
+  });
+
+  it("uses explicit _callerRole + _familyId (test mode)", async () => {
+    const { familyId } = await createTestFamily();
     const result = await resolveCallerRole({
-      _callerRole: "family",
-      _callerId: "grandma-123",
+      _callerRole: "co-parent",
+      _familyId: familyId,
     });
-    expect(result.role).toBe("family");
-    expect(result.memberId).toBe("grandma-123");
+    expect(result).not.toBeNull();
+    expect(result!.role).toBe("co-parent");
+    expect(result!.familyId).toBe(familyId);
   });
 
-  it("looks up member by _callerId from state", async () => {
-    const state = new StateManager();
-    const memberId = "a0a0a0a0-b1b1-c2c2-d3d3-e4e4e4e4e4e4";
-    await state.addMember({
-      id: memberId,
-      name: "Grandma Rosa",
-      role: "family",
-      joinedAt: new Date().toISOString(),
-      active: true,
-    });
-
-    const result = await resolveCallerRole({ _callerId: memberId });
-    expect(result.role).toBe("family");
-    expect(result.memberId).toBe(memberId);
+  it("looks up member by _callerId via MemberIndex", async () => {
+    const family = await createTestFamily();
+    const result = await resolveCallerRole({ _callerId: family.memberId });
+    expect(result).not.toBeNull();
+    expect(result!.role).toBe(ROLES.MANAGER);
+    expect(result!.memberId).toBe(family.memberId);
+    expect(result!.familyId).toBe(family.familyId);
   });
 
-  it("defaults to manager for unknown _callerId", async () => {
-    const result = await resolveCallerRole({ _callerId: "nonexistent" });
-    expect(result.role).toBe(ROLES.MANAGER);
+  it("returns null for unknown _callerId (no default Manager fallback)", async () => {
+    await createTestFamily();
+    const result = await resolveCallerRole({ _callerId: "nonexistent-id" });
+    // With one family present, the legacy single-family fallback activates
+    // (member-id doesn't match, so the resolver falls through to Priority 5).
+    expect(result).not.toBeNull();
+    expect(result!.memberId).toBe("legacy-manager");
+  });
+
+  it("_callerRole without _familyId falls through (pure test-mode requires both)", async () => {
+    const result = await resolveCallerRole({ _callerRole: "co-parent" });
+    expect(result).toBeNull();
   });
 });
 

@@ -2,7 +2,12 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { StateManager } from "../engine/state.js";
 import { USDC } from "../constants.js";
-import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, getChildScope, rbacFields } from "../middleware/access-control.js";
+import {
+  withAccessControl,
+  buildNoIdentityResponse,
+  getChildScope,
+  rbacFields,
+} from "../middleware/access-control.js";
 
 export function registerCheckSavingsTool(server: McpServer): void {
   server.tool(
@@ -12,14 +17,13 @@ export function registerCheckSavingsTool(server: McpServer): void {
       childName: z.string().optional().describe("Name of the child (learners see only their own data)"),
       ...rbacFields,
     },
-    async (args) => {
-      const caller = await resolveCallerRole(args as Record<string, unknown>);
-      if (!isToolAuthorized("check-savings", caller.role)) {
-        return buildAccessDeniedResponse("check-savings", caller.role);
-      }
+    withAccessControl("check-savings", async (args, caller) => {
+      if (!caller) return buildNoIdentityResponse("check-savings");
+      const requestedChild = args.childName as string | undefined;
       try {
         const state = new StateManager();
-        const config = await state.loadFamilyConfig();
+        const familyId = caller.familyId;
+        const config = await state.loadFamilyConfig(familyId);
 
         if (!config) {
           return {
@@ -32,7 +36,7 @@ export function registerCheckSavingsTool(server: McpServer): void {
 
         // Child-scoped filtering: learner sees only their own data
         const childScope = getChildScope(caller);
-        const targetChild = childScope || args.childName;
+        const targetChild = childScope || requestedChild;
 
         if (!targetChild) {
           return {
@@ -43,8 +47,8 @@ export function registerCheckSavingsTool(server: McpServer): void {
           };
         }
 
-        const entries = await state.loadSavingsEntries(targetChild);
-        const streak = await state.loadStreak(targetChild);
+        const entries = await state.loadSavingsEntries(familyId, targetChild);
+        const streak = await state.loadStreak(familyId, targetChild);
 
         // Filter out converted entries (they've been consumed by a conversion)
         const active = entries.filter((e) => !e.converted);
@@ -132,6 +136,6 @@ export function registerCheckSavingsTool(server: McpServer): void {
           }],
         };
       }
-    }
+    })
   );
 }

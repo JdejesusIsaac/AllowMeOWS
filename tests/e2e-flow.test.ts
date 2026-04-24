@@ -19,6 +19,8 @@ import {
 } from "../src/middleware/access-control.js";
 import type { FamilyConfig, AchievementRecord, Member, SavingsEntry } from "../src/schemas.js";
 
+const FAMILY_ID = "a0000000-0000-0000-0000-000000000001";
+
 const testDataDir = join(process.cwd(), "data");
 
 describe("E2E: Full Allowance Flow", () => {
@@ -36,6 +38,7 @@ describe("E2E: Full Allowance Flow", () => {
     await rm(testDataDir, { recursive: true, force: true });
     await mkdir(testDataDir, { recursive: true });
     state = new StateManager();
+    await state.createFamilyDir(FAMILY_ID);
     engine = new PolicyEngine();
     inviteSystem = new InviteSystem();
   });
@@ -85,11 +88,11 @@ describe("E2E: Full Allowance Flow", () => {
       usdcAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
     };
 
-    await state.saveFamilyConfig(familyConfig);
+    await state.saveFamilyConfig(FAMILY_ID, familyConfig);
 
     // Register manager as first member
     const managerId = randomUUID();
-    await state.addMember({
+    await state.addMember(FAMILY_ID, {
       id: managerId,
       name: "Parent",
       role: "manager",
@@ -99,11 +102,11 @@ describe("E2E: Full Allowance Flow", () => {
 
     // Initialize streaks for each child
     for (const child of familyConfig.children) {
-      await state.initializeStreak(child.name);
+      await state.initializeStreak(FAMILY_ID, child.name);
     }
 
     // Log audit
-    await state.addAuditEntry({
+    await state.addAuditEntry(FAMILY_ID, {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
       action: "configure",
@@ -112,18 +115,18 @@ describe("E2E: Full Allowance Flow", () => {
     });
 
     // Verify persistence
-    const loaded = await state.loadFamilyConfig();
+    const loaded = await state.loadFamilyConfig(FAMILY_ID);
     expect(loaded?.familyName).toBe("TestFamily");
     expect(loaded?.children).toHaveLength(2);
 
-    const members = await state.loadMembers();
+    const members = await state.loadMembers(FAMILY_ID);
     expect(members).toHaveLength(1);
     expect(members[0].role).toBe("manager");
   });
 
   // === Step 2: Manager creates invite for co-parent ===
   it("2. Manager invites a co-parent", async () => {
-    const caller = await resolveCallerRole({ _callerRole: "manager" });
+    const caller = await resolveCallerRole({ _callerRole: "manager", _familyId: FAMILY_ID });
     expect(isToolAuthorized("invite-member", caller.role)).toBe(true);
 
     const invite = inviteSystem.generateInvite(
@@ -134,10 +137,10 @@ describe("E2E: Full Allowance Flow", () => {
     );
     inviteCode = invite.code;
 
-    await state.addInvite(invite);
+    await state.addInvite(FAMILY_ID, invite);
 
     // Log audit
-    await state.addAuditEntry({
+    await state.addAuditEntry(FAMILY_ID, {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
       action: "invite-created",
@@ -145,7 +148,7 @@ describe("E2E: Full Allowance Flow", () => {
       details: { code: inviteCode, role: "co-parent" },
     });
 
-    const invites = await state.loadInvites();
+    const invites = await state.loadInvites(FAMILY_ID);
     expect(invites).toHaveLength(1);
     expect(invites[0].code).toBe(inviteCode);
     expect(invites[0].used).toBe(false);
@@ -156,7 +159,7 @@ describe("E2E: Full Allowance Flow", () => {
     // accept-invite is available to all roles
     expect(isToolAuthorized("accept-invite", "manager")).toBe(true);
 
-    const invites = await state.loadInvites();
+    const invites = await state.loadInvites(FAMILY_ID);
     const invite = inviteSystem.validateInvite(inviteCode, invites);
     expect(invite).not.toBeNull();
     expect(invite!.role).toBe("co-parent");
@@ -170,16 +173,16 @@ describe("E2E: Full Allowance Flow", () => {
       joinedAt: new Date().toISOString(),
       active: true,
     };
-    await state.addMember(newMember);
+    await state.addMember(FAMILY_ID, newMember);
 
     // Mark invite as used
     invite!.used = true;
     invite!.usedBy = coParentMemberId;
     invite!.usedAt = new Date().toISOString();
-    await state.saveInvites(invites);
+    await state.saveInvites(FAMILY_ID, invites);
 
     // Log audit
-    await state.addAuditEntry({
+    await state.addAuditEntry(FAMILY_ID, {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
       action: "invite-accepted",
@@ -187,13 +190,13 @@ describe("E2E: Full Allowance Flow", () => {
       details: { code: inviteCode, role: "co-parent" },
     });
 
-    const members = await state.loadMembers();
+    const members = await state.loadMembers(FAMILY_ID);
     expect(members).toHaveLength(2);
     const coParent = members.find((m) => m.role === "co-parent");
     expect(coParent?.name).toBe("CoParent Maria");
 
     // Verify invite is now used
-    const updatedInvites = await state.loadInvites();
+    const updatedInvites = await state.loadInvites(FAMILY_ID);
     expect(updatedInvites[0].used).toBe(true);
   });
 
@@ -206,7 +209,7 @@ describe("E2E: Full Allowance Flow", () => {
     expect(caller.role).toBe("co-parent");
     expect(isToolAuthorized("verify-achievement", caller.role)).toBe(true);
 
-    const config = await state.loadFamilyConfig();
+    const config = await state.loadFamilyConfig(FAMILY_ID);
     const mayaConfig = config!.children.find((c) => c.name === "Maya")!;
 
     // Evaluate achievement
@@ -215,7 +218,7 @@ describe("E2E: Full Allowance Flow", () => {
     expect(baseAmount).toBe(4_250_000); // 85% of $5.00 = $4.25
 
     // Update streak
-    const streak = await state.updateStreak("Maya");
+    const streak = await state.updateStreak(FAMILY_ID, "Maya");
     expect(streak.currentStreak).toBe(1);
     expect(streak.multiplier).toBe(1.0); // no streak bonus yet
 
@@ -235,10 +238,10 @@ describe("E2E: Full Allowance Flow", () => {
       verifiedAt: new Date().toISOString(),
       distributed: false,
     };
-    await state.addAchievement(record);
+    await state.addAchievement(FAMILY_ID, record);
 
     // Log audit
-    await state.addAuditEntry({
+    await state.addAuditEntry(FAMILY_ID, {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
       action: "verify-achievement",
@@ -246,7 +249,7 @@ describe("E2E: Full Allowance Flow", () => {
       details: { child: "Maya", score, amount: finalAmount, category: "education" },
     });
 
-    const achievements = await state.loadAchievements();
+    const achievements = await state.loadAchievements(FAMILY_ID);
     expect(achievements).toHaveLength(1);
     expect(achievements[0].amount).toBe(4_250_000);
     expect(achievements[0].distributed).toBe(false);
@@ -254,11 +257,11 @@ describe("E2E: Full Allowance Flow", () => {
 
   // === Step 5: Manager distributes allowance (dry-run) ===
   it("5. Manager distributes allowance (dry-run)", async () => {
-    const caller = await resolveCallerRole({ _callerRole: "manager" });
+    const caller = await resolveCallerRole({ _callerRole: "manager", _familyId: FAMILY_ID });
     expect(isToolAuthorized("distribute-allowance", caller.role)).toBe(true);
 
-    const config = await state.loadFamilyConfig();
-    const achievements = await state.loadAchievements();
+    const config = await state.loadFamilyConfig(FAMILY_ID);
+    const achievements = await state.loadAchievements(FAMILY_ID);
     const pending = achievements.filter(
       (a) => !a.distributed && a.childName === "Maya"
     );
@@ -287,7 +290,7 @@ describe("E2E: Full Allowance Flow", () => {
       ach.distributedAt = new Date().toISOString();
       ach.txHash = "0xDRYRUN_" + randomUUID().slice(0, 8);
     }
-    await state.saveAchievements(achievements);
+    await state.saveAchievements(FAMILY_ID, achievements);
 
     // Add savings entry
     const savingsEntry: SavingsEntry = {
@@ -301,10 +304,10 @@ describe("E2E: Full Allowance Flow", () => {
       released: false,
       multiplierAtDeposit: 1.0,
     };
-    await state.addSavingsEntry(savingsEntry);
+    await state.addSavingsEntry(FAMILY_ID, savingsEntry);
 
     // Log audit
-    await state.addAuditEntry({
+    await state.addAuditEntry(FAMILY_ID, {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
       action: "distribute",
@@ -320,10 +323,10 @@ describe("E2E: Full Allowance Flow", () => {
     });
 
     // Verify state
-    const updatedAch = await state.loadAchievements();
+    const updatedAch = await state.loadAchievements(FAMILY_ID);
     expect(updatedAch[0].distributed).toBe(true);
 
-    const savings = await state.loadSavingsEntries("Maya");
+    const savings = await state.loadSavingsEntries(FAMILY_ID, "Maya");
     expect(savings).toHaveLength(1);
     expect(savings[0].amount).toBe(850_000);
     expect(savings[0].released).toBe(false);
@@ -331,18 +334,18 @@ describe("E2E: Full Allowance Flow", () => {
 
   // === Step 6: Check progress ===
   it("6. Check Maya's progress shows correct data", async () => {
-    const caller = await resolveCallerRole({ _callerRole: "co-parent" });
+    const caller = await resolveCallerRole({ _callerRole: "co-parent", _familyId: FAMILY_ID });
     expect(isToolAuthorized("check-progress", caller.role)).toBe(true);
 
-    const achievements = await state.loadAchievements();
+    const achievements = await state.loadAchievements(FAMILY_ID);
     const mayaAch = achievements.filter((a) => a.childName === "Maya");
     expect(mayaAch).toHaveLength(1);
 
-    const streak = await state.loadStreak("Maya");
+    const streak = await state.loadStreak(FAMILY_ID, "Maya");
     expect(streak).not.toBeNull();
     expect(streak!.currentStreak).toBe(1);
 
-    const savings = await state.loadSavingsEntries("Maya");
+    const savings = await state.loadSavingsEntries(FAMILY_ID, "Maya");
     expect(savings).toHaveLength(1);
 
     // Total earned and distributed
@@ -355,10 +358,10 @@ describe("E2E: Full Allowance Flow", () => {
 
   // === Step 7: Check savings vault ===
   it("7. Check Maya's savings vault", async () => {
-    const caller = await resolveCallerRole({ _callerRole: "manager" });
+    const caller = await resolveCallerRole({ _callerRole: "manager", _familyId: FAMILY_ID });
     expect(isToolAuthorized("check-savings", caller.role)).toBe(true);
 
-    const savings = await state.loadSavingsEntries("Maya");
+    const savings = await state.loadSavingsEntries(FAMILY_ID, "Maya");
     expect(savings).toHaveLength(1);
 
     const entry = savings[0];
@@ -371,7 +374,7 @@ describe("E2E: Full Allowance Flow", () => {
 
   // === Step 8: RBAC denial — family member can't configure policy ===
   it("8. RBAC: Family member denied configure-policy", async () => {
-    const caller = await resolveCallerRole({ _callerRole: "family" });
+    const caller = await resolveCallerRole({ _callerRole: "family", _familyId: FAMILY_ID });
     expect(caller.role).toBe("family");
     expect(isToolAuthorized("configure-policy", caller.role)).toBe(false);
 
@@ -401,7 +404,7 @@ describe("E2E: Full Allowance Flow", () => {
 
   // === Step 11: Audit log integrity ===
   it("11. Audit log has all expected entries", async () => {
-    const log = await state.loadAuditLog();
+    const log = await state.loadAuditLog(FAMILY_ID);
     expect(log.length).toBeGreaterThanOrEqual(4);
 
     const actions = log.map((e) => e.action);
@@ -414,7 +417,7 @@ describe("E2E: Full Allowance Flow", () => {
 
   // === Step 12: Budget enforcement ===
   it("12. Budget check catches over-spending", async () => {
-    const config = await state.loadFamilyConfig();
+    const config = await state.loadFamilyConfig(FAMILY_ID);
     const mayaConfig = config!.children.find((c) => c.name === "Maya")!;
 
     // Maya already earned $4.25 this week from education
@@ -441,7 +444,7 @@ describe("E2E: Full Allowance Flow", () => {
 
   // === Step 13: Re-used invite rejected ===
   it("13. Used invite code is rejected", async () => {
-    const invites = await state.loadInvites();
+    const invites = await state.loadInvites(FAMILY_ID);
     const result = inviteSystem.validateInvite(inviteCode, invites);
     expect(result).toBeNull(); // already used
   });

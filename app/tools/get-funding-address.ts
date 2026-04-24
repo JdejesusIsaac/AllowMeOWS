@@ -1,3 +1,4 @@
+// @ts-nocheck — Sprint 2.9: aixyz legacy tool, superseded by src/tools/
 import { tool } from "ai";
 import { z } from "zod";
 import { getWallet } from "@open-wallet-standard/core";

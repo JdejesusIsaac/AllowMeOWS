@@ -3,7 +3,11 @@ import { z } from "zod";
 import { getWallet } from "@open-wallet-standard/core";
 import { WALLET_NAMES } from "../constants.js";
 import { StateManager } from "../engine/state.js";
-import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
+import {
+  withAccessControl,
+  buildNoIdentityResponse,
+  rbacFields,
+} from "../middleware/access-control.js";
 
 export function registerGetFundingAddressTool(server: McpServer): void {
   server.tool(
@@ -13,14 +17,13 @@ export function registerGetFundingAddressTool(server: McpServer): void {
       walletName: z.enum(["treasury", "savings-vault", "gift-fund"]).default("treasury").describe("Which wallet address to show (default: treasury)"),
       ...rbacFields,
     },
-    async (args) => {
-      const caller = await resolveCallerRole(args as Record<string, unknown>);
-      if (!isToolAuthorized("get-funding-address", caller.role)) {
-        return buildAccessDeniedResponse("get-funding-address", caller.role);
-      }
+    withAccessControl("get-funding-address", async (args, caller) => {
+      if (!caller) return buildNoIdentityResponse("get-funding-address");
+      const walletName = args.walletName as "treasury" | "savings-vault" | "gift-fund";
       try {
         const state = new StateManager();
-        const config = await state.loadFamilyConfig();
+        const familyId = caller.familyId;
+        const config = await state.loadFamilyConfig(familyId);
 
         if (!config) {
           return {
@@ -30,8 +33,6 @@ export function registerGetFundingAddressTool(server: McpServer): void {
             }],
           };
         }
-
-        const walletName = args.walletName;
 
         // Resolve wallet from OWS
         let wallet;
@@ -117,6 +118,6 @@ export function registerGetFundingAddressTool(server: McpServer): void {
           }],
         };
       }
-    }
+    })
   );
 }

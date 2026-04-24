@@ -17,8 +17,9 @@ export class FitbitClient {
   private clientSecret: string;
   private redirectUri: string;
   private tokenStore: FitbitTokenStore;
+  private familyId: string;
 
-  constructor() {
+  constructor(familyId: string) {
     const clientId = process.env.FITBIT_CLIENT_ID;
     const clientSecret = process.env.FITBIT_CLIENT_SECRET;
     if (!clientId || !clientSecret) {
@@ -26,15 +27,18 @@ export class FitbitClient {
     }
     this.clientId = clientId;
     this.clientSecret = clientSecret;
+    this.familyId = familyId;
 
     const baseUrl = process.env.ALLOWANCE_AGENT_URL || "http://localhost:3000";
     this.redirectUri = `${baseUrl}/fitbit/callback`;
-    this.tokenStore = new FitbitTokenStore();
+    this.tokenStore = new FitbitTokenStore(familyId);
   }
 
   /**
    * Generate the OAuth authorization URL for a child.
    * Parent taps this link → Fitbit consent screen → callback.
+   * The OAuth `state` param carries "{familyId}:{childName}" so the callback
+   * route can resolve which family owns the connection without a session.
    */
   getAuthUrl(childName: string): string {
     const params = new URLSearchParams({
@@ -42,7 +46,7 @@ export class FitbitClient {
       response_type: "code",
       redirect_uri: this.redirectUri,
       scope: "activity",
-      state: childName, // pass child name through OAuth state param
+      state: `${this.familyId}:${childName}`,
     });
     return `${FITBIT_AUTH_URL}?${params.toString()}`;
   }

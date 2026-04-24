@@ -1,0 +1,278 @@
+<!--
+  AllowanceAgent — Verify Page (Sprint 3.0 W2.1 reference)
+
+  Single-file HTML. Hosted by Express at GET /verify on the Railway server.
+  No build step. No framework. Tailwind via CDN, IDKit via CDN.
+
+  Query params:
+    ?role=manager          → action: allowme-become-manager (orb-level)
+    ?role=coparent         → action: allowme-become-coparent (device-level)
+    ?role=family           → action: allowme-become-family (device-level)
+    ?invite=CODE           → invite code auto-filled on success
+    ?invite=CODE&role=X    → invite acceptance flow (role from invite)
+
+  States:
+    1. Initial: Show IDKit widget + context
+    2. Verifying: Loading spinner
+    3. Success (new Manager): Show MCP URL + starter prompt
+    4. Success (invite acceptance): Show connection instructions
+    5. Sybil rejection: Clear error with recovery path
+    6. Network error: Retry + fallback instructions
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AllowanceAgent — Verify</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/@worldcoin/idkit-standalone@latest"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .fade-in { animation: fadeIn 0.3s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+  <div class="max-w-md mx-auto px-6 py-12">
+
+    <!-- Header -->
+    <div class="text-center mb-8">
+      <div class="text-4xl font-bold mb-2">AllowanceAgent</div>
+      <div class="text-slate-600" id="subtitle">Verify you're a real human to set up allowance for your family.</div>
+    </div>
+
+    <!-- State 1: Initial (default visible) -->
+    <div id="state-initial" class="bg-white rounded-2xl shadow-sm p-8 fade-in">
+      <div class="text-center mb-6">
+        <div class="inline-block bg-blue-50 text-blue-700 text-sm font-medium px-3 py-1 rounded-full mb-4" id="role-badge">Manager verification</div>
+        <p class="text-slate-700 text-sm" id="explainer">
+          You'll be verified using World ID. This proves you're a unique human without revealing your identity.
+          One verified human = one family on AllowanceAgent.
+        </p>
+      </div>
+      <button
+        id="verify-btn"
+        class="w-full bg-black text-white font-semibold py-4 rounded-xl hover:bg-slate-800 transition"
+      >
+        Verify with World ID
+      </button>
+    </div>
+
+    <!-- State 2: Verifying (hidden by default) -->
+    <div id="state-verifying" class="hidden bg-white rounded-2xl shadow-sm p-8 text-center">
+      <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-black mb-4"></div>
+      <p class="text-slate-700">Verifying your World ID...</p>
+    </div>
+
+    <!-- State 3: Success (new Manager) -->
+    <div id="state-success-manager" class="hidden bg-white rounded-2xl shadow-sm p-8 fade-in">
+      <div class="text-center mb-6">
+        <div class="inline-block bg-green-50 text-green-700 text-2xl p-3 rounded-full mb-3">✓</div>
+        <h2 class="text-2xl font-bold mb-2">You're verified</h2>
+        <p class="text-slate-600 text-sm">Now set up your family in Claude.</p>
+      </div>
+
+      <!-- Step 1: MCP URL -->
+      <div class="mb-6">
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Step 1: Add to Claude</div>
+        <div class="bg-slate-100 rounded-lg p-3 flex items-center gap-2">
+          <code class="text-xs flex-1 overflow-hidden text-ellipsis whitespace-nowrap" id="mcp-url">https://allowme.dev/mcp</code>
+          <button onclick="copy('mcp-url')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy</button>
+        </div>
+        <p class="text-xs text-slate-500 mt-2">
+          Open <a href="https://claude.ai/settings/connectors" class="underline" target="_blank">claude.ai settings → Connectors</a>,
+          tap "Add custom connector," paste the URL.
+        </p>
+      </div>
+
+      <!-- Step 2: Starter prompt -->
+      <div>
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Step 2: Say to Claude</div>
+        <div class="bg-slate-100 rounded-lg p-3 flex items-center gap-2">
+          <span class="text-xs flex-1" id="starter-prompt">Set up allowance for my family.</span>
+          <button onclick="copy('starter-prompt')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy</button>
+        </div>
+      </div>
+
+      <div class="text-center mt-6 text-xs text-slate-500">
+        Don't have Claude?
+        <a href="https://claude.ai/download" class="underline" target="_blank">Download for iOS / Android / Desktop</a>
+      </div>
+    </div>
+
+    <!-- State 4: Success (invite acceptance) -->
+    <div id="state-success-invite" class="hidden bg-white rounded-2xl shadow-sm p-8 fade-in">
+      <div class="text-center mb-6">
+        <div class="inline-block bg-green-50 text-green-700 text-2xl p-3 rounded-full mb-3">✓</div>
+        <h2 class="text-2xl font-bold mb-2">You're in</h2>
+        <p class="text-slate-600 text-sm">Connect your Claude to AllowanceAgent.</p>
+      </div>
+
+      <div class="mb-6">
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-2">MCP Server URL</div>
+        <div class="bg-slate-100 rounded-lg p-3 flex items-center gap-2">
+          <code class="text-xs flex-1 overflow-hidden text-ellipsis whitespace-nowrap">https://allowme.dev/mcp</code>
+          <button onclick="copy('mcp-url-invite')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Then say to Claude</div>
+        <div class="bg-slate-100 rounded-lg p-3 flex items-center gap-2">
+          <span class="text-xs flex-1">I have a code: <span id="invite-code-display" class="font-mono"></span></span>
+          <button onclick="copy('invite-code-display')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy code</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- State 5: Sybil rejection -->
+    <div id="state-sybil" class="hidden bg-white rounded-2xl shadow-sm p-8 fade-in">
+      <div class="text-center mb-6">
+        <div class="inline-block bg-amber-50 text-amber-700 text-2xl p-3 rounded-full mb-3">!</div>
+        <h2 class="text-2xl font-bold mb-2">Already registered</h2>
+        <p class="text-slate-600 text-sm">
+          Your World ID is already registered as a <span id="sybil-role" class="font-semibold">Manager</span> on AllowanceAgent.
+        </p>
+      </div>
+      <div class="bg-slate-50 rounded-lg p-4 text-sm text-slate-700">
+        <p class="mb-2 font-semibold">Switching families?</p>
+        <p>Ask the current Manager to remove you from their family first. Once removed, you can register again.</p>
+      </div>
+    </div>
+
+    <!-- State 6: Network error -->
+    <div id="state-error" class="hidden bg-white rounded-2xl shadow-sm p-8 fade-in">
+      <div class="text-center mb-6">
+        <div class="inline-block bg-red-50 text-red-700 text-2xl p-3 rounded-full mb-3">⚠</div>
+        <h2 class="text-2xl font-bold mb-2">Something went wrong</h2>
+        <p class="text-slate-600 text-sm" id="error-message">We couldn't verify your World ID. Please try again.</p>
+      </div>
+      <button
+        onclick="resetToInitial()"
+        class="w-full bg-black text-white font-semibold py-4 rounded-xl hover:bg-slate-800 transition"
+      >
+        Try Again
+      </button>
+    </div>
+
+    <!-- Footer -->
+    <div class="text-center mt-8 text-xs text-slate-500">
+      Built by <a href="https://juanisaac.dev" class="underline">AllowMe LLC</a> · Sprint 3.0
+    </div>
+  </div>
+
+  <script>
+    // --- Parse query params ---
+    const params = new URLSearchParams(window.location.search);
+    const role = (params.get('role') || 'manager').toLowerCase();
+    const inviteCode = params.get('invite');
+
+    // Validate role
+    const ROLE_TO_ACTION = {
+      'manager': 'allowme-become-manager',
+      'coparent': 'allowme-become-coparent',
+      'family': 'allowme-become-family'
+    };
+    const ROLE_TO_LEVEL = {
+      'manager': 'orb',
+      'coparent': 'device',
+      'family': 'device'
+    };
+    const ROLE_TO_LABEL = {
+      'manager': 'Manager verification',
+      'coparent': 'Co-parent verification',
+      'family': 'Family member verification'
+    };
+
+    const action = ROLE_TO_ACTION[role] || ROLE_TO_ACTION['manager'];
+    const verificationLevel = ROLE_TO_LEVEL[role] || 'orb';
+
+    // Update UI based on role
+    document.getElementById('role-badge').textContent = ROLE_TO_LABEL[role] || ROLE_TO_LABEL['manager'];
+    if (role === 'coparent' || role === 'family') {
+      document.getElementById('explainer').textContent =
+        'World ID verification confirms you\'re the real human being added to this family.';
+    }
+    if (inviteCode) {
+      document.getElementById('subtitle').textContent = `Accept your ${role} invite.`;
+      const display = document.getElementById('invite-code-display');
+      if (display) display.textContent = inviteCode;
+    }
+
+    // --- State management ---
+    function showState(id) {
+      ['state-initial', 'state-verifying', 'state-success-manager',
+       'state-success-invite', 'state-sybil', 'state-error'].forEach(s => {
+        document.getElementById(s).classList.add('hidden');
+      });
+      document.getElementById(id).classList.remove('hidden');
+    }
+
+    function resetToInitial() {
+      showState('state-initial');
+    }
+
+    // --- Copy to clipboard helper ---
+    function copy(id) {
+      const text = document.getElementById(id).textContent;
+      navigator.clipboard.writeText(text);
+      // Quick visual feedback (not shown for brevity)
+    }
+
+    // --- IDKit trigger ---
+    document.getElementById('verify-btn').addEventListener('click', async () => {
+      showState('state-verifying');
+      try {
+        const result = await IDKit.open({
+          app_id: 'APP_ID_INJECTED_FROM_BACKEND',
+          action,
+          verification_level: verificationLevel,
+          signal: inviteCode || ''
+        });
+
+        // POST proof to backend
+        const verifyRes = await fetch('/api/worldid/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            merkle_root: result.merkle_root,
+            nullifier_hash: result.nullifier_hash,
+            proof: result.proof,
+            verification_level: result.verification_level,
+            action,
+            invite_code: inviteCode
+          })
+        });
+
+        const data = await verifyRes.json();
+
+        if (verifyRes.status === 409) {
+          // Sybil rejection
+          document.getElementById('sybil-role').textContent = data.existingRole || role;
+          showState('state-sybil');
+          return;
+        }
+
+        if (!verifyRes.ok) {
+          document.getElementById('error-message').textContent = data.error || 'Verification failed.';
+          showState('state-error');
+          return;
+        }
+
+        // Success — route based on flow
+        if (inviteCode) {
+          showState('state-success-invite');
+        } else {
+          showState('state-success-manager');
+        }
+      } catch (err) {
+        console.error(err);
+        document.getElementById('error-message').textContent =
+          'Could not reach verification service. Please check your connection.';
+        showState('state-error');
+      }
+    });
+  </script>
+</body>
+</html>

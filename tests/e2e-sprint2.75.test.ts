@@ -6,6 +6,8 @@ import { FamilyKeyManager } from "../src/keys/family-keys.js";
 import { resolveMasterKey, _clearMasterKeyCache, getDataDir } from "../src/keys/master-key.js";
 import { FitbitTokenStore } from "../src/fitbit/token-store.js";
 
+const FAMILY_ID = "a0000000-0000-0000-0000-000000000001";
+
 const TEST_DATA_DIR = join(process.cwd(), "data-test-e2e275");
 
 function cleanTestDir() {
@@ -278,7 +280,8 @@ describe("Tool Integration Tests", () => {
   // TI6: Fitbit token encryption uses MASTER_KEY
   it("TI6: FitbitTokenStore encrypts/decrypts using MASTER_KEY", () => {
     const masterKey = resolveMasterKey();
-    const store = new FitbitTokenStore(masterKey);
+    // Sprint 2.9: FitbitTokenStore takes (familyId, masterKey?).
+    const store = new FitbitTokenStore(FAMILY_ID, masterKey);
 
     // Verify FitbitTokenStore was constructed with a Buffer (master key), not a string (passphrase)
     expect(masterKey).toBeInstanceOf(Buffer);

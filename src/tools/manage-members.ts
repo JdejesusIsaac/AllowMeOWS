@@ -4,7 +4,14 @@ import { randomUUID } from "node:crypto";
 import { StateManager } from "../engine/state.js";
 import { RoleManager } from "../roles/manager.js";
 import { RoleEnum } from "../schemas.js";
-import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
+import { MemberIndex } from "../identity/member-index.js";
+import { SetupCodeStore } from "../identity/setup-codes.js";
+import type { Role } from "../constants.js";
+import {
+  withAccessControl,
+  buildNoIdentityResponse,
+  rbacFields,
+} from "../middleware/access-control.js";
 
 export function registerManageMembersTool(server: McpServer): void {
   server.tool(
@@ -16,18 +23,21 @@ export function registerManageMembersTool(server: McpServer): void {
       newRole: RoleEnum.optional().describe("New role (required for change-role)"),
       ...rbacFields,
     },
-    async (args) => {
-      const caller = await resolveCallerRole(args as Record<string, unknown>);
-      if (!isToolAuthorized("manage-members", caller.role)) {
-        return buildAccessDeniedResponse("manage-members", caller.role);
-      }
+    withAccessControl("manage-members", async (args, caller) => {
+      if (!caller) return buildNoIdentityResponse("manage-members");
+      const action = args.action as "list" | "change-role" | "remove";
+      const memberName = args.memberName as string | undefined;
+      const newRole = args.newRole as Role | undefined;
       try {
         const state = new StateManager();
         const roleManager = new RoleManager();
-        const members = await state.loadMembers();
+        const index = new MemberIndex();
+        const setupCodes = new SetupCodeStore();
+        const familyId = caller.familyId;
+        const members = await state.loadMembers(familyId);
 
         // === LIST ===
-        if (args.action === "list") {
+        if (action === "list") {
           const memberList = members
             .filter((m) => m.active)
             .map((m) => ({
@@ -50,8 +60,8 @@ export function registerManageMembersTool(server: McpServer): void {
         }
 
         // === CHANGE ROLE ===
-        if (args.action === "change-role") {
-          if (!args.memberName || !args.newRole) {
+        if (action === "change-role") {
+          if (!memberName || !newRole) {
             return {
               content: [{
                 type: "text" as const,
@@ -64,7 +74,7 @@ export function registerManageMembersTool(server: McpServer): void {
           }
 
           const member = members.find(
-            (m) => m.name.toLowerCase() === args.memberName!.toLowerCase() && m.active
+            (m) => m.name.toLowerCase() === memberName.toLowerCase() && m.active
           );
           if (!member) {
             return {
@@ -72,28 +82,37 @@ export function registerManageMembersTool(server: McpServer): void {
                 type: "text" as const,
                 text: JSON.stringify({
                   success: false,
-                  error: `Active member "${args.memberName}" not found.`,
+                  error: `Active member "${memberName}" not found.`,
                 }),
               }],
             };
           }
 
           // Revoke old key + create new one (revoke-and-recreate pattern)
-          await roleManager.changeRole(member, args.newRole);
+          await roleManager.changeRole(member, newRole);
 
           const oldRole = member.role;
-          member.role = args.newRole;
-          await state.saveMembers(members);
+          member.role = newRole;
+          await state.saveMembers(familyId, members);
 
-          await state.addAuditEntry({
+          // Update global member-index to reflect the new role.
+          await index.set(member.id, familyId, newRole);
+
+          // Revoke any active setup codes — they encoded the old role and
+          // should no longer be honored. The member must re-issue or accept
+          // a fresh invite.
+          const revoked = await setupCodes.revokeForMember(member.id);
+
+          await state.addAuditEntry(familyId, {
             id: randomUUID(),
             timestamp: new Date().toISOString(),
             action: "role-changed",
-            actor: "manager",
+            actor: caller.memberId,
             details: {
               memberName: member.name,
               oldRole,
-              newRole: args.newRole,
+              newRole,
+              revokedSetupCodes: revoked,
             },
           });
 
@@ -102,15 +121,15 @@ export function registerManageMembersTool(server: McpServer): void {
               type: "text" as const,
               text: JSON.stringify({
                 success: true,
-                message: `${member.name}'s role changed from ${oldRole} to ${args.newRole}. New access key issued.`,
+                message: `${member.name}'s role changed from ${oldRole} to ${newRole}. New access key issued.`,
               }),
             }],
           };
         }
 
         // === REMOVE ===
-        if (args.action === "remove") {
-          if (!args.memberName) {
+        if (action === "remove") {
+          if (!memberName) {
             return {
               content: [{
                 type: "text" as const,
@@ -120,7 +139,7 @@ export function registerManageMembersTool(server: McpServer): void {
           }
 
           const member = members.find(
-            (m) => m.name.toLowerCase() === args.memberName!.toLowerCase() && m.active
+            (m) => m.name.toLowerCase() === memberName.toLowerCase() && m.active
           );
           if (!member) {
             return {
@@ -128,7 +147,7 @@ export function registerManageMembersTool(server: McpServer): void {
                 type: "text" as const,
                 text: JSON.stringify({
                   success: false,
-                  error: `Active member "${args.memberName}" not found.`,
+                  error: `Active member "${memberName}" not found.`,
                 }),
               }],
             };
@@ -140,14 +159,18 @@ export function registerManageMembersTool(server: McpServer): void {
           }
 
           member.active = false;
-          await state.saveMembers(members);
+          await state.saveMembers(familyId, members);
 
-          await state.addAuditEntry({
+          // Remove from global member-index and revoke all setup codes.
+          await index.remove(member.id);
+          const revoked = await setupCodes.revokeForMember(member.id);
+
+          await state.addAuditEntry(familyId, {
             id: randomUUID(),
             timestamp: new Date().toISOString(),
             action: "member-removed",
-            actor: "manager",
-            details: { memberName: member.name, role: member.role },
+            actor: caller.memberId,
+            details: { memberName: member.name, role: member.role, revokedSetupCodes: revoked },
           });
 
           return {
@@ -178,6 +201,6 @@ export function registerManageMembersTool(server: McpServer): void {
           }],
         };
       }
-    }
+    })
   );
 }

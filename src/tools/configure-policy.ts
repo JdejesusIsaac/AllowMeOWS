@@ -4,9 +4,16 @@ import { randomUUID } from "node:crypto";
 import { StateManager } from "../engine/state.js";
 import { WalletSetup } from "../wallet/setup.js";
 import { FamilyKeyManager } from "../keys/family-keys.js";
-import { USDC, CHAIN_IDS, DEFAULT_SAVINGS_PERCENT } from "../constants.js";
-import type { FamilyConfig, ChildConfig } from "../schemas.js";
-import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, rbacFields } from "../middleware/access-control.js";
+import { MemberIndex } from "../identity/member-index.js";
+import { SetupCodeStore } from "../identity/setup-codes.js";
+import { USDC, CHAIN_IDS, DEFAULT_SAVINGS_PERCENT, ROLES } from "../constants.js";
+import type { FamilyConfig, ChildConfig, Member } from "../schemas.js";
+import {
+  withAccessControl,
+  rbacFields,
+  type CallerContext,
+  type ToolResponse,
+} from "../middleware/access-control.js";
 
 export function registerConfigurePolicyTool(server: McpServer): void {
   server.tool(
@@ -29,39 +36,29 @@ export function registerConfigurePolicyTool(server: McpServer): void {
       useTestnet: z.boolean().default(true).describe("Use Base Sepolia testnet (recommended for setup)"),
       ...rbacFields,
     },
-    async (args) => {
-      const caller = await resolveCallerRole(args as Record<string, unknown>);
-      if (!isToolAuthorized("configure-policy", caller.role)) {
-        return buildAccessDeniedResponse("configure-policy", caller.role);
-      }
+    withAccessControl("configure-policy", async (args, caller) => {
       try {
-        const state = new StateManager();
         const chainId = args.useTestnet ? CHAIN_IDS.BASE_SEPOLIA : CHAIN_IDS.BASE_MAINNET;
         const usdcAddress = args.useTestnet ? USDC.BASE_SEPOLIA : USDC.BASE_MAINNET;
 
         // Validate category budget percentages sum ≤ 100
-        for (const child of args.children) {
+        for (const child of args.children as ChildArgs[]) {
           const totalPct = child.categories.reduce((s, c) => s + c.pct, 0);
           if (totalPct > 100) {
-            return {
-              content: [{
-                type: "text" as const,
-                text: JSON.stringify({
-                  success: false,
-                  error: `Category percentages for ${child.name} sum to ${totalPct}% — must be ≤ 100%.`,
-                }),
-              }],
-            };
+            return jsonResponse({
+              success: false,
+              error: `Category percentages for ${child.name} sum to ${totalPct}% — must be ≤ 100%.`,
+            });
           }
         }
 
         // Convert USD to USDC 6-decimal units
-        const children: ChildConfig[] = args.children.map((child) => {
+        const children: ChildConfig[] = (args.children as ChildArgs[]).map((child) => {
           const weeklyBudget = Math.round(child.weeklyBudgetUsd * 10 ** USDC.DECIMALS);
           return {
             name: child.name,
             walletName: `child-${child.name.toLowerCase()}`,
-            walletAddress: child.walletAddress, // undefined if OWS-managed
+            walletAddress: child.walletAddress,
             weeklyBudget,
             categories: child.categories.map((cat) => ({
               name: cat.name,
@@ -73,76 +70,196 @@ export function registerConfigurePolicyTool(server: McpServer): void {
           };
         });
 
-        // Resolve or create familyId for per-family key management
-        const existingConfig = await state.loadFamilyConfig();
-        const familyId = existingConfig?.familyId || randomUUID();
-
-        const now = new Date().toISOString();
-        const familyConfig: FamilyConfig = {
-          familyId,
-          familyName: args.familyName,
-          children,
-          createdAt: existingConfig?.createdAt || now,
-          updatedAt: now,
-          chainId,
-          usdcAddress,
-        };
-
-        // Auto-resolve family encryption key (generates on first setup, retrieves on update)
-        const keyManager = new FamilyKeyManager();
-        const familyKey = keyManager.getOrGenerateFamilyKey(familyId);
-
-        // Initialize wallets + policies via OWS using the per-family key
-        const setup = new WalletSetup();
-        await setup.initializeFamily(familyConfig, familyKey);
-
-        // Save family config
-        await state.saveFamilyConfig(familyConfig);
-
-        // Initialize streak data for each child
-        for (const child of children) {
-          await state.initializeStreak(child.name);
+        if (caller === null) {
+          // Sprint 2.9 null-caller bootstrap: create a brand-new family.
+          return await bootstrapFamily(
+            args.familyName as string,
+            children,
+            chainId,
+            usdcAddress,
+            args.useTestnet as boolean
+          );
         }
 
-        const summary = children
-          .map(
-            (c) => {
-              const catSummary = c.categories!.map(
-                (cat) => `${cat.name}: $${(cat.budget / 10 ** USDC.DECIMALS).toFixed(2)}`
-              ).join(", ");
-              return `${c.name}: $${(c.weeklyBudget / 10 ** USDC.DECIMALS).toFixed(2)}/week (${catSummary}) — ${c.savingsPercent}% to savings`;
-            }
-          )
-          .join("\n");
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                success: true,
-                familyName: args.familyName,
-                network: args.useTestnet ? "Base Sepolia (testnet)" : "Base (mainnet)",
-                children: summary,
-                walletsCreated: true,
-                message: `Family "${args.familyName}" configured! Wallets and policies are set up. You're ready to verify achievements.`,
-              }),
-            },
-          ],
-        };
+        // Existing user path: update the caller's own family.
+        return await updateExistingFamily(
+          caller,
+          args.familyName as string,
+          children,
+          chainId,
+          usdcAddress,
+          args.useTestnet as boolean
+        );
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
-              }),
-            },
-          ],
-        };
+        return jsonResponse({
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
       }
-    }
+    })
   );
+}
+
+interface ChildArgs {
+  name: string;
+  walletAddress?: string;
+  weeklyBudgetUsd: number;
+  categories: Array<{ name: string; pct: number }>;
+  savingsPercent: number;
+}
+
+function jsonResponse(payload: unknown): ToolResponse {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(payload) }],
+  };
+}
+
+async function bootstrapFamily(
+  familyName: string,
+  children: ChildConfig[],
+  chainId: string,
+  usdcAddress: string,
+  useTestnet: boolean
+): Promise<ToolResponse> {
+  const state = new StateManager();
+  const index = new MemberIndex();
+  const setupCodes = new SetupCodeStore();
+
+  const familyId = randomUUID();
+  const memberId = randomUUID();
+  const now = new Date().toISOString();
+
+  const familyConfig: FamilyConfig = {
+    familyId,
+    familyName,
+    children,
+    createdAt: now,
+    updatedAt: now,
+    chainId,
+    usdcAddress,
+  };
+
+  // Generate the per-family encryption key first — wallet setup needs it.
+  const keyManager = new FamilyKeyManager();
+  const familyKey = keyManager.getOrGenerateFamilyKey(familyId);
+
+  // Create family directory (0o700), then initialize OWS wallets + policies.
+  await state.createFamilyDir(familyId);
+  const setup = new WalletSetup();
+  await setup.initializeFamily(familyConfig, familyKey);
+
+  await state.saveFamilyConfig(familyId, familyConfig);
+  for (const child of children) {
+    await state.initializeStreak(familyId, child.name);
+  }
+
+  // Create the Manager member record and register it globally.
+  const manager: Member = {
+    id: memberId,
+    name: `${familyName} Manager`,
+    role: ROLES.MANAGER,
+    joinedAt: now,
+    active: true,
+  };
+  await state.addMember(familyId, manager);
+  await index.set(memberId, familyId, ROLES.MANAGER);
+
+  await state.addAuditEntry(familyId, {
+    id: randomUUID(),
+    timestamp: now,
+    action: "configure",
+    actor: memberId,
+    details: { bootstrap: true, familyName, childCount: children.length },
+  });
+
+  const setupCode = await setupCodes.issue(memberId);
+  const baseUrl = process.env.ALLOWANCE_AGENT_URL || "https://allowme.dev";
+  const mcpUrl = `${baseUrl}/mcp?setup=${setupCode}`;
+
+  const summary = buildChildrenSummary(children);
+
+  return jsonResponse({
+    success: true,
+    bootstrap: true,
+    familyId,
+    memberId,
+    setupCode,
+    mcpUrl,
+    familyName,
+    network: useTestnet ? "Base Sepolia (testnet)" : "Base (mainnet)",
+    children: summary,
+    walletsCreated: true,
+    message:
+      `Family "${familyName}" created! You are Manager. ` +
+      `To continue using AllowanceAgent, update your MCP connector URL to:\n\n${mcpUrl}\n\n` +
+      `The setup code expires in 48 hours. You can invite co-parents and learners from here.`,
+  });
+}
+
+async function updateExistingFamily(
+  caller: CallerContext,
+  familyName: string,
+  children: ChildConfig[],
+  chainId: string,
+  usdcAddress: string,
+  useTestnet: boolean
+): Promise<ToolResponse> {
+  const state = new StateManager();
+  const familyId = caller.familyId;
+
+  const existingConfig = await state.loadFamilyConfig(familyId);
+
+  const now = new Date().toISOString();
+  const familyConfig: FamilyConfig = {
+    familyId,
+    familyName,
+    children,
+    createdAt: existingConfig?.createdAt || now,
+    updatedAt: now,
+    chainId,
+    usdcAddress,
+  };
+
+  const keyManager = new FamilyKeyManager();
+  const familyKey = keyManager.getOrGenerateFamilyKey(familyId);
+
+  const setup = new WalletSetup();
+  await setup.initializeFamily(familyConfig, familyKey);
+
+  await state.saveFamilyConfig(familyId, familyConfig);
+  for (const child of children) {
+    await state.initializeStreak(familyId, child.name);
+  }
+
+  await state.addAuditEntry(familyId, {
+    id: randomUUID(),
+    timestamp: now,
+    action: "configure",
+    actor: caller.memberId,
+    details: { bootstrap: false, familyName, childCount: children.length },
+  });
+
+  const summary = buildChildrenSummary(children);
+
+  return jsonResponse({
+    success: true,
+    bootstrap: false,
+    familyId,
+    familyName,
+    network: useTestnet ? "Base Sepolia (testnet)" : "Base (mainnet)",
+    children: summary,
+    walletsCreated: true,
+    message: `Family "${familyName}" configured! Wallets and policies are set up. You're ready to verify achievements.`,
+  });
+}
+
+function buildChildrenSummary(children: ChildConfig[]): string {
+  return children
+    .map((c) => {
+      const catSummary = (c.categories ?? [])
+        .map((cat) => `${cat.name}: $${(cat.budget / 10 ** USDC.DECIMALS).toFixed(2)}`)
+        .join(", ");
+      return `${c.name}: $${(c.weeklyBudget / 10 ** USDC.DECIMALS).toFixed(2)}/week (${catSummary}) — ${c.savingsPercent}% to savings`;
+    })
+    .join("\n");
 }

@@ -2,7 +2,12 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { StateManager } from "../engine/state.js";
 import { USDC } from "../constants.js";
-import { resolveCallerRole, isToolAuthorized, buildAccessDeniedResponse, getChildScope, rbacFields } from "../middleware/access-control.js";
+import {
+  withAccessControl,
+  buildNoIdentityResponse,
+  getChildScope,
+  rbacFields,
+} from "../middleware/access-control.js";
 
 export function registerCheckProgressTool(server: McpServer): void {
   server.tool(
@@ -12,14 +17,13 @@ export function registerCheckProgressTool(server: McpServer): void {
       childName: z.string().optional().describe("Check a specific child, or all children if omitted"),
       ...rbacFields,
     },
-    async (args) => {
-      const caller = await resolveCallerRole(args as Record<string, unknown>);
-      if (!isToolAuthorized("check-progress", caller.role)) {
-        return buildAccessDeniedResponse("check-progress", caller.role);
-      }
+    withAccessControl("check-progress", async (args, caller) => {
+      if (!caller) return buildNoIdentityResponse("check-progress");
+      const requestedChildArg = args.childName as string | undefined;
       try {
         const state = new StateManager();
-        const config = await state.loadFamilyConfig();
+        const familyId = caller.familyId;
+        const config = await state.loadFamilyConfig(familyId);
 
         if (!config) {
           return {
@@ -30,11 +34,11 @@ export function registerCheckProgressTool(server: McpServer): void {
           };
         }
 
-        const achievements = await state.loadAchievements();
+        const achievements = await state.loadAchievements(familyId);
 
         // Child-scoped filtering: learner sees only their own data
         const childScope = getChildScope(caller);
-        const requestedChild = childScope || args.childName;
+        const requestedChild = childScope || requestedChildArg;
 
         const children = requestedChild
           ? config.children.filter((c) => c.name.toLowerCase() === requestedChild.toLowerCase())
@@ -44,7 +48,7 @@ export function registerCheckProgressTool(server: McpServer): void {
           return {
             content: [{
               type: "text" as const,
-              text: JSON.stringify({ success: false, error: `Child "${args.childName}" not found.` }),
+              text: JSON.stringify({ success: false, error: `Child "${requestedChildArg}" not found.` }),
             }],
           };
         }
@@ -86,10 +90,10 @@ export function registerCheckProgressTool(server: McpServer): void {
           }
 
           // Streak
-          const streak = await state.loadStreak(child.name);
+          const streak = await state.loadStreak(familyId, child.name);
 
           // Savings
-          const savings = await state.loadSavingsEntries(child.name);
+          const savings = await state.loadSavingsEntries(familyId, child.name);
           const totalSaved = savings.reduce((sum, s) => sum + s.amount, 0);
           const lockedSavings = savings.filter((s) => !s.released).reduce((sum, s) => sum + s.amount, 0);
 
@@ -145,7 +149,7 @@ export function registerCheckProgressTool(server: McpServer): void {
           }],
         };
       }
-    }
+    })
   );
 }
 

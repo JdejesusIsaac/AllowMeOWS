@@ -1,60 +1,107 @@
 /**
  * Shared helpers for aixyz tool wrappers.
  * Underscore prefix — ignored by aixyz auto-discovery.
+ *
+ * Sprint 2.9: aixyz tools are legacy and not wired into the primary HTTP
+ * transport (app/server.ts uses src/tools/ directly). These helpers continue
+ * to compile against the multi-tenant StateManager API by resolving familyId
+ * through the single-family fallback (identical semantics to the legacy
+ * resolver in src/middleware/access-control.ts).
+ *
+ * Sprint 2.9 note on getPayer: earlier versions of aixyz shipped a session
+ * plugin exposing a per-request payer getter. That export was removed in
+ * aixyz v0.19+, and the primary HTTP transport no longer depends on it. We
+ * stub getPayer to always return undefined; callers fall through to the
+ * single-family legacy fallback inside resolveHttpCaller, which is the
+ * correct behavior for the remaining aixyz tool surface.
  */
-let getPayer: () => string | undefined;
-try {
-  const session = await import("aixyz/app/plugins/session");
-  getPayer = session.getPayer;
-} catch {
-  getPayer = () => undefined;
-}
-
 import { StateManager } from "../../src/engine/state.js";
+import { MemberIndex } from "../../src/identity/member-index.js";
 import { ROLE_TOOL_ACCESS } from "../../src/constants.js";
 import type { RoleType } from "../../src/schemas.js";
+
+const getPayer: () => string | undefined = () => undefined;
 
 export interface HttpCallerContext {
   memberId: string;
   role: RoleType;
+  familyId: string;
   childName?: string;
 }
 
 /**
  * Resolve caller identity from x402 payer address.
- * In HTTP mode, getPayer() returns the wallet address from the x402 payment proof.
- * We look up the member record that matches this wallet address.
- * Falls back to manager for free tools or when no payer (unauthenticated).
+ *
+ * Priority chain:
+ *   1. payer → MemberIndex lookup → CallerContext (multi-family safe)
+ *   2. payer matches a member's walletAddress in the single remaining family
+ *   3. No payer or no match → legacy single-family fallback as Manager
+ *   4. No families registered → null (caller must call configure-policy)
  */
-export async function resolveHttpCaller(): Promise<HttpCallerContext> {
+export async function resolveHttpCaller(): Promise<HttpCallerContext | null> {
+  const state = new StateManager();
+  const index = new MemberIndex();
   const payer = getPayer();
 
-  if (!payer) {
-    // No x402 payer — could be a free tool or unauthenticated request.
-    // Return a default context; tools that require auth should check this.
-    return { memberId: "anonymous", role: "manager" as RoleType };
+  if (payer) {
+    const entry = await index.get(payer);
+    if (entry) {
+      const member = await state.loadMember(entry.familyId, payer);
+      if (member) {
+        return {
+          memberId: payer,
+          role: entry.role as RoleType,
+          familyId: entry.familyId,
+          childName: member.childName,
+        };
+      }
+    }
   }
 
-  const state = new StateManager();
-  const members = await state.loadMembers();
+  const families = await state.listFamilies();
+  if (families.length !== 1) {
+    // 0 families → nothing to resolve. 2+ families → cannot disambiguate
+    // without identity. Both yield null; the tool wrapper must handle it.
+    return null;
+  }
+  const familyId = families[0];
 
-  // Match payer wallet address to a member's walletAddress field
-  // Members get their wallet address stored when they accept an invite in HTTP mode
-  const member = members.find(
-    (m) => m.active && m.walletAddress?.toLowerCase() === payer.toLowerCase()
-  );
-
-  if (member) {
-    return {
-      memberId: member.id,
-      role: member.role as RoleType,
-      childName: member.childName,
-    };
+  if (payer) {
+    const members = await state.loadMembers(familyId);
+    const member = members.find(
+      (m) => m.active && m.walletAddress?.toLowerCase() === payer.toLowerCase()
+    );
+    if (member) {
+      return {
+        memberId: member.id,
+        role: member.role as RoleType,
+        familyId,
+        childName: member.childName,
+      };
+    }
   }
 
-  // Payer exists but no matching member — treat as first-time manager
-  // (the wallet that deploys/configures is implicitly the manager)
-  return { memberId: payer, role: "manager" as RoleType };
+  // Legacy single-family fallback (treats unidentified callers as Manager of
+  // the sole family). Matches resolveCallerRole Priority 5.
+  return {
+    memberId: payer || "legacy-manager",
+    role: "manager" as RoleType,
+    familyId,
+  };
+}
+
+/**
+ * Resolve the caller, requiring a non-null result. Throws a caller-friendly
+ * error string the tool can return directly when no family is registered.
+ */
+export async function requireHttpCaller(): Promise<HttpCallerContext> {
+  const caller = await resolveHttpCaller();
+  if (!caller) {
+    throw new Error(
+      "No family registered on this server. Call configure-policy first, or append ?setup=SETUP-XXXX-XXXX to your MCP URL."
+    );
+  }
+  return caller;
 }
 
 /**

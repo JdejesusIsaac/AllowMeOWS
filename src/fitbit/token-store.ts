@@ -1,14 +1,10 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { resolveMasterKey } from "../keys/master-key.js";
-import { DATA_DIR } from "../constants.js";
+import { getFamilyDir } from "../engine/state.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const projectRoot = join(__dirname, "..", "..");
-const dataDir = join(projectRoot, DATA_DIR);
-const TOKEN_FILE = join(dataDir, "fitbit-tokens.json");
+const TOKEN_FILENAME = "fitbit-tokens.json";
 const ALGORITHM = "aes-256-gcm";
 
 export interface FitbitTokens {
@@ -52,8 +48,12 @@ function decrypt(encrypted: { iv: string; tag: string; data: string }, masterKey
 
 export class FitbitTokenStore {
   private masterKey: Buffer;
+  private familyId: string;
+  private tokenFile: string;
 
-  constructor(masterKey?: Buffer) {
+  constructor(familyId: string, masterKey?: Buffer) {
+    this.familyId = familyId;
+    this.tokenFile = join(getFamilyDir(familyId), TOKEN_FILENAME);
     this.masterKey = masterKey ?? resolveMasterKey();
   }
 
@@ -71,8 +71,8 @@ export class FitbitTokenStore {
       entries.push(entry);
     }
 
-    await mkdir(dataDir, { recursive: true });
-    await writeFile(TOKEN_FILE, JSON.stringify(entries, null, 2));
+    await mkdir(getFamilyDir(this.familyId), { recursive: true, mode: 0o700 });
+    await writeFile(this.tokenFile, JSON.stringify(entries, null, 2));
   }
 
   async getTokens(childName: string): Promise<FitbitTokens | null> {
@@ -95,7 +95,7 @@ export class FitbitTokenStore {
 
   private async loadAllEntries(): Promise<EncryptedEntry[]> {
     try {
-      const raw = await readFile(TOKEN_FILE, "utf8");
+      const raw = await readFile(this.tokenFile, "utf8");
       return JSON.parse(raw);
     } catch {
       return [];

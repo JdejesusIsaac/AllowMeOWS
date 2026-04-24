@@ -5,6 +5,8 @@ import { StateManager } from "../src/engine/state.js";
 import { InviteSystem } from "../src/invites/system.js";
 import type { FamilyConfig } from "../src/schemas.js";
 
+const FAMILY_ID = "a0000000-0000-0000-0000-000000000001";
+
 const testDataDir = join(process.cwd(), "data");
 
 /**
@@ -44,8 +46,9 @@ describe("D3b: Invite Delivery Response", () => {
     await rm(testDataDir, { recursive: true, force: true });
     await mkdir(testDataDir, { recursive: true });
     state = new StateManager();
+    await state.createFamilyDir(FAMILY_ID);
     inviteSystem = new InviteSystem();
-    await state.saveFamilyConfig(familyConfig);
+    await state.saveFamilyConfig(FAMILY_ID, familyConfig);
   });
 
   afterEach(async () => {

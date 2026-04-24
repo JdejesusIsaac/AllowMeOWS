@@ -11,6 +11,8 @@ import { StateManager } from "../src/engine/state.js";
 import { ROLES } from "../src/constants.js";
 import type { CallerContext } from "../src/middleware/access-control.js";
 
+const FAMILY_ID = "a0000000-0000-0000-0000-000000000001";
+
 const testDataDir = join(process.cwd(), "data");
 
 // ============================================================
@@ -60,6 +62,7 @@ describe("D2: Child-Scoped Data Access", () => {
     await rm(testDataDir, { recursive: true, force: true });
     await mkdir(testDataDir, { recursive: true });
     state = new StateManager();
+    await state.createFamilyDir(FAMILY_ID);
   });
 
   afterEach(async () => {
@@ -93,7 +96,7 @@ describe("D2: Child-Scoped Data Access", () => {
 
   it("CS4: Learner resolveCallerRole includes childName from member record", async () => {
     const memberId = randomUUID();
-    await state.addMember({
+    await state.addMember(FAMILY_ID, {
       id: memberId,
       name: "Maya",
       role: "learner",
@@ -112,7 +115,7 @@ describe("D2: Child-Scoped Data Access", () => {
 
   it("CS5: Learner check-progress filtering — only own child data", async () => {
     // Setup: two children config
-    await state.saveFamilyConfig({
+    await state.saveFamilyConfig(FAMILY_ID, {
       familyName: "Garcia",
       children: [
         {
@@ -147,7 +150,7 @@ describe("D2: Child-Scoped Data Access", () => {
     });
 
     // Add achievements for both children
-    await state.addAchievement({
+    await state.addAchievement(FAMILY_ID, {
       id: randomUUID(),
       childName: "Maya",
       category: "education",
@@ -159,7 +162,7 @@ describe("D2: Child-Scoped Data Access", () => {
       verifiedAt: new Date().toISOString(),
       distributed: false,
     });
-    await state.addAchievement({
+    await state.addAchievement(FAMILY_ID, {
       id: randomUUID(),
       childName: "Carlos",
       category: "health",
@@ -182,7 +185,7 @@ describe("D2: Child-Scoped Data Access", () => {
     expect(scope).toBe("Maya");
 
     // Simulate what check-progress does: filter achievements by scope
-    const allAchievements = await state.loadAchievements();
+    const allAchievements = await state.loadAchievements(FAMILY_ID);
     const scopedAchievements = allAchievements.filter(
       (a) => a.childName.toLowerCase() === scope!.toLowerCase()
     );
