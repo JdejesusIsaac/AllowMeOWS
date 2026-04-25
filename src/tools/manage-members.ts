@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { StateManager } from "../engine/state.js";
+import { StateManager, getFamilyVaultPath } from "../engine/state.js";
 import { RoleManager } from "../roles/manager.js";
 import { RoleEnum } from "../schemas.js";
 import { MemberIndex } from "../identity/member-index.js";
@@ -30,10 +30,12 @@ export function registerManageMembersTool(server: McpServer): void {
       const newRole = args.newRole as Role | undefined;
       try {
         const state = new StateManager();
-        const roleManager = new RoleManager();
+        const familyId = caller.familyId;
+        // Per-family OWS vault (Sprint 2.9.1) — RoleManager mutates OWS API
+        // keys inside this family's vault, not a shared global one.
+        const roleManager = new RoleManager(undefined, getFamilyVaultPath(familyId));
         const index = new MemberIndex();
         const setupCodes = new SetupCodeStore();
-        const familyId = caller.familyId;
         const members = await state.loadMembers(familyId);
 
         // === LIST ===

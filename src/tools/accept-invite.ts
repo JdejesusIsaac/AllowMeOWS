@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { StateManager } from "../engine/state.js";
+import { StateManager, getFamilyVaultPath } from "../engine/state.js";
 import { InviteSystem } from "../invites/system.js";
 import { RoleManager } from "../roles/manager.js";
 import { MemberIndex } from "../identity/member-index.js";
@@ -28,7 +28,6 @@ export function registerAcceptInviteTool(server: McpServer): void {
       try {
         const state = new StateManager();
         const inviteSystem = new InviteSystem();
-        const roleManager = new RoleManager();
         const index = new MemberIndex();
 
         // Scan every family's invite list for this code. Invite codes are
@@ -60,6 +59,10 @@ export function registerAcceptInviteTool(server: McpServer): void {
 
         const invite = matchingInvite;
         const familyId = matchingFamilyId;
+
+        // Per-family OWS vault (Sprint 2.9.1) — the new member's API key is
+        // created inside the inviting family's vault, not a shared global one.
+        const roleManager = new RoleManager(undefined, getFamilyVaultPath(familyId));
 
         // Create OWS API key with role-mapped policy
         const apiKeyResult = await roleManager.createRoleApiKey(name, invite.role);

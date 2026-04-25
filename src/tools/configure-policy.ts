@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { StateManager } from "../engine/state.js";
+import { StateManager, getFamilyVaultPath } from "../engine/state.js";
 import { WalletSetup } from "../wallet/setup.js";
 import { FamilyKeyManager } from "../keys/family-keys.js";
 import { MemberIndex } from "../identity/member-index.js";
@@ -143,9 +143,10 @@ async function bootstrapFamily(
   const keyManager = new FamilyKeyManager();
   const familyKey = keyManager.getOrGenerateFamilyKey(familyId);
 
-  // Create family directory (0o700), then initialize OWS wallets + policies.
+  // Create family directory (0o700), then initialize OWS wallets + policies
+  // inside the per-family vault so wallet names cannot collide across families.
   await state.createFamilyDir(familyId);
-  const setup = new WalletSetup();
+  const setup = new WalletSetup(getFamilyVaultPath(familyId));
   await setup.initializeFamily(familyConfig, familyKey);
 
   await state.saveFamilyConfig(familyId, familyConfig);
@@ -223,7 +224,9 @@ async function updateExistingFamily(
   const keyManager = new FamilyKeyManager();
   const familyKey = keyManager.getOrGenerateFamilyKey(familyId);
 
-  const setup = new WalletSetup();
+  // Per-family OWS vault (Sprint 2.9.1) — wallet names like `treasury` are
+  // namespaced by vault directory, so they don't collide with other families.
+  const setup = new WalletSetup(getFamilyVaultPath(familyId));
   await setup.initializeFamily(familyConfig, familyKey);
 
   await state.saveFamilyConfig(familyId, familyConfig);

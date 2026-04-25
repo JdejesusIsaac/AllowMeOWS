@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { StateManager } from "../engine/state.js";
+import { StateManager, getFamilyVaultPath } from "../engine/state.js";
 import { PolicyEngine } from "../engine/policy.js";
 import { WalletDistributor } from "../wallet/distributor.js";
 import { FamilyKeyManager } from "../keys/family-keys.js";
@@ -50,7 +50,8 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
           passphrase = process.env.OWS_PASSPHRASE;
           console.error(`[keys] Using legacy OWS_PASSPHRASE for family. New families use per-family keys.`);
         }
-        const distributor = new WalletDistributor(passphrase);
+        // Per-family OWS vault (Sprint 2.9.1) — wallets live under data/families/<id>/.ows
+        const distributor = new WalletDistributor(passphrase, getFamilyVaultPath(familyId));
 
         // Get pending achievements
         const achievements = await state.loadAchievements(familyId);

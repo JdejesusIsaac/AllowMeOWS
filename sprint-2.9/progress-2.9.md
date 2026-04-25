@@ -272,3 +272,51 @@ Any Claude/ChatGPT config currently pointing at `https://allowme.dev/mcp` (no `?
 
 - **SAAS_MODE env var flag**: rejected as over-engineering. Exposing the server publicly is the only configuration that actually works for this project; a private self-hosted instance would still want identity-scoped tools for future multi-family use.
 - **HTTP-layer gatekeeper middleware**: deferred to Sprint 3.0 as part of the session-token work. The in-dispatcher null-caller check in `withAccessControl` is sufficient defense for now.
+
+---
+
+## Post-Deploy Hotfix 2 — Per-Family OWS Vaults (April 24, 2026 evening)
+
+### Bug discovered during live test
+
+After the Priority 5 hotfix deployed and Family A (Isaac) was successfully bootstrapped from Claude.ai, the second family bootstrap from ChatGPT failed with `decryption failed: aead::Error`. Server logs showed:
+
+```
+[RBAC] BOOTSTRAP (null caller) → configure-policy
+[Setup] Wallet "treasury" may already exist: Error: wallet name already exists: 'treasury'
+[Setup] Wallet "savings-vault" may already exist
+[Setup] Wallet "gift-fund" may already exist
+```
+
+ChatGPT retried 4 times — each retry created a new family record but failed at the OWS layer because the wallet names are flat globals in `~/.ows`, not per-family namespaced. Family A's `treasury` already existed; Family B's attempt to create `treasury` was caught and silently logged as "may already exist", but the catch block pushed the name into `createdWallets` anyway. The downstream `createApiKey` call then tried to bind Family B's manager API key to Family A's `treasury` wallet, decrypting Family A's wallet with Family B's family-key passphrase. AEAD authentication tag mismatch → `aead::Error` bubbled up to ChatGPT.
+
+Architectural gap: Sprint 2.9 namespaced our app-level state (`data/families/{familyId}/`) but not the OWS wallet vault. OWS treats `~/.ows` as a single global keystore. Two families could not coexist.
+
+Bonus problem: `~/.ows` resolves to `/root/.ows` which is on the container's ephemeral root filesystem, NOT the Railway volume. Wallets were silently being lost on every container restart. Family A only "worked" because its family was the first to claim `treasury` after each restart.
+
+### Fix
+
+- **`src/engine/state.ts`**: added `getFamilyVaultPath(familyId)` returning `data/families/{familyId}/.ows/`. This puts each family's OWS vault inside the family's already-namespaced data directory, on the volume-backed filesystem.
+- **All OWS-touching tools**: pass per-family `vaultPath` to OWS classes. Wallet names like `treasury` can stay the same — they're now scoped by directory, not by global keystore.
+  - `configure-policy.ts` (2 spots — bootstrap + update paths) → `new WalletSetup(getFamilyVaultPath(familyId))`
+  - `get-funding-address.ts` → `getWallet(name, getFamilyVaultPath(familyId))`
+  - `distribute-allowance.ts` → `new WalletDistributor(passphrase, getFamilyVaultPath(familyId))`
+  - `release-savings.ts` → same as distribute-allowance
+  - `manage-members.ts` → `new RoleManager(undefined, getFamilyVaultPath(familyId))`
+  - `accept-invite.ts` → instantiated AFTER the invite's familyId is resolved, then `new RoleManager(undefined, getFamilyVaultPath(matchingFamilyId))`
+- The `WalletSetup`, `WalletDistributor`, `RoleManager` constructors already accepted `vaultPath` as an optional argument — no class-level changes needed.
+
+### Validation
+
+- ✅ 246/246 tests pass, 0 new regressions
+- ✅ `tsc --noEmit -p tsconfig.json` clean
+- Production verification pending: wipe `/app/data` AND `/root/.ows` on the volume, redeploy, then re-bootstrap Family A from Claude and Family B from ChatGPT. Confirm both succeed and stay isolated. (Live test guide: `sprint-2.9/live-test-guide.md`.)
+
+### What this means for existing data
+
+The Family A (Isaac) volume state from Hotfix 1's deploy is now stale — its config + member-index references wallets in `/root/.ows` that the new code won't look at. Cleanest path is a full wipe + reconfigure. Per-family encryption keys persist (they live in `family-keys.json` under `/app/data`, not in OWS), so if anyone wanted to recover wallets in the future they could re-run `configure-policy` with the same familyId and the family-key would still decrypt anything that managed to get into the new per-family vault.
+
+### Failed Approaches considered
+
+- **Wallet-name prefix only (e.g. `treasury-{familyId}` in shared `/root/.ows`)**: rejected because `/root/.ows` is on the ephemeral filesystem. Even with namespaced wallet names, every container restart would wipe the wallets. Per-family vault on the volume solves both issues at once.
+- **Fix the catch-and-swallow in `wallet/setup.ts`**: leaving the fallback in place was tempting (it'd just throw a clean error instead of corrupting downstream state) but doesn't actually let two families coexist. Per-family vault was the correct cut.

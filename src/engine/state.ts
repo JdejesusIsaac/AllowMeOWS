@@ -37,6 +37,19 @@ export function getFamilyDir(familyId: string): string {
   return join(dataDir, "families", familyId);
 }
 
+/**
+ * Returns the absolute path to a family's OWS vault directory:
+ * `{dataDir}/families/{familyId}/.ows/`.
+ *
+ * Each family gets its own isolated OWS vault so that wallet names like
+ * `treasury` / `savings-vault` / `gift-fund` cannot collide across families,
+ * and a leak in one family's vault file does not expose another family's
+ * wallet inventory. Sprint 2.9.1 hotfix.
+ */
+export function getFamilyVaultPath(familyId: string): string {
+  return join(dataDir, "families", familyId, ".ows");
+}
+
 async function ensureDataDir(): Promise<void> {
   if (!existsSync(dataDir)) {
     await mkdir(dataDir, { recursive: true });

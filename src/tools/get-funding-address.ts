@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getWallet } from "@open-wallet-standard/core";
 import { WALLET_NAMES } from "../constants.js";
-import { StateManager } from "../engine/state.js";
+import { StateManager, getFamilyVaultPath } from "../engine/state.js";
 import {
   withAccessControl,
   buildNoIdentityResponse,
@@ -34,10 +34,12 @@ export function registerGetFundingAddressTool(server: McpServer): void {
           };
         }
 
-        // Resolve wallet from OWS
+        // Resolve wallet from OWS — each family has its own OWS vault
+        // (Sprint 2.9.1), so we must pass the per-family vault path.
+        const vaultPath = getFamilyVaultPath(familyId);
         let wallet;
         try {
-          wallet = getWallet(walletName);
+          wallet = getWallet(walletName, vaultPath);
         } catch {
           return {
             content: [{
@@ -75,7 +77,7 @@ export function registerGetFundingAddressTool(server: McpServer): void {
         if (walletName === "treasury") {
           for (const child of config.children) {
             try {
-              const childWallet = getWallet(WALLET_NAMES.childWallet(child.name));
+              const childWallet = getWallet(WALLET_NAMES.childWallet(child.name), vaultPath);
               const childEvm = childWallet.accounts.find(
                 (a: { chainId: string }) => a.chainId.startsWith("eip155:")
               );
