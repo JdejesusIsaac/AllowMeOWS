@@ -320,3 +320,47 @@ The Family A (Isaac) volume state from Hotfix 1's deploy is now stale — its co
 
 - **Wallet-name prefix only (e.g. `treasury-{familyId}` in shared `/root/.ows`)**: rejected because `/root/.ows` is on the ephemeral filesystem. Even with namespaced wallet names, every container restart would wipe the wallets. Per-family vault on the volume solves both issues at once.
 - **Fix the catch-and-swallow in `wallet/setup.ts`**: leaving the fallback in place was tempting (it'd just throw a clean error instead of corrupting downstream state) but doesn't actually let two families coexist. Per-family vault was the correct cut.
+
+---
+
+## Sprint 3.0.1 Slice — Parent-Defined Learning Goals (May 4, 2026)
+
+Landed ahead of Sprint 3.0 (World ID) per user request. Self-contained, low-risk: schema addition + display fields + matching logic. No new tools, no wallet changes, no auth changes. Total time ~90m.
+
+### Why land before Sprint 3.0
+
+Sprint 3.0 v3 (`sprint-3.0/plan-3.0.md`) explicitly deferred `learningGoals` to 3.0.1 because the verify-page / World ID work is the bigger lift. This implementation makes the deferral concrete: when 3.0 ships, families that opt into onboarding via `/verify` will land in a system where curriculum is already a first-class concept.
+
+### Implementation
+
+- **`src/schemas.ts`**: added `LearningGoalSchema` (topic + category + completed + completedAt + achievementId) and an optional `learningGoals: z.array(LearningGoalSchema).max(20)` on `ChildConfigSchema`. Backward-compat — Sprint 2.x configs without the field load unchanged.
+- **`src/engine/learning-goals.ts`** (new): two pure helpers.
+  - `findMatchingGoalIndex(achievement, goals)`: fuzzy-matches an achievement to the first incomplete goal whose category matches and whose `Topic — detail` prefix overlaps with the achievement description (in either direction). Returns `-1` for no match.
+  - `mergeLearningGoals(oldGoals, newGoals)`: when a parent reconfigures, copies `completed`/`completedAt`/`achievementId` from any old goal whose `(topic, category)` matches a new goal. Merge key is lowercased pair so casing changes don't drop progress.
+- **`src/tools/configure-policy.ts`**: accepts `learningGoals` per child in the input schema. Validates each goal's `category` matches a configured category on the same child (rejects with explicit error otherwise — defense in depth). On the update path, merges prior completion state via `mergeLearningGoals` so adding a new goal mid-week doesn't wipe the week's progress.
+- **`src/tools/check-progress.ts`**: surfaces `learningGoals`, `completedGoals` (count), `totalGoals` (count), `nextGoal` (first incomplete topic) in each child's report. Existing child-scoping (Learner sees only their own data) automatically applies — no extra logic needed.
+- **`src/tools/verify-achievement.ts`**: after writing the achievement record, calls `findMatchingGoalIndex` against the child's incomplete goals. If matched, marks the goal completed in-place, persists via `state.saveFamilyConfig`, and includes `goalCompleted` (string) + `completedGoals` + `totalGoals` in the response. No-match is silent — normal achievement response, no error.
+
+### Validation
+
+- ✅ 254/254 tests pass (246 → 254, +8 new). 0 regressions.
+- ✅ `tsc --noEmit -p tsconfig.json` clean.
+- New test file `tests/learning-goals.test.ts` (D7 suite) covers LG-T1 through LG-T8: store, category-validation, check-progress shape, prefix matching, no-match no-op, merge preserves completion, child-scoping isolation, backward-compat with goal-less configs.
+
+### Design decisions
+
+- **Pure-helper extraction** (`learning-goals.ts`) over inlining match logic in the tool handler — makes both behaviors trivially unit-testable without spinning up MCP servers, and keeps the tool handlers thin.
+- **First-incomplete match wins** — one achievement cannot accidentally complete two goals. Subsequent matches are skipped via the `goal.completed` short-circuit in the helper loop.
+- **Em-dash separator** (` — ` with surrounding spaces) is the canonical delimiter between a goal's topic and its detail. The matcher splits both sides on it and compares prefixes, which means "Fractions" achievement matches "Fractions — equivalent fractions" goal and vice versa.
+- **Defense in depth on category match** — `configure-policy` validates at write time and `findMatchingGoalIndex` requires category equality at match time. Even a stale goal that somehow slipped through with a bad category cannot match a different category's achievement.
+
+### Failed Approaches considered
+
+- **Inline matching in `verify-achievement.ts`**: started here. Worked but made the test plan ugly (would need to spin up the full MCP tool, mock `withAccessControl`, etc.). Extracted to a pure helper before tests were written — cleaner outcome, ~10m extra work.
+- **Auto-completing goals across categories** (e.g. an "education" achievement could complete a "movement" goal if the topic matched): rejected as too magical. Parent's category assignment should be respected.
+
+### Not done in this slice
+
+- No README update (LG6 from the harness spec). Defer until Sprint 3.0.1 is formally branded with its own progress file.
+- No deployment. Working-tree only — commit + push when ready.
+- No `learningGoals` parameter exposed in the `verify-achievement` schema (e.g. for explicit goal-id targeting). Matching is intentionally implicit — Claude doesn't need to know about goals to log achievements.

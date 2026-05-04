@@ -97,6 +97,13 @@ export function registerCheckProgressTool(server: McpServer): void {
           const totalSaved = savings.reduce((sum, s) => sum + s.amount, 0);
           const lockedSavings = savings.filter((s) => !s.released).reduce((sum, s) => sum + s.amount, 0);
 
+          // Sprint 3.0.1: surface parent-defined learning goals so Claude
+          // can prompt "Want to start on [nextGoal]?" for Learners and so
+          // Manager/Co-parent see curriculum progress alongside earnings.
+          const goals = child.learningGoals ?? [];
+          const completedGoals = goals.filter((g) => g.completed).length;
+          const nextGoal = goals.find((g) => !g.completed)?.topic ?? null;
+
           reports.push({
             childName: child.name,
             weeklyBudgetUsd: (child.weeklyBudget / 10 ** USDC.DECIMALS).toFixed(2),
@@ -129,6 +136,10 @@ export function registerCheckProgressTool(server: McpServer): void {
               : null,
             savingsTotalUsd: (totalSaved / 10 ** USDC.DECIMALS).toFixed(2),
             savingsLockedUsd: (lockedSavings / 10 ** USDC.DECIMALS).toFixed(2),
+            learningGoals: goals,
+            completedGoals,
+            totalGoals: goals.length,
+            nextGoal,
           });
         }
 

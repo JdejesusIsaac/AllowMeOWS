@@ -1,12 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { randomUUID } from "node:crypto";
-import { StateManager, getFamilyVaultPath } from "../engine/state.js";
-import { InviteSystem } from "../invites/system.js";
-import { RoleManager } from "../roles/manager.js";
-import { MemberIndex } from "../identity/member-index.js";
-import { SetupCodeStore } from "../identity/setup-codes.js";
-import type { Invite, Member } from "../schemas.js";
+import { acceptInviteCore, ROLE_DESCRIPTIONS } from "../core/accept-invite.js";
 import { withAccessControl, rbacFields } from "../middleware/access-control.js";
 
 export function registerAcceptInviteTool(server: McpServer): void {
@@ -19,159 +13,62 @@ export function registerAcceptInviteTool(server: McpServer): void {
       ...rbacFields,
     },
     withAccessControl("accept-invite", async (args, _caller) => {
-      // Note: accept-invite is in UNIDENTIFIED_CALLER_TOOLS — caller may be
-      // null (brand-new user) or an existing member of another family. In
-      // either case, the invite itself carries the target familyId and that's
-      // the family the new member is added to.
-      const code = args.code as string;
-      const name = args.name as string;
+      // accept-invite is in UNIDENTIFIED_CALLER_TOOLS — caller may be null
+      // (brand-new user) or an existing member. Either way, the invite itself
+      // carries the target familyId.
       try {
-        const state = new StateManager();
-        const inviteSystem = new InviteSystem();
-        const index = new MemberIndex();
+        const result = await acceptInviteCore({
+          code: args.code as string,
+          name: args.name as string,
+          // MCP inline acceptance path: no SIWE, no wallet address threaded.
+          // The verify page's `/api/redeem-invite` endpoint (W1.9) will pass
+          // the SIWE-verified address for adult invites.
+        });
 
-        // Scan every family's invite list for this code. Invite codes are
-        // globally unique (CHILD-ROLE-4CHAR), so at most one family matches.
-        const familyIds = await state.listFamilies();
-        let matchingInvite: Invite | null = null;
-        let matchingFamilyId: string | null = null;
-        for (const fid of familyIds) {
-          const invites = await state.loadInvites(fid);
-          const candidate = inviteSystem.validateInvite(code, invites);
-          if (candidate) {
-            matchingInvite = candidate;
-            matchingFamilyId = fid;
-            break;
-          }
-        }
-
-        if (!matchingInvite || !matchingFamilyId) {
+        if (!result.ok) {
           return {
-            content: [{
-              type: "text" as const,
-              text: JSON.stringify({
-                success: false,
-                error: "Invalid, expired, or already-used invite code.",
-              }),
-            }],
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ success: false, error: result.error }),
+              },
+            ],
           };
         }
 
-        const invite = matchingInvite;
-        const familyId = matchingFamilyId;
-
-        // Per-family OWS vault (Sprint 2.9.1) — the new member's API key is
-        // created inside the inviting family's vault, not a shared global one.
-        const roleManager = new RoleManager(undefined, getFamilyVaultPath(familyId));
-
-        // Create OWS API key with role-mapped policy
-        const apiKeyResult = await roleManager.createRoleApiKey(name, invite.role);
-
-        // For learner invites, validate childName exists in target family config
-        if (invite.role === "learner" && invite.childName) {
-          const config = await state.loadFamilyConfig(familyId);
-          if (config) {
-            const childExists = config.children.some(
-              (c) => c.name.toLowerCase() === invite.childName!.toLowerCase()
-            );
-            if (!childExists) {
-              return {
-                content: [{
-                  type: "text" as const,
-                  text: JSON.stringify({ success: false, error: "child not found in family config" }),
-                }],
-              };
-            }
-          }
-        }
-
-        // Create member record (copy childName from invite for learner role)
-        const memberId = randomUUID();
-        const member: Member = {
-          id: memberId,
-          name,
-          role: invite.role,
-          childName: invite.role === "learner" ? invite.childName : undefined,
-          apiKeyId: apiKeyResult?.id,
-          joinedAt: new Date().toISOString(),
-          active: true,
-        };
-
-        await state.addMember(familyId, member);
-
-        // Register in global member-index so future requests from this member
-        // (via X-Member-Id header, setup code, or _callerId arg) resolve to
-        // the right family and role.
-        await index.set(memberId, familyId, invite.role);
-
-        // Mark invite as used — reload the target family's invite list, flip
-        // the flag on the matching entry, and persist.
-        const invites = await state.loadInvites(familyId);
-        const toMark = invites.find((i) => i.code === invite.code);
-        if (toMark) {
-          toMark.used = true;
-          toMark.usedBy = memberId;
-          toMark.usedAt = new Date().toISOString();
-          await state.saveInvites(familyId, invites);
-        }
-
-        // Audit
-        await state.addAuditEntry(familyId, {
-          id: randomUUID(),
-          timestamp: new Date().toISOString(),
-          action: "invite-accepted",
-          actor: memberId,
-          details: {
-            inviteCode: code,
-            name,
-            role: invite.role,
-          },
-        });
-
-        // Issue a setup code so the new member can update their MCP URL and
-        // authenticate on subsequent requests.
-        const setupCodes = new SetupCodeStore();
-        const setupCode = await setupCodes.issue(memberId);
-        const baseUrl = process.env.ALLOWANCE_AGENT_URL || "https://allowme.dev";
-        const mcpUrl = `${baseUrl}/mcp?setup=${setupCode}`;
-
-        const roleDescription: Record<string, string> = {
-          manager: "full control over the family economy",
-          "co-parent": "verify achievements and view progress",
-          family: "view progress and send gifts",
-          advisor: "view the audit log",
-          learner: "see your progress and savings, report achievements",
-        };
-
         return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              success: true,
-              name,
-              role: invite.role,
-              childName: member.childName,
-              familyId,
-              memberId,
-              setupCode,
-              mcpUrl,
-              message:
-                `Welcome, ${name}! You're connected as a ${invite.role} member. ` +
-                `You can ${roleDescription[invite.role]}. ` +
-                `To continue using AllowanceAgent in your own Claude, update your MCP connector URL to:\n\n${mcpUrl}\n\n` +
-                `The setup code expires in 48 hours.`,
-            }),
-          }],
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                success: true,
+                name: result.name,
+                role: result.role,
+                childName: result.childName,
+                familyId: result.familyId,
+                memberId: result.memberId,
+                setupCode: result.setupCode,
+                mcpUrl: result.mcpUrl,
+                message:
+                  `Welcome, ${result.name}! You're connected as a ${result.role} member. ` +
+                  `You can ${ROLE_DESCRIPTIONS[result.role]}. ` +
+                  `To continue using AllowanceAgent in your own Claude, update your MCP connector URL to:\n\n${result.mcpUrl}\n\n` +
+                  `The setup code expires in 48 hours.`,
+              }),
+            },
+          ],
         };
       } catch (error) {
         return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              success: false,
-              error: error instanceof Error ? error.message : "Unknown error",
-            }),
-          }],
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : "Unknown error",
+              }),
+            },
+          ],
         };
       }
     })

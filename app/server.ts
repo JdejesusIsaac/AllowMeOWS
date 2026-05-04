@@ -27,6 +27,9 @@ import { registerReleaseSavingsTool } from "../src/tools/release-savings.js";
 import { registerConnectFitbitTool } from "../src/tools/connect-fitbit.js";
 import { registerConvertSavingsTool } from "../src/tools/convert-savings.js";
 
+// Sprint 3.0 v4 — Sign-in-with-Base verify-page endpoints.
+import { buildVerifyRoutes } from "./verify-routes.js";
+
 // ===== Resolve master key at startup =====
 try {
   resolveMasterKey();
@@ -154,6 +157,9 @@ app.delete("/mcp", async (req, res) => {
     transports[sessionId].handleRequest(req, res)
   );
 });
+
+// ===== Sprint 3.0 v4: verify-page + Sign-in-with-Base endpoints =====
+app.use(buildVerifyRoutes());
 
 // ===== Health check =====
 app.get("/health", (_req, res) => {

@@ -122,10 +122,17 @@ export function registerInviteMemberTool(server: McpServer): void {
           responsePayload.joinMessage = joinMessage;
         }
 
+        // Sprint 3.0 v4 (W2.5): surface the verify-page URL so Managers can
+        // text/email a single link that auto-fills the invite code and role.
+        const verifyBase = process.env.ALLOWANCE_AGENT_URL || "https://allowme.dev";
+        const verifyUrl = `${verifyBase}/verify?invite=${invite.code}&role=${role}`;
+        responsePayload.verifyUrl = verifyUrl;
+
         const messageText =
           `Invite code for ${inviteeName}: ${invite.code}\n\n` +
           `Role: ${role} (${roleDescription[role]})\n` +
-          `Valid for 48 hours. They can tell their Claude: "I have a code: ${invite.code}"` +
+          `Valid for 48 hours. They can tell their Claude: "I have a code: ${invite.code}"\n\n` +
+          `Or send them this one-tap link:\n${verifyUrl}` +
           (serverUrl && role === "learner" ? `\n\nWant me to text this to ${argChildName || "them"}?` : "");
 
         responsePayload.message = messageText;

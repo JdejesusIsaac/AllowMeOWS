@@ -5,6 +5,7 @@ import { StateManager } from "../engine/state.js";
 import { MemberIndex } from "../identity/member-index.js";
 import { SetupCodeStore, redactSetupCode } from "../identity/setup-codes.js";
 import { getRequestContext } from "./request-context.js";
+import { sessionTokens } from "../auth/session-tokens.js";
 
 // Optional fields each tool schema includes to support multi-user RBAC + testing
 export const rbacFields = {
@@ -49,7 +50,10 @@ export const UNIDENTIFIED_CALLER_TOOLS = new Set<string>([
  * cannot be identified. Returning null is a first-class state — it means
  * "stranger, treat carefully". See `withAccessControl` for null-caller handling.
  *
- * Priority chain (Sprint 2.9 hotfix):
+ * Priority chain (Sprint 3.0 v4):
+ *   0. `X-Session-Token` HTTP header — verify-page JWT issued post-SIWE.
+ *      Short-lived (~10min), carries (memberId, walletAddress, familyId, role).
+ *      Wins over all lower priorities when valid.
  *   1. `X-Member-Id` HTTP header (backward compat with Sprint 2 tests)
  *   2. `?setup=CODE` HTTP URL query param
  *   3. `_callerId` tool arg (stdio + test mode) — looked up in MemberIndex
@@ -75,6 +79,21 @@ export async function resolveCallerRole(
   const query = reqCtx?.query;
   const state = new StateManager();
   const index = new MemberIndex();
+
+  // Priority 0: X-Session-Token header (Sprint 3.0 v4 — verify-page JWT).
+  // If the token is valid and its claims map to a resolvable Member, Priority
+  // 0 wins. If the token is missing, expired, tampered, or its claims don't
+  // map to a real Member, fall through to Priority 1+ (graceful degradation
+  // — the token itself never raises an error, it only upgrades identity).
+  const sessionToken =
+    headers?.["x-session-token"] ?? headers?.["X-Session-Token"];
+  if (typeof sessionToken === "string" && sessionToken.length > 0) {
+    const claims = sessionTokens.validate(sessionToken);
+    if (claims?.memberId) {
+      const ctx = await resolveFromMemberId(claims.memberId, state, index);
+      if (ctx) return ctx;
+    }
+  }
 
   // Priority 1: X-Member-Id header (Sprint 2 HTTP backward compat)
   if (headers?.["x-member-id"]) {

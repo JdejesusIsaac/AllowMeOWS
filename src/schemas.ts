@@ -18,6 +18,19 @@ export type CategoryEntry = z.infer<typeof CategoryEntrySchema>;
 
 // === Family Config ===
 
+// Sprint 3.0.1: Parent-defined learning goals.
+// Parent sets WHAT the child learns (curriculum). Claude Learning Mode handles
+// HOW (Socratic dialogue). AllowanceAgent tracks WHETHER it happened by
+// fuzzy-matching achievements against goals at verify-achievement time.
+export const LearningGoalSchema = z.object({
+  topic: z.string().min(1).max(200),
+  category: z.string().min(1), // must match a configured category name on the child
+  completed: z.boolean().default(false),
+  completedAt: z.string().datetime().optional(),
+  achievementId: z.string().optional(),
+});
+export type LearningGoal = z.infer<typeof LearningGoalSchema>;
+
 export const ChildConfigSchema = z.object({
   name: z.string().min(1),
   walletName: z.string(),
@@ -32,6 +45,9 @@ export const ChildConfigSchema = z.object({
   }).optional(),
   savingsPercent: z.number().min(0).max(100).default(20),
   savingsLockDays: z.number().int().nonnegative().default(90),
+  // Sprint 3.0.1: optional curriculum. Backward-compat — existing configs
+  // without this field load with no goals.
+  learningGoals: z.array(LearningGoalSchema).max(20).optional(),
 });
 export type ChildConfig = z.infer<typeof ChildConfigSchema>;
 
@@ -95,6 +111,10 @@ export const MemberSchema = z.object({
   apiKeyId: z.string().optional(), // OWS API key ID
   joinedAt: z.string().datetime(),
   lastActivity: z.string().datetime().optional(),
+  // Sprint 3.0 v4: timestamp of the most recent successful Sign-in-with-Base.
+  // Undefined for pre-3.0 setup-code-only Members. Sprint 4.0 will use this
+  // for freshness checks before Smart Wallet treasury signer registration.
+  walletVerifiedAt: z.string().datetime().optional(),
   active: z.boolean().default(true),
 });
 export type Member = z.infer<typeof MemberSchema>;
@@ -172,6 +192,12 @@ export const AuditEntrySchema = z.object({
     "policy-created",
     "external-wallet-registered",
     "savings-converted",
+    // Sprint 3.0 v4 — Sign-in-with-Base audit actions
+    "wallet-signed-in",
+    "wallet-bound-to-member",
+    "setup-code-rotated-via-wallet-reauth",
+    "family-created-via-verify-page",
+    "learner-invite-redeemed-via-verify-page",
   ]),
   actor: z.string(), // member ID or "system"
   details: z.record(z.unknown()),

@@ -1,23 +1,32 @@
 <!--
-  AllowanceAgent — Verify Page (Sprint 3.0 W2.1 reference)
+  AllowanceAgent — Verify Page (Sprint 3.0 v3 W2.1 reference)
 
   Single-file HTML. Hosted by Express at GET /verify on the Railway server.
   No build step. No framework. Tailwind via CDN, IDKit via CDN.
 
   Query params:
-    ?role=manager          → action: allowme-become-manager (orb-level)
-    ?role=coparent         → action: allowme-become-coparent (device-level)
-    ?role=family           → action: allowme-become-family (device-level)
-    ?invite=CODE           → invite code auto-filled on success
-    ?invite=CODE&role=X    → invite acceptance flow (role from invite)
+    ?role=manager          → IDKit orb-level OR opt-out (Decision 11)
+    ?role=coparent         → IDKit device-level OR opt-out
+    ?role=family           → IDKit device-level OR opt-out
+    ?role=learner          → Invite-only flow, NO IDKit (Decision 13)
+    ?role=advisor          → Invite-only flow, NO IDKit (Decision 13)
+    ?invite=CODE           → Auto-fill invite code (works with all roles)
+
+  Two top-level flows:
+    A. Verified flow (manager / coparent / family): IDKit OR opt-out
+    B. Invite-only flow (learner / advisor): direct invite redemption
 
   States:
-    1. Initial: Show IDKit widget + context
-    2. Verifying: Loading spinner
-    3. Success (new Manager): Show MCP URL + starter prompt
-    4. Success (invite acceptance): Show connection instructions
-    5. Sybil rejection: Clear error with recovery path
-    6. Network error: Retry + fallback instructions
+    1. Initial-verified: IDKit widget + "Continue without verification" link
+    2. Initial-invite-only: invite code input + "Join family" button
+    3. Verifying: Loading spinner
+    4. Onboarding-unverified: Brief explainer + confirm button (after opt-out clicked)
+    5. Success-manager: Magic-link MCP URL + starter prompt
+    6. Success-invite (adult): Magic-link MCP URL + starter prompt
+    7. Success-learner: Magic-link MCP URL + age-appropriate starter prompt
+    8. Success-unverified: Magic-link URL + recovery code (prominently displayed)
+    9. Sybil rejection: Clear error with recovery path
+    10. Network error: Retry + fallback instructions
 -->
 <!DOCTYPE html>
 <html lang="en">
@@ -31,6 +40,10 @@
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     .fade-in { animation: fadeIn 0.3s ease-in; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .recovery-code-box {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      letter-spacing: 0.05em;
+    }
   </style>
 </head>
 <body class="bg-slate-50 min-h-screen">
@@ -42,30 +55,114 @@
       <div class="text-slate-600" id="subtitle">Verify you're a real human to set up allowance for your family.</div>
     </div>
 
-    <!-- State 1: Initial (default visible) -->
-    <div id="state-initial" class="bg-white rounded-2xl shadow-sm p-8 fade-in">
+    <!-- ============================================ -->
+    <!-- STATE 1: Initial-verified (manager/coparent/family default) -->
+    <!-- ============================================ -->
+    <div id="state-initial-verified" class="hidden bg-white rounded-2xl shadow-sm p-8 fade-in">
       <div class="text-center mb-6">
-        <div class="inline-block bg-blue-50 text-blue-700 text-sm font-medium px-3 py-1 rounded-full mb-4" id="role-badge">Manager verification</div>
-        <p class="text-slate-700 text-sm" id="explainer">
+        <div class="inline-block bg-blue-50 text-blue-700 text-sm font-medium px-3 py-1 rounded-full mb-4" id="role-badge-verified">Manager verification</div>
+        <p class="text-slate-700 text-sm" id="explainer-verified">
           You'll be verified using World ID. This proves you're a unique human without revealing your identity.
           One verified human = one family on AllowanceAgent.
         </p>
       </div>
       <button
         id="verify-btn"
-        class="w-full bg-black text-white font-semibold py-4 rounded-xl hover:bg-slate-800 transition"
+        class="w-full bg-black text-white font-semibold py-4 rounded-xl hover:bg-slate-800 transition mb-3"
       >
         Verify with World ID
       </button>
+      <div class="text-center">
+        <button
+          id="opt-out-btn"
+          class="text-sm text-slate-500 hover:text-slate-700 underline"
+        >
+          Continue without verification →
+        </button>
+      </div>
     </div>
 
-    <!-- State 2: Verifying (hidden by default) -->
+    <!-- ============================================ -->
+    <!-- STATE 2: Initial-invite-only (learner/advisor) -->
+    <!-- NEW in v3 — Decision 13 -->
+    <!-- ============================================ -->
+    <div id="state-initial-invite-only" class="hidden bg-white rounded-2xl shadow-sm p-8 fade-in">
+      <div class="text-center mb-6">
+        <div class="inline-block bg-purple-50 text-purple-700 text-sm font-medium px-3 py-1 rounded-full mb-4" id="role-badge-invite">Join family</div>
+        <p class="text-slate-700 text-sm" id="explainer-invite-only">
+          Enter your invite code to join your family on AllowanceAgent.
+          Your parent or family manager gave you this code.
+        </p>
+      </div>
+      <div class="mb-4">
+        <label class="block text-xs font-semibold text-slate-500 uppercase mb-2">Invite code</label>
+        <input
+          type="text"
+          id="invite-input"
+          placeholder="SOFI-LEARNER-XYZ"
+          class="w-full px-4 py-3 border border-slate-200 rounded-xl text-center font-mono text-lg uppercase tracking-wider focus:outline-none focus:border-black"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="characters"
+          spellcheck="false"
+        />
+      </div>
+      <button
+        id="redeem-invite-btn"
+        class="w-full bg-black text-white font-semibold py-4 rounded-xl hover:bg-slate-800 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+        disabled
+      >
+        Join family
+      </button>
+      <p class="text-xs text-slate-500 text-center mt-4">
+        Don't have a code? Ask your family manager to send you one.
+      </p>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STATE 3: Verifying / Joining (loading) -->
+    <!-- ============================================ -->
     <div id="state-verifying" class="hidden bg-white rounded-2xl shadow-sm p-8 text-center">
       <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-black mb-4"></div>
-      <p class="text-slate-700">Verifying your World ID...</p>
+      <p class="text-slate-700" id="verifying-message">Verifying your World ID...</p>
     </div>
 
-    <!-- State 3: Success (new Manager) -->
+    <!-- ============================================ -->
+    <!-- STATE 4: Onboarding-unverified confirmation -->
+    <!-- ============================================ -->
+    <div id="state-onboarding-unverified" class="hidden bg-white rounded-2xl shadow-sm p-8 fade-in">
+      <div class="text-center mb-6">
+        <div class="inline-block bg-amber-50 text-amber-700 text-2xl p-3 rounded-full mb-3">!</div>
+        <h2 class="text-2xl font-bold mb-2">Continue without verification?</h2>
+        <p class="text-slate-600 text-sm">
+          You can still use AllowanceAgent without verifying your World ID.
+          You'll get a recovery code to keep safe — you'll need it if you lose access.
+        </p>
+      </div>
+      <div class="bg-slate-50 rounded-lg p-4 text-sm text-slate-700 mb-6">
+        <p class="font-semibold mb-2">What you'll lose:</p>
+        <ul class="list-disc list-inside space-y-1">
+          <li>Sybil-resistance benefits (one-human-per-role guarantees)</li>
+          <li>Access may be limited in future versions</li>
+        </ul>
+      </div>
+      <button
+        id="confirm-unverified-btn"
+        class="w-full bg-black text-white font-semibold py-4 rounded-xl hover:bg-slate-800 transition mb-3"
+      >
+        Continue without verification
+      </button>
+      <button
+        onclick="resetToInitial()"
+        class="w-full text-sm text-slate-500 hover:text-slate-700 underline"
+      >
+        ← Go back and verify
+      </button>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STATE 5: Success — new Manager (verified) -->
+    <!-- ============================================ -->
     <div id="state-success-manager" class="hidden bg-white rounded-2xl shadow-sm p-8 fade-in">
       <div class="text-center mb-6">
         <div class="inline-block bg-green-50 text-green-700 text-2xl p-3 rounded-full mb-3">✓</div>
@@ -73,12 +170,12 @@
         <p class="text-slate-600 text-sm">Now set up your family in Claude.</p>
       </div>
 
-      <!-- Step 1: MCP URL -->
+      <!-- Step 1: Magic-link MCP URL -->
       <div class="mb-6">
         <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Step 1: Add to Claude</div>
         <div class="bg-slate-100 rounded-lg p-3 flex items-center gap-2">
-          <code class="text-xs flex-1 overflow-hidden text-ellipsis whitespace-nowrap" id="mcp-url">https://allowme.dev/mcp</code>
-          <button onclick="copy('mcp-url')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy</button>
+          <code class="text-xs flex-1 overflow-hidden text-ellipsis whitespace-nowrap" id="mcp-url-manager">https://allowme.dev/mcp?setup=PENDING</code>
+          <button onclick="copy('mcp-url-manager')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy</button>
         </div>
         <p class="text-xs text-slate-500 mt-2">
           Open <a href="https://claude.ai/settings/connectors" class="underline" target="_blank">claude.ai settings → Connectors</a>,
@@ -90,8 +187,8 @@
       <div>
         <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Step 2: Say to Claude</div>
         <div class="bg-slate-100 rounded-lg p-3 flex items-center gap-2">
-          <span class="text-xs flex-1" id="starter-prompt">Set up allowance for my family.</span>
-          <button onclick="copy('starter-prompt')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy</button>
+          <span class="text-xs flex-1" id="starter-prompt-manager">Set up allowance for my family.</span>
+          <button onclick="copy('starter-prompt-manager')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy</button>
         </div>
       </div>
 
@@ -101,32 +198,127 @@
       </div>
     </div>
 
-    <!-- State 4: Success (invite acceptance) -->
-    <div id="state-success-invite" class="hidden bg-white rounded-2xl shadow-sm p-8 fade-in">
+    <!-- ============================================ -->
+    <!-- STATE 6: Success — adult invite acceptance (verified or skipped) -->
+    <!-- ============================================ -->
+    <div id="state-success-adult-invite" class="hidden bg-white rounded-2xl shadow-sm p-8 fade-in">
       <div class="text-center mb-6">
         <div class="inline-block bg-green-50 text-green-700 text-2xl p-3 rounded-full mb-3">✓</div>
         <h2 class="text-2xl font-bold mb-2">You're in</h2>
-        <p class="text-slate-600 text-sm">Connect your Claude to AllowanceAgent.</p>
+        <p class="text-slate-600 text-sm" id="adult-invite-subtitle">Connect Claude to AllowanceAgent.</p>
       </div>
 
       <div class="mb-6">
-        <div class="text-xs font-semibold text-slate-500 uppercase mb-2">MCP Server URL</div>
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Step 1: Add to Claude</div>
         <div class="bg-slate-100 rounded-lg p-3 flex items-center gap-2">
-          <code class="text-xs flex-1 overflow-hidden text-ellipsis whitespace-nowrap">https://allowme.dev/mcp</code>
-          <button onclick="copy('mcp-url-invite')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy</button>
+          <code class="text-xs flex-1 overflow-hidden text-ellipsis whitespace-nowrap" id="mcp-url-adult-invite">https://allowme.dev/mcp?setup=PENDING</code>
+          <button onclick="copy('mcp-url-adult-invite')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy</button>
         </div>
+        <p class="text-xs text-slate-500 mt-2">
+          Paste in <a href="https://claude.ai/settings/connectors" class="underline" target="_blank">claude.ai → Connectors</a>.
+        </p>
       </div>
 
       <div>
-        <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Then say to Claude</div>
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Step 2: Say to Claude</div>
         <div class="bg-slate-100 rounded-lg p-3 flex items-center gap-2">
-          <span class="text-xs flex-1">I have a code: <span id="invite-code-display" class="font-mono"></span></span>
-          <button onclick="copy('invite-code-display')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy code</button>
+          <span class="text-xs flex-1" id="starter-prompt-adult-invite">Show me the family's recent activity.</span>
+          <button onclick="copy('starter-prompt-adult-invite')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy</button>
         </div>
       </div>
     </div>
 
-    <!-- State 5: Sybil rejection -->
+    <!-- ============================================ -->
+    <!-- STATE 7: Success — Learner / Advisor (NEW in v3) -->
+    <!-- ============================================ -->
+    <div id="state-success-learner" class="hidden bg-white rounded-2xl shadow-sm p-8 fade-in">
+      <div class="text-center mb-6">
+        <div class="inline-block bg-green-50 text-green-700 text-2xl p-3 rounded-full mb-3">✓</div>
+        <h2 class="text-2xl font-bold mb-2" id="learner-success-title">You're in!</h2>
+        <p class="text-slate-600 text-sm" id="learner-success-subtitle">Connect Claude to start earning allowance.</p>
+      </div>
+
+      <!-- Step 1: Magic-link MCP URL -->
+      <div class="mb-6">
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Step 1: Add to Claude</div>
+        <div class="bg-slate-100 rounded-lg p-3 flex items-center gap-2">
+          <code class="text-xs flex-1 overflow-hidden text-ellipsis whitespace-nowrap" id="mcp-url-learner">https://allowme.dev/mcp?setup=PENDING</code>
+          <button onclick="copy('mcp-url-learner')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy</button>
+        </div>
+        <p class="text-xs text-slate-500 mt-2">
+          Open <a href="https://claude.ai/settings/connectors" class="underline" target="_blank">claude.ai → Connectors</a>,
+          paste the URL. (Ask a parent if you need help.)
+        </p>
+      </div>
+
+      <!-- Step 2: Age-appropriate starter prompt -->
+      <div class="mb-6">
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Step 2: Say to Claude</div>
+        <div class="bg-slate-100 rounded-lg p-3 flex items-center gap-2">
+          <span class="text-xs flex-1" id="starter-prompt-learner">What should I learn today?</span>
+          <button onclick="copy('starter-prompt-learner')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy</button>
+        </div>
+      </div>
+
+      <!-- Helpful suggestions for Learner -->
+      <div class="bg-blue-50 rounded-lg p-4 text-sm">
+        <p class="font-semibold text-blue-900 mb-2">Other things you can ask Claude:</p>
+        <ul class="text-blue-800 space-y-1 text-xs">
+          <li>• "How am I doing this week?"</li>
+          <li>• "How much did I save?"</li>
+          <li>• "What's my current streak?"</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STATE 8: Success — unverified onboarding (with recovery code) -->
+    <!-- ============================================ -->
+    <div id="state-success-unverified" class="hidden bg-white rounded-2xl shadow-sm p-8 fade-in">
+      <div class="text-center mb-6">
+        <div class="inline-block bg-green-50 text-green-700 text-2xl p-3 rounded-full mb-3">✓</div>
+        <h2 class="text-2xl font-bold mb-2">You're in</h2>
+        <p class="text-slate-600 text-sm">Save your recovery code — you'll need it if you lose access.</p>
+      </div>
+
+      <!-- Recovery code prominently displayed -->
+      <div class="mb-6">
+        <div class="text-xs font-semibold text-amber-700 uppercase mb-2">⚠ Save this somewhere safe</div>
+        <div class="bg-amber-50 border-2 border-amber-200 rounded-lg p-4 text-center">
+          <div class="text-xs text-amber-900 mb-2">Recovery code</div>
+          <div class="recovery-code-box text-xl font-bold text-amber-900 mb-3" id="recovery-code">RECOVERY-PENDING</div>
+          <button onclick="copy('recovery-code')" class="text-xs bg-amber-600 text-white px-4 py-2 rounded font-medium">Copy recovery code</button>
+        </div>
+        <p class="text-xs text-amber-700 mt-2">
+          You won't see this again. If you lose it, your family manager will need to remove and re-invite you.
+        </p>
+      </div>
+
+      <!-- Magic-link MCP URL -->
+      <div class="mb-6">
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Step 1: Add to Claude</div>
+        <div class="bg-slate-100 rounded-lg p-3 flex items-center gap-2">
+          <code class="text-xs flex-1 overflow-hidden text-ellipsis whitespace-nowrap" id="mcp-url-unverified">https://allowme.dev/mcp?setup=PENDING</code>
+          <button onclick="copy('mcp-url-unverified')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy</button>
+        </div>
+        <p class="text-xs text-slate-500 mt-2">
+          Note: this URL works for 48 hours. After that, return to <code>/verify</code> with your recovery code to refresh it.
+        </p>
+      </div>
+
+      <!-- Starter prompt -->
+      <div>
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Step 2: Say to Claude</div>
+        <div class="bg-slate-100 rounded-lg p-3 flex items-center gap-2">
+          <span class="text-xs flex-1" id="starter-prompt-unverified">Set up allowance for my family.</span>
+          <button onclick="copy('starter-prompt-unverified')" class="text-xs bg-white px-3 py-1 rounded font-medium">Copy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STATE 9: Sybil rejection -->
+    <!-- ============================================ -->
     <div id="state-sybil" class="hidden bg-white rounded-2xl shadow-sm p-8 fade-in">
       <div class="text-center mb-6">
         <div class="inline-block bg-amber-50 text-amber-700 text-2xl p-3 rounded-full mb-3">!</div>
@@ -141,12 +333,14 @@
       </div>
     </div>
 
-    <!-- State 6: Network error -->
+    <!-- ============================================ -->
+    <!-- STATE 10: Network / generic error -->
+    <!-- ============================================ -->
     <div id="state-error" class="hidden bg-white rounded-2xl shadow-sm p-8 fade-in">
       <div class="text-center mb-6">
         <div class="inline-block bg-red-50 text-red-700 text-2xl p-3 rounded-full mb-3">⚠</div>
         <h2 class="text-2xl font-bold mb-2">Something went wrong</h2>
-        <p class="text-slate-600 text-sm" id="error-message">We couldn't verify your World ID. Please try again.</p>
+        <p class="text-slate-600 text-sm" id="error-message">We couldn't complete this. Please try again.</p>
       </div>
       <button
         onclick="resetToInitial()"
@@ -158,17 +352,19 @@
 
     <!-- Footer -->
     <div class="text-center mt-8 text-xs text-slate-500">
-      Built by <a href="https://juanisaac.dev" class="underline">AllowMe LLC</a> · Sprint 3.0
+      Built by <a href="https://juanisaac.dev" class="underline">AllowMe LLC</a> · Sprint 3.0 v3
     </div>
   </div>
 
   <script>
-    // --- Parse query params ---
-    const params = new URLSearchParams(window.location.search);
-    const role = (params.get('role') || 'manager').toLowerCase();
-    const inviteCode = params.get('invite');
+    // ============================================
+    // CONFIGURATION
+    // ============================================
+    const APP_ID = 'APP_ID_INJECTED_FROM_BACKEND'; // Replaced server-side
 
-    // Validate role
+    const VERIFIED_ROLES = ['manager', 'coparent', 'family'];
+    const INVITE_ONLY_ROLES = ['learner', 'advisor'];
+
     const ROLE_TO_ACTION = {
       'manager': 'allowme-become-manager',
       'coparent': 'allowme-become-coparent',
@@ -182,56 +378,164 @@
     const ROLE_TO_LABEL = {
       'manager': 'Manager verification',
       'coparent': 'Co-parent verification',
-      'family': 'Family member verification'
+      'family': 'Family member verification',
+      'learner': 'Join as Learner',
+      'advisor': 'Join as Advisor'
+    };
+    const ROLE_TO_INVITE_SUBTITLE = {
+      'learner': 'Join your family and start earning allowance.',
+      'advisor': 'Join the family as a read-only advisor.'
+    };
+    const ROLE_TO_LEARNER_STARTER = {
+      'learner': 'What should I learn today?',
+      'advisor': 'Show me the family\'s recent activity.'
     };
 
-    const action = ROLE_TO_ACTION[role] || ROLE_TO_ACTION['manager'];
-    const verificationLevel = ROLE_TO_LEVEL[role] || 'orb';
+    // ============================================
+    // PARSE QUERY PARAMS
+    // ============================================
+    const params = new URLSearchParams(window.location.search);
+    const role = (params.get('role') || 'manager').toLowerCase();
+    const inviteCode = params.get('invite');
 
-    // Update UI based on role
-    document.getElementById('role-badge').textContent = ROLE_TO_LABEL[role] || ROLE_TO_LABEL['manager'];
-    if (role === 'coparent' || role === 'family') {
-      document.getElementById('explainer').textContent =
-        'World ID verification confirms you\'re the real human being added to this family.';
-    }
-    if (inviteCode) {
-      document.getElementById('subtitle').textContent = `Accept your ${role} invite.`;
-      const display = document.getElementById('invite-code-display');
-      if (display) display.textContent = inviteCode;
+    const isInviteOnlyRole = INVITE_ONLY_ROLES.includes(role);
+    const isVerifiedRole = VERIFIED_ROLES.includes(role);
+
+    // Default to manager if unrecognized
+    const safeRole = (isInviteOnlyRole || isVerifiedRole) ? role : 'manager';
+
+    // ============================================
+    // INITIAL STATE ROUTING (Decision 13)
+    // ============================================
+    function showInitial() {
+      if (isInviteOnlyRole) {
+        // Decision 13: Learner/Advisor go straight to invite-only flow
+        document.getElementById('role-badge-invite').textContent = ROLE_TO_LABEL[safeRole];
+        document.getElementById('subtitle').textContent = ROLE_TO_INVITE_SUBTITLE[safeRole] || 'Join your family.';
+
+        if (inviteCode) {
+          document.getElementById('invite-input').value = inviteCode;
+          document.getElementById('redeem-invite-btn').disabled = false;
+        }
+
+        showState('state-initial-invite-only');
+      } else {
+        // Verified flow (manager / coparent / family)
+        document.getElementById('role-badge-verified').textContent = ROLE_TO_LABEL[safeRole];
+
+        if (safeRole === 'coparent' || safeRole === 'family') {
+          document.getElementById('explainer-verified').textContent =
+            'World ID verification confirms you\'re the real human being added to this family.';
+        }
+
+        if (inviteCode) {
+          document.getElementById('subtitle').textContent = `Accept your ${safeRole} invite.`;
+        }
+
+        showState('state-initial-verified');
+      }
     }
 
-    // --- State management ---
+    // ============================================
+    // STATE MANAGEMENT
+    // ============================================
+    const ALL_STATES = [
+      'state-initial-verified',
+      'state-initial-invite-only',
+      'state-verifying',
+      'state-onboarding-unverified',
+      'state-success-manager',
+      'state-success-adult-invite',
+      'state-success-learner',
+      'state-success-unverified',
+      'state-sybil',
+      'state-error'
+    ];
+
     function showState(id) {
-      ['state-initial', 'state-verifying', 'state-success-manager',
-       'state-success-invite', 'state-sybil', 'state-error'].forEach(s => {
-        document.getElementById(s).classList.add('hidden');
-      });
+      ALL_STATES.forEach(s => document.getElementById(s).classList.add('hidden'));
       document.getElementById(id).classList.remove('hidden');
     }
 
     function resetToInitial() {
-      showState('state-initial');
+      showInitial();
     }
 
-    // --- Copy to clipboard helper ---
+    // ============================================
+    // CLIPBOARD HELPER
+    // ============================================
     function copy(id) {
-      const text = document.getElementById(id).textContent;
-      navigator.clipboard.writeText(text);
-      // Quick visual feedback (not shown for brevity)
+      const el = document.getElementById(id);
+      const text = el.textContent || el.value;
+      navigator.clipboard.writeText(text).then(() => {
+        // Visual feedback could go here (toast, button color change)
+      });
     }
 
-    // --- IDKit trigger ---
-    document.getElementById('verify-btn').addEventListener('click', async () => {
+    // ============================================
+    // SHARED SUCCESS HANDLER (sets magic-link URL on whichever success state renders)
+    // ============================================
+    function handleSuccess(data) {
+      const setupCode = data.setup_code || data.setupCode;
+      const magicLink = `https://allowme.dev/mcp?setup=${setupCode}`;
+
+      // Adult unverified path
+      if (data.flow === 'unverified') {
+        document.getElementById('mcp-url-unverified').textContent = magicLink;
+        document.getElementById('recovery-code').textContent = data.recovery_code || data.recoveryCode || 'RECOVERY-MISSING';
+        showState('state-success-unverified');
+        return;
+      }
+
+      // Learner / Advisor path (Decision 13)
+      if (isInviteOnlyRole) {
+        document.getElementById('mcp-url-learner').textContent = magicLink;
+        document.getElementById('starter-prompt-learner').textContent =
+          ROLE_TO_LEARNER_STARTER[safeRole];
+
+        if (safeRole === 'learner') {
+          document.getElementById('learner-success-title').textContent = 'You\'re in!';
+          document.getElementById('learner-success-subtitle').textContent = 'Connect Claude to start earning allowance.';
+        } else {
+          document.getElementById('learner-success-title').textContent = 'You\'re in';
+          document.getElementById('learner-success-subtitle').textContent = 'Connect Claude to view family activity.';
+        }
+
+        showState('state-success-learner');
+        return;
+      }
+
+      // Adult invite acceptance (coparent / family with verification)
+      if (inviteCode) {
+        document.getElementById('mcp-url-adult-invite').textContent = magicLink;
+        document.getElementById('starter-prompt-adult-invite').textContent =
+          safeRole === 'coparent'
+            ? 'Show me the kids\' progress this week.'
+            : 'Show me what the kids are up to.';
+        showState('state-success-adult-invite');
+        return;
+      }
+
+      // New Manager (no invite, verified)
+      document.getElementById('mcp-url-manager').textContent = magicLink;
+      showState('state-success-manager');
+    }
+
+    // ============================================
+    // VERIFIED FLOW: IDKit trigger
+    // ============================================
+    document.getElementById('verify-btn')?.addEventListener('click', async () => {
+      document.getElementById('verifying-message').textContent = 'Verifying your World ID...';
       showState('state-verifying');
+
       try {
         const result = await IDKit.open({
-          app_id: 'APP_ID_INJECTED_FROM_BACKEND',
-          action,
-          verification_level: verificationLevel,
+          app_id: APP_ID,
+          action: ROLE_TO_ACTION[safeRole],
+          verification_level: ROLE_TO_LEVEL[safeRole],
           signal: inviteCode || ''
         });
 
-        // POST proof to backend
         const verifyRes = await fetch('/api/worldid/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -240,16 +544,16 @@
             nullifier_hash: result.nullifier_hash,
             proof: result.proof,
             verification_level: result.verification_level,
-            action,
-            invite_code: inviteCode
+            action: ROLE_TO_ACTION[safeRole],
+            invite_code: inviteCode,
+            role: safeRole
           })
         });
 
         const data = await verifyRes.json();
 
         if (verifyRes.status === 409) {
-          // Sybil rejection
-          document.getElementById('sybil-role').textContent = data.existingRole || role;
+          document.getElementById('sybil-role').textContent = data.existingRole || safeRole;
           showState('state-sybil');
           return;
         }
@@ -260,12 +564,7 @@
           return;
         }
 
-        // Success — route based on flow
-        if (inviteCode) {
-          showState('state-success-invite');
-        } else {
-          showState('state-success-manager');
-        }
+        handleSuccess({ ...data, flow: 'verified' });
       } catch (err) {
         console.error(err);
         document.getElementById('error-message').textContent =
@@ -273,6 +572,95 @@
         showState('state-error');
       }
     });
+
+    // ============================================
+    // VERIFIED FLOW: Opt-out trigger (Decision 11)
+    // ============================================
+    document.getElementById('opt-out-btn')?.addEventListener('click', () => {
+      showState('state-onboarding-unverified');
+    });
+
+    document.getElementById('confirm-unverified-btn')?.addEventListener('click', async () => {
+      document.getElementById('verifying-message').textContent = 'Setting up your account...';
+      showState('state-verifying');
+
+      try {
+        const res = await fetch('/api/onboard-unverified', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: safeRole,
+            invite_code: inviteCode
+          })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          document.getElementById('error-message').textContent = data.error || 'Onboarding failed.';
+          showState('state-error');
+          return;
+        }
+
+        handleSuccess({ ...data, flow: 'unverified' });
+      } catch (err) {
+        console.error(err);
+        document.getElementById('error-message').textContent =
+          'Could not reach onboarding service. Please check your connection.';
+        showState('state-error');
+      }
+    });
+
+    // ============================================
+    // INVITE-ONLY FLOW: Redeem invite (Decision 13 — NEW in v3)
+    // ============================================
+    document.getElementById('invite-input')?.addEventListener('input', (e) => {
+      const val = e.target.value.trim();
+      document.getElementById('redeem-invite-btn').disabled = val.length < 6;
+    });
+
+    document.getElementById('redeem-invite-btn')?.addEventListener('click', async () => {
+      const code = document.getElementById('invite-input').value.trim().toUpperCase();
+      if (!code) return;
+
+      document.getElementById('verifying-message').textContent = 'Joining your family...';
+      showState('state-verifying');
+
+      try {
+        const res = await fetch('/api/redeem-invite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            invite_code: code,
+            role: safeRole
+          })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          let msg = data.error || 'Invite redemption failed.';
+          if (res.status === 404) msg = 'That invite code wasn\'t found. Check with your family manager.';
+          if (res.status === 410) msg = 'That invite code has expired or been used. Ask for a new one.';
+          if (res.status === 403) msg = 'That invite code is for a different role.';
+          document.getElementById('error-message').textContent = msg;
+          showState('state-error');
+          return;
+        }
+
+        handleSuccess({ ...data, flow: 'invite-only' });
+      } catch (err) {
+        console.error(err);
+        document.getElementById('error-message').textContent =
+          'Could not reach the server. Please check your connection.';
+        showState('state-error');
+      }
+    });
+
+    // ============================================
+    // BOOT
+    // ============================================
+    showInitial();
   </script>
 </body>
 </html>

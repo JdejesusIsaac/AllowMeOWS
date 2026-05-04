@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>W2.1 Spike — @base-org/account ESM + wallet_connect(signInWithEthereum)</title>
+  <style>
+    body { font-family: ui-monospace, Menlo, monospace; padding: 2rem; max-width: 720px; margin: auto; }
+    button { padding: .75rem 1rem; font: inherit; cursor: pointer; }
+    pre { background: #111; color: #0f0; padding: 1rem; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+    .pass { color: #080; } .fail { color: #c00; }
+  </style>
+</head>
+<body>
+  <h1>W2.1 Spike</h1>
+  <p>Verifies: (a) <code>@base-org/account@2.5.5</code> loads via esm.sh as a module; (b) <code>createBaseAccountSDK</code> is callable; (c) <code>provider.request({ method: "wallet_connect", ... capabilities: { signInWithEthereum } })</code> returns <code>{ accounts, message, signature }</code> on real mobile Coinbase Wallet.</p>
+
+  <button id="signin">Sign in with Base (spike)</button>
+  <pre id="log">(click the button to start)</pre>
+
+  <script type="module">
+    const log = document.getElementById("log");
+    const write = (label, obj, cls="") => {
+      const pre = document.createElement("div");
+      if (cls) pre.className = cls;
+      pre.textContent = `[${new Date().toISOString()}] ${label}\n` + (typeof obj === "string" ? obj : JSON.stringify(obj, (k,v) => typeof v === "bigint" ? v.toString() : v, 2));
+      log.appendChild(pre);
+    };
+
+    let sdkMod;
+    try {
+      sdkMod = await import("https://esm.sh/@base-org/account@2.5.5");
+      write("PASS: ESM import", { exports: Object.keys(sdkMod).sort() }, "pass");
+    } catch (err) {
+      write("FAIL: ESM import", err.message, "fail");
+      throw err;
+    }
+
+    const { createBaseAccountSDK } = sdkMod;
+    if (typeof createBaseAccountSDK !== "function") {
+      write("FAIL: createBaseAccountSDK not a function", typeof createBaseAccountSDK, "fail");
+      throw new Error("createBaseAccountSDK missing");
+    }
+
+    const sdk = createBaseAccountSDK({
+      appName: "AllowMe (spike)",
+      appLogoUrl: "https://allowme.dev/icon.png",
+    });
+    write("PASS: SDK instantiated", { hasProvider: typeof sdk.getProvider === "function" }, "pass");
+
+    const provider = sdk.getProvider();
+
+    document.getElementById("signin").addEventListener("click", async () => {
+      try {
+        // Fetch server nonce in production; for spike, generate client-side entropy.
+        const nonce = crypto.getRandomValues(new Uint8Array(16))
+          .reduce((s, b) => s + b.toString(16).padStart(2, "0"), "");
+
+        const result = await provider.request({
+          method: "wallet_connect",
+          params: [{
+            version: "1",
+            capabilities: {
+              signInWithEthereum: {
+                nonce,
+                chainId: "0x14a34", // Base Sepolia 84532
+                statement: "Sign in to AllowMe to manage your family's allowance.",
+              },
+            },
+          }],
+        });
+        write("PASS: wallet_connect returned", result, "pass");
+      } catch (err) {
+        write("FAIL: wallet_connect", { message: err.message, code: err.code }, "fail");
+      }
+    });
+  </script>
+</body>
+</html>

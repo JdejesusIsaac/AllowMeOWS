@@ -5,6 +5,7 @@ import { StateManager } from "../engine/state.js";
 import { PolicyEngine } from "../engine/policy.js";
 import { AchievementSourceEnum } from "../schemas.js";
 import type { AchievementRecord } from "../schemas.js";
+import { findMatchingGoalIndex } from "../engine/learning-goals.js";
 import { USDC } from "../constants.js";
 import {
   withAccessControl,
@@ -125,6 +126,26 @@ export function registerVerifyAchievementTool(server: McpServer): void {
 
         await state.addAchievement(familyId, record);
 
+        // Sprint 3.0.1: fuzzy-match this achievement against any incomplete
+        // parent-defined learning goal on this child. See engine/learning-goals.ts
+        // for the matching rule. No-match is silent.
+        let goalCompleted: string | null = null;
+        if (childConfig.learningGoals && childConfig.learningGoals.length > 0) {
+          const idx = findMatchingGoalIndex(
+            { category: matchedCat, description },
+            childConfig.learningGoals
+          );
+          if (idx >= 0) {
+            const goal = childConfig.learningGoals[idx]!;
+            goal.completed = true;
+            goal.completedAt = record.verifiedAt;
+            goal.achievementId = record.id;
+            goalCompleted = goal.topic;
+            // Persist updated config (childConfig is a reference into config.children)
+            await state.saveFamilyConfig(familyId, config);
+          }
+        }
+
         // Audit log
         await state.addAuditEntry(familyId, {
           id: randomUUID(),
@@ -146,6 +167,15 @@ export function registerVerifyAchievementTool(server: McpServer): void {
         const amountUsd = (multipliedAmount / 10 ** USDC.DECIMALS).toFixed(2);
         const baseUsd = (amount / 10 ** USDC.DECIMALS).toFixed(2);
 
+        const totalGoals = childConfig.learningGoals?.length ?? 0;
+        const completedCount = childConfig.learningGoals?.filter((g) => g.completed).length ?? 0;
+        const baseMessage = streak.multiplier > 1
+          ? `${childConfig.name} earned $${amountUsd} for ${category} (${score}/100). ${streak.currentStreak}-day streak gives ${streak.multiplier}x bonus! (base: $${baseUsd}). Ready for distribution.`
+          : `${childConfig.name} earned $${amountUsd} for ${category} (${score}/100). Ready for distribution.`;
+        const message = goalCompleted
+          ? `${baseMessage} Goal completed: ${goalCompleted}! ${completedCount} of ${totalGoals} done.`
+          : baseMessage;
+
         return {
           content: [{
             type: "text" as const,
@@ -159,9 +189,10 @@ export function registerVerifyAchievementTool(server: McpServer): void {
               streakMultiplier: streak.multiplier,
               finalAmountUsd: amountUsd,
               currentStreak: streak.currentStreak,
-              message: streak.multiplier > 1
-                ? `${childConfig.name} earned $${amountUsd} for ${category} (${score}/100). ${streak.currentStreak}-day streak gives ${streak.multiplier}x bonus! (base: $${baseUsd}). Ready for distribution.`
-                : `${childConfig.name} earned $${amountUsd} for ${category} (${score}/100). Ready for distribution.`,
+              goalCompleted,
+              completedGoals: completedCount,
+              totalGoals,
+              message,
             }),
           }],
         };

@@ -1,271 +1,415 @@
-# AllowanceAgent — plan.md (Sprint 3.0 — Trimmed)
+# AllowanceAgent — plan.md (Sprint 3.0 — Trimmed, v4)
+
+## What Changed in v4
+
+This revision swaps the authentication primitive from World ID (IDKit standalone, orb/device verification, nullifier uniqueness) to **Sign-in-with-Base** (SIWE via Base Account's `wallet_connect` provider method, viem signature verification, wallet-address-as-identity).
+
+The pivot is motivated by four things:
+
+1. **Sybil resistance was ahead-of-need.** No external party funds AllowanceAgent treasuries today. A sybil attacker creates N families and divides their own money — there is no economic attack surface to defend. Sybil becomes load-bearing only when paymaster sponsorship lands in Sprint 4.0, at which point we'll make a deliberate decision about how to defend it (rate limiting + Coinbase Verifications layered on top is the leading candidate, but explicitly punted to 4.0).
+2. **Coherence with the rest of the stack.** AllowanceAgent runs on Base. OWS custodies on Base. viem signs and broadcasts on Base. Sign-in-with-Base completes the all-Base story. World ID was an outside primitive grafted on; Base Account is native.
+3. **CDP Ambassador alignment.** This pivot is materially better leverage on the relationship Juan already has with Coinbase than World Foundation grant pipeline access would have been.
+4. **Forward compatibility with Sprint 4.0 Approach A.** Sprint 4.0 (post-pilot scaling) commits to Coinbase Smart Wallet as the family treasury, with the parent's Base Account as the owner/signer. Sprint 3.0 binding wallet addresses to Members via SIWE means the same wallet that authenticates in 3.0 becomes the treasury signer in 4.0 — no second auth flow, no second key bind, clean continuity.
+
+The verify page is still the canonical onboarding surface for all five roles. The magic-link MCP URL pattern is unchanged. The Sprint 2.9.1 multi-tenant identity foundation is unchanged. What changes is the *means* by which the verify page authenticates an adult: instead of an IDKit widget popping a World ID proof, a Sign-in-with-Base button pops a Coinbase Wallet (or any Base Account-compatible wallet) signature request.
+
+## What Changed in v2/v3 (preserved for context)
+
+v2 introduced setup-code-as-magic-link (verify page injects `?setup=` into the displayed MCP URL), optional non-verified onboarding for adults, and rotation flow for expired codes — fixing the April 28 Angelica Co-parent session-2-lockout bug.
+
+v3 added Decision 13: Learner verify-page invite-only flow, making the verify page handle all five roles uniformly. Sofia at 8 redeems her invite via the same surface her parents use, just without the IDKit widget.
+
+v4 keeps everything v2/v3 added at the verify-page UX layer. The only thing that changes is what the "adult auth" path looks like underneath.
 
 ## Feature Summary
 
-Sprint 3.0 ships World ID verification for Manager and Co-parent roles and a single static verification page that hands off to Claude. The distribution channel is **orb-verified parents at partnered school events** (Success Academy pilot), not a Mini App in World Network's app directory. OWS custody stays intact — Option B hybrid architecture. Kids remain invite-code-only. AgentKit deferred to Sprint 3.5 (Seoul Build Week).
+Sprint 3.0 v4 ships:
 
-**What's new vs the original plan:** No Mini App, no Next.js, no MiniKit, no Vercel, no React. The frontend is one static HTML file (~150 lines) hosted on the existing Railway server at `/verify`. Parents scan a QR code at a school event, land on the verify page, complete IDKit verification, receive a one-line instruction to paste into Claude. The distribution channel is physical (school orb events) not discovery-based (World Network app browse).
+- **Sign-in-with-Base** for Manager, Co-parent, and Family roles via the verify page. One click, one signature popup, wallet address bound to Member.
+- **A single static verify page** that handles all five roles: adult roles authenticate via SIWE, Learner/Advisor authenticate via invite-only redemption.
+- **Magic-link MCP URLs** as the universal handoff: every successful onboarding (whether SIWE-authenticated, invite-redeemed, or inline-bootstrapped) ends with a copy-paste-able `https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX` URL that works across multiple Claude sessions.
+- **Recommendation B family bootstrap:** when a wallet signs in with no `?invite=` and is not a known Member, the verify page exposes a guided "create your family" form (name, kids, weekly budgets, categories, savings %) that calls a new `/api/configure-family` endpoint. The endpoint is a thin web wrapper around the existing `configure-policy` tool logic, with the same per-family OWS vault initialization. Output is a magic-link URL bound to the freshly-created Manager.
+- **Setup code rotation via re-sign-in:** a returning user revisits `/verify`, signs in with the same wallet, gets a fresh 30-day code bound to their existing Member (no duplicate Member created).
 
-**Why this is stronger, not weaker:** The pitch changes from "generic Mini App for families" to "first proof-of-human-gated family financial product with a named B2B distribution partner." That's legible to judges. It also cuts scope from 27 hours to 18 hours, which fits the 48-hour window with real buffer for Sprint 2.75 validation and pitch preparation.
+The distribution channel pivots from "orb-verified parents at Success Academy events" to **"Coinbase-Wallet-onboarded parents at Success Academy events"** — Coinbase does the hard mobile-onboarding work (passkey setup, recovery, fiat onramp), AllowMe takes the user from "I have a Base Account" to "I have a working Claude+AllowanceAgent session" in three clicks.
+
+What's not in scope: smart wallet treasury (Sprint 4.0 Approach A), spend-permission delegation (Sprint 4.0), paymaster sponsorship (Sprint 4.0), AgentKit (Sprint 3.5+), sybil defense (Sprint 4.0 paymaster decision), World Foundation grant pipeline (deferred indefinitely or recovered in Sprint 4.0+ if pilot data warrants).
 
 ## Problem Statement
 
-Two problems framed the original Sprint 3.0: distribution and sybil resistance. The Mini App was my answer to both. The school-orb reframe splits them:
+Three problems frame Sprint 3.0 v4:
 
-1. **Distribution:** Handled by the Success Academy partnership and physical orb events at school. Parents don't need to discover AllowanceAgent in World App — they encounter it at PTA night, orientation, or a scheduled orb event. QR code to verify page, verify page to Claude.
+1. **Onboarding UX at scale (adults).** The verify page magic-link UX from v2/v3 is correct. The question is what authentication primitive sits underneath. World ID required users to find an orb (or device-verify, but device-verification UX is its own friction). Sign-in-with-Base requires users to have a Base Account, which is a smaller-friction prerequisite than orb access — Coinbase Wallet is one App Store download, the entire onboarding is mainstream-app-shaped, and a meaningful share of NYC charter-school families already have Coinbase accounts from prior fintech exposure.
 
-2. **Sybil resistance:** Still solved by World ID nullifier uniqueness. Mechanism unchanged from the full plan.
+2. **Identity primitive coherence.** Sprint 2.9 left `Member.walletAddress` as an optional field with a comment marking it for x402/aixyz use. With World ID, that field continued to be vestigial — World ID nullifiers were the real identity anchor. With Sign-in-with-Base, `walletAddress` becomes the *primary* identity index, the field that `resolveCallerRole` resolves against, the field that ties one human across multiple sessions, devices, and (in Sprint 4.0) the field that's added as a signer on the family treasury Smart Wallet.
 
-The Mini App UI layer was solving a problem that doesn't exist in the school-partnered model. A 150-line static page with IDKit + handoff instructions does the job cleanly.
+3. **Onboarding UX at scale (kids).** Unchanged from v3. Kids don't have wallets and shouldn't. Learner role stays invite-code-only via verify page Decision 13.
+
+The verify page solves (1) via SIWE for adults, (2) via wallet-address binding, and (3) via the unchanged invite-only flow for kids.
 
 ## Architecture Decisions
 
-### 1. OWS stays — hybrid architecture (Option B) — unchanged
-**Decision:** World ID and OWS solve orthogonal problems. OWS handles custody. World ID handles identity. Both ship.
-**Why:** Preserves the "first consumer-ready OWS application" narrative from the OWS Hackathon submission while adding the sybil guarantee World Build judges care about. Same architectural thesis as the original plan.
+### 1. OWS stays — hybrid architecture (Option B) — unchanged from v3
+**Decision:** OWS continues to handle custody for Sprint 3.0. Treasury, savings vault, gift fund, child wallets all created and managed inside the per-family `data/families/{familyId}/.ows/` vault (Sprint 2.9.1 hotfix). Sprint 4.0 migrates to Coinbase Smart Wallet treasury with parent's Base Account as signer; Sprint 3.0 does not change the custody layer.
+**Why:** Custody and authentication are orthogonal. Sprint 3.0 changes auth. Custody refactor is Sprint 4.0 work and depends on pilot data + paymaster economics.
 
-### 2. No Mini App frontend — static HTML + IDKit only
-**Decision:** Skip Next.js entirely. Build one static HTML page at `https://allowme.dev/verify` that loads `@worldcoin/idkit-standalone` via CDN script tag, triggers verification, POSTs the proof to the existing backend, displays handoff instructions.
-**Why:** The Mini-App-in-World-App distribution story was the only reason to build the full Next.js frontend. With school orb events as the channel, users arrive via QR code in any mobile browser. IDKit works natively in any browser. A static page is 1–2 hours of work vs 9+ hours for a full Next.js Mini App, and renders more reliably (no React hydration bugs during a demo).
+### 2. No Mini App frontend — static HTML + Base Account SDK only — revised from v3
+**Decision:** Single static HTML page at `https://allowme.dev/verify`. Loads `@base-org/account` as ESM via CDN (esm.sh or jsdelivr). Vanilla JS, no React, no build step, no Next.js, no Vercel. Custom-styled "Sign in with Base" button matching Base [Brand Guidelines](https://docs.base.org/base-account/reference/ui-elements/brand-guidelines).
+**Why:** The React-only `@base-org/account-ui` button component would force adopting React for the verify page, which conflicts with v2/v3's "single static HTML file" decision. Going vanilla with a brand-compliant custom button keeps the page footprint small and the deployment surface trivial — same Express static-file pattern Sprint 2.9.1 already uses.
+**Spike required:** Confirm `@base-org/account` loads as ESM via `https://esm.sh/@base-org/account` (or equivalent CDN) without a bundler. ~30-60 minute spike, blocking. If ESM CDN doesn't work, fallback is a small esbuild step that bundles `@base-org/account` into `/public/verify-app.js` — still one HTML page, just one extra build artifact. Either way, no React.
 
-### 3. Distribution channel is physical, not app-directory based
-**Decision:** Pitch AllowanceAgent as the AI-native family financial layer for orb-verified parents at partnered schools. Success Academy is the named pilot. QR codes at school events point parents to `/verify`. The app is not submitted to World App's Mini App directory for this sprint.
-**Why:** Distribution is the hardest problem for most World Build applicants. Having a named B2B partner with existing relationship (per prior conversations with Success Academy) puts AllowanceAgent ahead of the median applicant. It also aligns with Tools for Humanity's actual go-to-market — biometric verification is a physical-world primitive, and schools are a natural distribution surface.
+### 3. Distribution channel — Coinbase-Wallet-onboarded parents at partnered schools — revised from v3
+**Decision:** Pitch AllowanceAgent as the AI-native family financial layer for Coinbase-Wallet-onboarded parents at partnered charter networks (Success Academy pilot). Schools host onboarding sessions where parents who don't yet have a Coinbase Wallet download it during the session, set up their Base Account, and then complete AllowMe verify-page onboarding immediately after.
+**Why:** Coinbase Wallet onboarding is *easier* than orb-event onboarding from a user's perspective (App Store download vs find-an-orb), and the Coinbase brand recognition is meaningful in financially-engaged communities. The school-as-distribution thesis survives — it's still a B2B partner pitch — but the prerequisite shifts from "orb infrastructure exists at the school" to "parents have phones and can download an app," which is universally true.
 
-### 4. World ID gating scoped to Manager + Co-parent
-**Decision:** Manager requires orb-level verification. Co-parent requires device-level (most orb-verified parents have World App installed, so device-level is always available to them). Family and Advisor and Learner roles remain invite-code-only.
-**Why:** Minors cannot verify. Grandparents with gift-only access don't need the friction. The verification applies where financial authority applies.
+### 4. Wallet-address-as-identity, scoped per family — replaces World ID gating (Decision 4 in v3)
+**Decision:** Manager, Co-parent, and Family roles authenticate via Sign-in-with-Base. The wallet address becomes the durable identifier for that Member. Learner and Advisor roles remain invite-code-only with no wallet sign-in step (kids don't have wallets; advisors are read-only and don't need crypto identity). The verify page renders three different flows based on `?role=` query param:
+- `manager` (no `?invite=`) → SIWE button → on success, "create your family" form → magic-link URL
+- `manager|coparent|family` (with `?invite=CODE`) → SIWE button → invite redemption → magic-link URL
+- `learner|advisor` → invite-redemption-only flow, no SIWE → magic-link URL
 
-### 5. Nullifier as the sybil primitive — unchanged from full plan
-**Decision:** Store nullifiers per (human, action) tuple. Separate action namespaces for Manager vs Co-parent to allow legitimate cross-role human. Revocable on Member removal.
-**Why:** This is the architectural win of the World integration. The mechanism doesn't change just because the frontend shrank.
+**Why:** Wallet ownership is the right level of authentication for an adult who's about to be an authority on a family treasury. It's stronger than a setup code (which is a bearer token anyone could intercept) and weaker than World ID (which is proof-of-personhood, overkill for current product needs). Critically, it sets up Sprint 4.0 — the same wallet that authenticates here becomes the signer on the family treasury Smart Wallet later.
 
-### 6. Session auth for verified humans is additive
-**Decision:** After World ID verification, issue a short-lived session token (24h JWT). Session token is a third priority in `resolveCallerRole` behind the existing `X-Member-Id` header and `_callerId` arg paths. Legacy Sprint 2 auth paths unchanged.
-**Why:** Session auth is useful for the verify page to issue calls on behalf of the newly-verified user. Doesn't break anything from Sprint 2.
+### 5. Cross-family Manager is now natively supported
+**Decision:** A single wallet address can be a Member of multiple families with different roles (Manager of own family, Co-parent helping a sister's family). Sprint 2.9's research doc punted this to Sprint 3.0 with action namespacing under World ID. With wallet auth, no namespacing is needed — `MemberIndex.listByFamily(walletAddress)` returns all the families this wallet is a member of, and the verify page surfaces a family picker if the count > 1.
+**Why:** The v3 nullifier model would have rejected a second Manager registration ("already used" error) and required a per-family-scoped action namespace (`allowme-become-manager-{familyId}`) to support legitimate multi-family Managers. Wallet identity has no such constraint built-in, so the natural model just works. The MemberIndex schema already supports this: `wallet_address` is unique per `(walletAddress, familyId)` tuple, not globally unique.
 
-### 7. Claude remains the only conversational surface
-**Decision:** Verify page is a pure handoff. It shows the MCP connector URL and a starter prompt. No attempt to embed a chat interface. Everything the parent does after verification happens in Claude.
-**Why:** Building an in-app chat is out of scope and dilutes the "Claude as family AI" story. Clean handoff is the right pattern.
+### 6. Session auth additive — unchanged from v3
+**Decision:** Setup code is the durable connector credential. JWT session token only matters for the verify page itself (binds the SIWE-verified browser session to a memberId for the duration of the page interaction, ~10 minutes).
+**Setup code expiry policy (simplified from v3's six-tier matrix to three tiers):**
+- **Wallet-authenticated via verify page:** 30 days, rotatable any time by re-signing in
+- **Invite-redemption via verify page (any role):** 30 days
+- **Inline bootstrap (`configure-policy` direct call from Claude):** 48 hours
+The six-tier expiry matrix in v3 was a consequence of needing to differentiate "verified human via World ID" from "unverified opt-out" — that distinction dissolves when wallet auth is one click and there's no opt-out path.
 
-### 8. AgentKit scoped to research only
-**Decision:** No `@worldcoin/agentkit` or `@x402/hono` integration in this sprint. Research doc captures the full integration for Sprint 3.5 (Seoul Build Week).
-**Why:** AgentKit requires coordinating with agent operators (OpenMAIC, Fitbit-as-agent, potential StableShield integration). That's ecosystem work better done on the ground in Seoul with the World team available for questions.
+### 7. Claude remains the only conversational surface — unchanged from v3
+**Decision:** Verify page is a pure handoff. No embedded chat. No progress dashboard. No achievement entry. All product surface lives in Claude.
 
-### 9. Success Academy pilot is real or cut
-**Decision:** Before submission, confirm at least one concrete artifact from Success Academy or from World orb operations — a scheduled event, a written expression of interest, or a conversation with World's orb operations team about school-based events. If nothing concrete exists by end of Day 1, reframe the pitch to "we're building for orb-verified parents; Success Academy is our target pilot" rather than "Success Academy is onboarding with us."
-**Why:** Judges can tell the difference between a real partner and aspirational language. A two-sentence email confirmation is the difference between a credible B2B story and hand-waving. If the reality is aspirational, be honest about it — judges still reward clear target-customer thinking, but they punish over-claiming.
+### 8. AgentKit scoped to research only — unchanged from v3
+**Decision:** Sprint 3.5+ work. Note: this pivot makes future AgentKit reactivation cleaner because wallet-address-as-identity is the same primitive AgentKit and x402 use.
+
+### 9. Success Academy pilot is real or cut — unchanged from v3
+**Decision:** Confirm before any external pitch. If aspirational, reframe pitch honestly as "designed for charter network deployment, no confirmed partner yet."
+
+### 10. Setup code is the magic link, baked into the displayed MCP URL — unchanged from v2/v3
+**Decision:** Verify page success state shows `https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX` (full URL, not bare URL). One copy, one paste, working session forever (until expiry).
+**Setup code expiry: see Decision 6.**
+
+### 11. Recommendation B: guided family creation on the verify page (NEW in v4)
+**Decision:** When a wallet signs in via the verify page with no `?invite=` query param and is not a known Member of any family, the page renders a guided "create your family" form. Form fields mirror the `configure-policy` tool inputs: family name, list of children (name + weekly budget USD + savings %), per-child categories (name + pct, must sum to ≤100%). On submit, POSTs to a new endpoint `/api/configure-family` which calls into the same `configure-policy` logic the MCP tool uses, then issues a setup code bound to the new Manager Member, returns the magic-link URL.
+**Why:** Without this, a signed-in stranger has no path forward — the verify page can authenticate them but can't *do* anything with that authentication. The alternatives are: (a) auto-create an empty family and dump them into Claude with a "now configure your family" prompt (loses the guided UX), or (c) reject and force them to start in Claude with `configure-policy` inline (defeats the whole point of the verify page being the canonical onboarding surface). (b) is the right cut.
+**Implementation note:** `/api/configure-family` is a thin web wrapper, not a separate code path. It calls the existing internal `configurePolicy` function (extracted from the MCP tool handler into a reusable function) and threads the verify page's session token + SIWE-verified wallet address through as the caller context. The MCP tool surface is unchanged.
+
+### 12. Setup code rotation via re-sign-in — revised from v3
+**Decision:** A returning verified user revisits `/verify`, signs in with the same wallet, the backend recognizes the wallet address in MemberIndex, looks up the existing Member, issues a fresh 30-day setup code without creating a duplicate Member. The previous setup code is automatically revoked.
+**Why this is simpler than v3:** v3 needed a nullifier-to-Member lookup index because nullifiers were the identity anchor. With wallet addresses, the existing MemberIndex already serves this purpose — `MemberIndex.listByFamily(walletAddress)` returns the (memberId, role, familyId) triples, and the rotation endpoint revokes old codes via `setupCodes.revokeForMember(memberId)` before issuing a new one.
+
+### 13. Learner onboarding via verify page with invite-only flow — unchanged from v3
+**Decision:** When the verify page is loaded with `?role=learner` (or `?role=advisor`), the page skips the SIWE button entirely and renders an invite-redemption-only flow. Invite code input (auto-filled from `?invite=`), big "Join family" button, on success same magic-link MCP URL as adult paths. Age-appropriate starter prompt.
+**Why unchanged:** Kids don't have wallets and shouldn't. The Learner verify-page flow is auth-primitive-agnostic — it didn't depend on World ID and doesn't depend on Sign-in-with-Base.
+**For very young Learners (ages 5–7):** Parent-mediated onboarding. Parent opens verify page on their phone, enters Sofia's invite code, copies the magic-link URL, configures it on Sofia's tablet. Documented user model.
+**For older Learners (ages 8+ and teens):** Self-service via the verify page works directly.
+
+### 14. Forward compatibility with Sprint 4.0 Approach A (NEW in v4)
+**Decision:** The wallet address bound to a Manager Member during Sprint 3.0 SIWE onboarding is the same wallet that becomes the owner/signer of the family treasury Coinbase Smart Wallet in Sprint 4.0 Approach A. No second auth flow, no second key bind, no migration friction at the auth layer.
+**Why:** The cleanest possible handoff between sprints. Sprint 3.0 binds (walletAddress → Member). Sprint 4.0 takes that walletAddress and adds it as a signer on a newly-deployed family treasury Smart Wallet. The user's mental model — "my Coinbase Wallet is my AllowMe identity" — is consistent across both sprints.
+**Implementation note:** No code in Sprint 3.0 commits to Sprint 4.0's design choices. The Sprint 4.0 Approach A path is enabled, not pre-built. If Sprint 4.0 ends up choosing Approach B (Base Account as treasury, sub-accounts for kids) instead, the Sprint 3.0 wallet binding still works — just a different downstream consumer.
 
 ---
 
 ## Implementation Steps
 
-### Workstream W1: World ID Verification Backend 
-
-Unchanged from the full plan. All 10 steps ship.
+### Workstream W1: Sign-in-with-Base Backend (5 hours)
 
 | Step | Task | Complexity | Est. |
 |------|------|------------|------|
-| W1.1 | `src/worldid/verify.ts` — Developer Portal API integration | Medium | 1h |
-| W1.2 | `src/worldid/nullifier-store.ts` — persistence with action namespacing | Medium | 1h |
-| W1.3 | Schema: extend `MemberSchema` with worldId fields (optional) | Low | 15m |
-| W1.4 | Schema: extend `InviteSchema` with `requiresWorldId` field | Low | 15m |
-| W1.5 | Schema: add `world-id-verified` to `AuditEntrySchema` action enum | Low | 5m |
-| W1.6 | Update `invite-member` — auto-set `requiresWorldId` for gated roles when `WORLD_APP_ID` is configured | Low | 30m |
-| W1.7 | Update `accept-invite` — World ID verification + nullifier uniqueness check | High | 1.5h |
-| W1.8 | HTTP endpoint `POST /api/worldid/verify` for the verify page | Medium | 45m |
-| W1.9 | HTTP endpoint `POST /api/session` — JWT token issuance | Medium | 45m |
-| W1.10 | Update `resolveCallerRole` — session token as priority 1, additive | Medium | 45m |
+| W1.1 | `src/auth/siwe.ts` — SIWE message verification via viem `verifyMessage` (handles ERC-6492 wrapping for undeployed smart wallets automatically) | Low | 30m |
+| W1.2 | `src/auth/nonce-store.ts` — in-memory Set with TTL eviction for SIWE nonces. Generate via `randomBytes(16).toString("hex")`. Track issued nonces, reject reuse. | Low | 30m |
+| W1.3 | `src/auth/session-tokens.ts` — JWT issuance + validation. Claims: `{ memberId, walletAddress, familyId, role, exp }`. Signing key from new `.session-secret` file (auto-generated if absent, same pattern as `.master-key`). | Medium | 45m |
+| W1.4 | Schema: extend `MemberSchema` with `walletVerifiedAt: z.string().datetime().optional()` (tracks last successful SIWE re-auth for rotation policy). `walletAddress` field already exists from Sprint 2 — no migration. | Low | 10m |
+| W1.5 | Schema: add `wallet-signed-in`, `wallet-bound-to-member`, `setup-code-rotated-via-wallet-reauth`, `family-created-via-verify-page`, `learner-invite-redeemed-via-verify-page` to `AuditEntrySchema` action enum | Low | 5m |
+| W1.6 | HTTP endpoint `GET /api/auth/nonce` — generates nonce, stores in nonce-store with 5-min TTL, returns plaintext | Low | 15m |
+| W1.7 | HTTP endpoint `POST /api/auth/verify` — validates SIWE signature, parses nonce from message, deletes nonce from store, looks up MemberIndex by walletAddress, returns JSON: `{ memberId?, families: [{familyId, role}], sessionToken, requiresFamilyCreation: boolean }`. If wallet is unknown, `requiresFamilyCreation: true` and verify page renders the family creation form. | High | 1h |
+| W1.8 | HTTP endpoint `POST /api/configure-family` — accepts session token + family config form fields, calls extracted `configurePolicy` logic with the SIWE-verified walletAddress as the new Manager's `walletAddress`, returns magic-link URL with embedded setup code | Medium | 45m |
+| W1.9 | HTTP endpoint `POST /api/redeem-invite` — accepts session token (or unauthenticated for Learner/Advisor) + invite code, calls extracted `acceptInvite` logic, threads SIWE-verified walletAddress (if present) onto the new Member, returns magic-link URL with 30-day setup code | Medium | 45m |
+| W1.10 | HTTP endpoint `POST /api/rotate-setup-code` — accepts session token (proving fresh SIWE), looks up existing Member by walletAddress, revokes old setup codes, issues new 30-day code, returns magic-link URL | Medium | 30m |
+| W1.11 | Update `resolveCallerRole` in `src/middleware/access-control.ts` — add Priority 0 for session token (above existing X-Member-Id Priority 1). Session token validation imports from `src/auth/session-tokens.ts`. Backward-compatible additive change. | Medium | 30m |
+| W1.12 | Extract `configurePolicy` and `acceptInvite` core logic from MCP tool handlers into reusable functions in `src/core/` so both the MCP tool surface and the new HTTP endpoints can call them with the same caller-context plumbing | Medium | 45m |
 
-### Workstream W2: Static Verify Page 
+### Workstream W2: Static Verify Page (4 hours)
 
 | Step | Task | Complexity | Est. |
 |------|------|------------|------|
-| W2.1 | `public/verify.html` — single-file HTML with IDKit script tag, Tailwind CDN, vanilla JS | Medium | 1h |
-| W2.2 | Express route `GET /verify` serving `public/verify.html`. Add QR-friendly query params: `?invite=AIDEN-COPRT-4K7W` auto-fills invite code, `?role=manager` selects action namespace | Low | 30m |
-| W2.3 | Register app on developer.worldcoin.org (dev environment). Create 3 actions: `allowme-become-manager` (orb), `allowme-become-coparent` (device), `allowme-become-family` (device). Set app URL to `https://allowme.dev/verify` | Low | 30m |
+| W2.1 | **Spike (BLOCKING):** Confirm `@base-org/account` loads as ESM via `https://esm.sh/@base-org/account` in a static HTML page, calls `wallet_connect` with `signInWithEthereum` capability, returns SIWE message + signature. Test in fresh browser, no extension installed (Coinbase Wallet popup should appear). If ESM CDN works → proceed with vanilla. If not → small esbuild step bundling SDK to `/public/verify-app.js`. | High | 45m |
+| W2.2 | `public/verify.html` — single-file HTML with SDK script tag, Tailwind CDN, vanilla JS. Three role-aware initial states: (a) adult-with-no-invite renders SIWE button → on success, family creation form OR rotation/family-picker if known wallet; (b) adult-with-invite renders SIWE button → on success, redeem invite endpoint; (c) Learner/Advisor renders invite-only flow. Common success state: magic-link MCP URL + copy button + role-appropriate starter prompt. | High | 2h |
+| W2.3 | Express route `GET /verify` serving `public/verify.html` with Base appName injected. Query params: `?invite=CODE` auto-fills invite code, `?role=manager\|coparent\|family\|learner\|advisor` selects flow. | Low | 30m |
+| W2.4 | Update `configure-policy` tool response — when invoked inline by Manager, response includes the inline setup code AND a link to `/verify` for guided onboarding: "Your setup code is SETUP-XXXX-XXXX (48-hour expiry). For a longer-lived 30-day code, visit https://allowme.dev/verify and sign in with your Base wallet." | Low | 30m |
+| W2.5 | Update `invite-member` tool response — for all role invites, response includes a verify-page URL the Manager can text/email to the invitee: `https://allowme.dev/verify?invite=SOFI-LEARNER-XYZ&role=learner`. The role and invite code are auto-filled when the invitee opens the URL. | Low | 15m |
 
 **The verify page UX (sketch):**
-- Lands at `/verify` (for new Manager) or `/verify?invite=CODE&role=X` (for invite acceptance)
-- Shows the AllowMe logo and one-line context ("Verify you're a real human to set up allowance for your family")
-- IDKit widget renders inline
-- On success, POSTs proof to `/api/worldid/verify`
-- On backend success, displays two things: (1) the MCP connector URL with copy-to-clipboard button, (2) a suggested starter prompt ("Set up allowance for the Isaac family. Aiden gets $15/week, 100% education.") with copy-to-clipboard
-- Shows "Don't have Claude? Download the app" links below
-- On sybil rejection, displays user-friendly error: "This World ID is already registered as a Manager. If you're switching families, have the current Manager remove you first."
 
-No routing, no state management, no React. Just a form, a widget, and two success/error states.
+For `?role=manager|coparent|family` (no `?invite=` and no known wallet):
+- Header: AllowMe logo + "Set up your family"
+- Body copy: "Sign in with your Base account to create your family economy."
+- Primary CTA: Sign-in-with-Base button (brand-compliant)
+- On SIWE success → renders "create your family" form inline (recommendation B)
+- On form submit → POST `/api/configure-family` → success state with magic-link URL
 
-### Workstream W3: Sybil Defense + Edge Cases 
+For `?role=manager|coparent|family` (no `?invite=` but wallet is known to be a Member):
+- Header: AllowMe logo + "Welcome back"
+- Body copy: "We recognize this wallet. Refreshing your access..."
+- Auto-call `/api/rotate-setup-code` after SIWE
+- If wallet is a Member of multiple families → render family picker first
+- Success state: magic-link URL with rotated 30-day code
 
-Unchanged from full plan.
+For `?role=manager|coparent|family` (with `?invite=CODE`):
+- Header: AllowMe logo + "Join {familyName} as {role}"
+- Primary CTA: Sign-in-with-Base button
+- On SIWE success → POST `/api/redeem-invite` → success state with magic-link URL
 
-| Step | Task | Complexity | Est. |
-|------|------|------------|------|
-| W3.1 | Nullifier uniqueness enforcement with clear error message | Medium | 30m |
-| W3.2 | Nullifier revocation on member removal | Low | 20m |
-| W3.3 | Legacy Manager backward compat (pre-Sprint 3.0 Members work without verification) | Low | 20m |
-| W3.4 | Action mismatch rejection | Low | 15m |
-| W3.5 | Proof replay protection (5-min window, defense-in-depth) | Low | 20m |
+For `?role=learner|advisor`:
+- Header: AllowMe logo + "Join {familyName} as {role}"
+- Invite code input (auto-filled from `?invite=`, editable for manual entry)
+- Primary CTA: "Join family" → POST `/api/redeem-invite` (no SIWE)
+- No SIWE button visible
+- Success state: magic-link URL + age-appropriate starter prompt
+  - Learner: "What should I learn today?"
+  - Advisor: "Show me the family's recent activity."
 
-### Workstream W4: Tests (4 hours — trimmed from 6 hours)
+For `?role=learner` with no `?invite=`: render the invite code input prominently with copy that says "Get the code from your parent."
 
-Cuts the Mini-App-specific E2Es. Keeps the architecturally-important ones.
+Common success state across all flows:
+- Big copy-button magic-link URL
+- Starter prompt copy-button
+- "Add this URL to your Claude connector settings" instructions with screenshot or link to Claude's docs
+- Recovery instructions ("If you lose access, return to /verify and sign in with the same wallet")
 
-| Step | Task | Complexity | Est. |
-|------|------|------------|------|
-| W4.1 | World ID verify unit tests (WI1-WI6) | Medium | 45m |
-| W4.2 | Nullifier store tests (NS1-NS5) | Medium | 30m |
-| W4.3 | Invite + accept with World ID tests (IA1-IA7) | Medium | 1h |
-| W4.4 | HTTP endpoint tests (HE1-HE5) | Medium | 45m |
-| W4.5 | Session middleware tests (SM1-SM5) | Medium | 30m |
-| W4.6 | Schema backward compat tests (SC1-SC3) | Low | 20m |
-| W4.7 | E2E sybil rejection (SB1-SB3) | Medium | 45m |
-| W4.8 | E2E legacy Manager backward compat (LM1-LM4) | Low | 20m |
-| W4.9 | E2E Claude Desktop unchanged — Sprint 2 regression guard (CD1-CD3) | Low | 20m |
-
-**Cut from full plan:** E2E Mini App onboarding , E2E Co-parent invitation full flow (CP1-CP8, 1h), E2E cross-role legitimate use (XR1-XR3, 45m), edge cases EC1-EC10 (covered implicitly by unit tests). The cut tests are still documented in research for Sprint 3.5.
-
-**Target new tests:** ~35 (down from 70 in the full plan). **Total after Sprint 3.0: ~222.** Ship floor if things slip: WI1-WI6 + NS1-NS5 + IA1-IA5 + SB1-SB3 + CD1-CD3 = 22 tests.
-
-### Workstream W5: Demo Prep + Documentation 
+### Workstream W3: Edge Cases (1 hour)
 
 | Step | Task | Complexity | Est. |
 |------|------|------------|------|
-| W5.1 | README — "World ID + School Pilot" section, updated architecture diagram | Medium | 45m |
-| W5.2 | Demo video (3 min) — see script below | Medium | 1h |
-| W5.3 | Pitch deck (10 slides) — see outline below | High | 1.5h |
-| W5.4 | World Build application submission before April 26 deadline | Low | 30m |
+| W3.1 | Nonce reuse rejection — `/api/auth/verify` rejects with clear error if nonce was already consumed | Low | 15m |
+| W3.2 | Session token expiry handling on verify page — if token expires mid-form, prompt re-sign-in | Low | 15m |
+| W3.3 | Multi-family wallet picker — verify page renders family list if `MemberIndex.listByFamily(walletAddress).length > 1` | Medium | 15m |
+| W3.4 | Wallet-address case sensitivity — normalize all wallet addresses to lowercase before MemberIndex lookup, store lowercase, compare lowercase. EIP-55 checksums get normalized away at the storage layer. | Low | 15m |
 
-**Demo video script (3 minutes):**
-1. **0:00–0:20** — Problem: Show Roblox microtransaction screen. Voiceover: "Kids beg for Robux because the attention economy trained them to. Parents pay $50/month so their kid can buy virtual items."
-2. **0:20–0:40** — Solution framing: "AllowanceAgent redirects that loop. Kids earn USDC for verified real-world achievements. Parents fund it. Claude runs it. World ID keeps it sybil-proof."
-3. **0:40–1:15** — School orb flow: Show QR code at a school event (mock-up if no real event exists yet). Parent scans → `/verify` page loads → IDKit widget → verification succeeds → copy MCP URL → paste into Claude → Claude responds "Family configured!"
-4. **1:15–2:00** — Allowance flow in Claude: "Aiden finished his reading — 85 out of 100." "How's Aiden doing?" "Distribute what Aiden earned." Show USDC moving on-chain on Basescan.
-5. **2:00–2:30** — Sybil rejection: Second browser, same human, attempts to become Manager of a second family. Mini App rejects with clear error.
-6. **2:30–3:00** — Close: "Success Academy is our pilot partner. Orb-verified parents. AI-native allowance. Sybil-resistant by design. World Build 3.0."
+### Workstream W4: Tests (4 hours)
 
-**Pitch deck outline (10 slides):**
-1. Title — AllowanceAgent: AI-Funded UBI for Families
-2. Problem — The attention economy extracts $X from families via Roblox/TikTok/gacha. Kids learn to beg, not to earn.
-3. Solution — Achievement-gated USDC allowance. Kids earn by doing verified real-world things. AllowanceAgent is the first Mini App where the product *is* the UBI mechanism.
-4. How it works — 3-step diagram: Parent verifies at school orb → Claude configures family → Kid earns USDC for achievements
-5. Architecture — Hybrid OWS + World ID. OWS = invisible custody. World ID = sybil-proof identity. Together = no keys, no fake families.
-6. Traction — 222 tests, live on-chain USDC on Base, working product shipped under AllowMe LLC, existing OWS Hackathon submission.
-7. Why now — World ID made proof-of-human a primitive. Claude made consumer agents real. USDC made programmable allowance possible. The stack arrived.
-8. Go-to-market — Success Academy pilot (school-based orb events). B2B charter school sales. Expansion to World App directory after pilot validation.
-9. Team — Juan Isaac. Security researcher, smart contract auditor, multi-time Code4rena placer, OWS builder, bilingual (English/Spanish), NYC. Building this for my own kids.
-10. Ask — Seoul Build Week invitation. World Foundation grant consideration. Introductions to Success Academy operations / World orb operations.
+| Step | Task | Complexity | Est. |
+|------|------|------------|------|
+| W4.1 | SIWE verification unit tests (SI1-SI5) — valid sig, invalid sig, expired nonce, reused nonce, ERC-6492 undeployed wallet | Medium | 45m |
+| W4.2 | Nonce store tests (NO1-NO3) — issuance, consumption, TTL eviction | Low | 20m |
+| W4.3 | Session token tests (ST1-ST5) — issuance, validation, expiry, claims, revocation on member-removal cascade | Medium | 45m |
+| W4.4 | HTTP endpoint tests (HE1-HE7) — `/api/auth/nonce`, `/api/auth/verify` (new wallet, known wallet, invalid sig), `/api/configure-family`, `/api/redeem-invite` (adult and learner paths), `/api/rotate-setup-code` | Medium | 1h |
+| W4.5 | E2E magic-link persistence — adults (ML1-ML5) — sign in → magic-link URL → use in Claude → verify connector works across sessions | Medium | 30m |
+| W4.6 | E2E learner verify path (LR1-LR4) — unchanged from v3 | Medium | 30m |
+| W4.7 | E2E setup code rotation (RT1-RT3) — known wallet revisits `/verify`, gets fresh code, old code rejected, no duplicate Member | Medium | 30m |
+| W4.8 | E2E cross-family Manager (CF1-CF2) — same wallet creates two families, both visible in verify page picker, MemberIndex returns both entries | Medium | 20m |
+| W4.9 | E2E backward compat (BC1-BC3) — Sprint 2.9.1 setup-code-only path still works, X-Member-Id header still works, all 246 existing tests pass | Low | 20m |
+| W4.10 | E2E Claude Desktop integration unchanged (CD1-CD3) | Low | 20m |
+
+**Target new tests:** ~38. **Total after Sprint 3.0 v4: ~284.** Ship floor if execution slips: SI1-SI5 + NO1-NO3 + HE1-HE5 + ML1-ML3 + LR1-LR3 + RT1-RT2 = 22 tests covering the security-critical paths.
+
+### Workstream W5: Demo Prep + Documentation (2 hours)
+
+| Step | Task | Complexity | Est. |
+|------|------|------------|------|
+| W5.1 | README — "Sign in with Base + School Pilot" section, magic-link onboarding section, Learner onboarding section, Sprint 4.0 Smart Wallet roadmap section, updated architecture diagram | Medium | 45m |
+| W5.2 | Demo video (3 min) — see updated script below | Medium | 1h |
+| W5.3 | Onboarding documentation — "How to set up your family" walkthrough for non-technical operators (school admins, charter network staff) | Low | 15m |
+
+**Demo video script (3 minutes, v4 update):**
+1. **0:00–0:20** — Problem framing: "AI-native family allowance, on-chain, custodial-grade."
+2. **0:20–0:40** — Solution framing: "One tap, your Coinbase Wallet becomes your family's authority."
+3. **0:40–1:15** — Manager bootstrap: parent on phone visits `/verify` → Sign-in-with-Base popup → SIWE signature → "create your family" form → magic-link URL → paste into Claude → "Set up allowance for the Asencio family." First message in Claude works. No setup code copy-paste, no auth retries.
+4. **1:15–1:40** — Co-parent invite: Manager generates Cesar's invite, texts Angelica the verify-page URL, Angelica clicks → Sign-in-with-Base → invite redeemed → magic-link URL → her own working Claude session. Show that her role (`co-parent`) is enforced — she can verify achievements but cannot distribute.
+5. **1:40–2:05** — Learner invite: Cesar generates Sofia's Learner invite, sends Sofia (or Sofia's older sibling) the verify-page URL, Sofia opens it on a tablet, redeems invite (no SIWE), gets her own magic-link URL. Opens Claude. "What should I learn today?"
+6. **2:05–2:30** — Allowance flow in Claude: Sofia completes a reading achievement, Cesar verifies, distribution happens on-chain. Show Base Sepolia explorer with USDC transfer.
+7. **2:30–2:50** — Cross-family Manager demo (NEW for v4): Cesar uses the same Coinbase Wallet to help his sister set up her family. Same wallet, two families, no friction. Show MemberIndex listing both family memberships.
+8. **2:50–3:00** — Close: "Sprint 4.0 brings paymaster-sponsored distributions and Coinbase Smart Wallet treasury. Today, the auth foundation."
 
 ---
 
-## Time Allocation 
+## Time Allocation (Updated for v4)
 
 | Phase | Hours | Focus |
 |-------|-------|-------|
-| Sprint 2.75 validation | 0–3 | Run the 19-step test sequence with wife. Fix any bugs discovered. |
-| Spike (MiniKit/IDKit + Developer Portal) | 3–5 | Confirm IDKit standalone works in browser + proof verification round-trips through Developer Portal API |
-| Core backend (W1) | 5–12 | All 10 backend steps |
-| Sybil defense + edge cases (W3) | 12–14 | All 5 steps |
-| Tests (W4) | 14–18 | All 9 test suites |
-| Static verify page (W2) | 18–20 | HTML + Express route + Developer Portal registration |
-| End-to-end integration test | 20–22 | Full flow: QR → verify → Claude handoff → allowance → sybil reject |
-| Demo video + deck + submission (W5) | 22–26 | Record, iterate, submit |
+| Pre-sprint validation | 0–2 | Confirm Sprint 2.9.1 production state, sanity check |
+| Spike (W2.1) | 2–3 | Confirm `@base-org/account` ESM CDN works |
+| Core backend (W1) | 3–8 | All 12 backend steps |
+| Edge cases (W3) | 8–9 | All 4 steps |
+| Tests (W4) | 9–13 | All 10 test suites |
+| Static verify page (W2) | 13–17 | HTML with role-aware flows + Express route + tool response updates |
+| End-to-end integration test | 17–18 | Full flow: Manager bootstrap → Co-parent invite → Learner invite → cross-family Manager → all four live in Claude |
+| Demo + documentation (W5) | 18–20 | Record video, update README |
 
+Sprint 3.0 v4 fits in roughly **20 hours of focused engineering**, down from v3's 26h. The savings come from: dropping IDKit integration (~2h), dropping nullifier subsystem (~3h), dropping action namespacing + Developer Portal registration (~1h), dropping optional-unverified path + recovery code logic (~1.5h), simpler test surfaces (~1.5h). Added: Sign-in-with-Base flow + ESM CDN spike (~3h offset). Net savings: ~6h.
 
-
+Realistic execution window: 1 focused week or 2-3 weeks part-time.
 
 ---
 
-## Dependencies and Risks (Updated)
+## Dependencies and Risks
 
 | Dependency | Risk | Mitigation |
 |------------|------|------------|
-| `@worldcoin/idkit-standalone` via CDN | Low | Mature SDK, CDN is reliable. Cache the script tag locally as fallback if CDN fails. |
-| World Developer Portal (dev environment) | Medium | Registration is instant. Rate limits unclear at test frequency. Mitigation: mock proof verification in unit tests, only hit live API for E2E. |
-| Railway existing deployment | Low | Unchanged from Sprint 2.75. New env vars + one static file route only. |
-| Success Academy partnership verification | Medium | Need to confirm before submission. If aspirational, reframe pitch honestly (see Decision 9). |
-| Base Sepolia RPC + faucet for demo video | Low | Alchemy endpoint in Sprint 2.75 config. Faucet via cdp.coinbase.com or alchemy.com. |
-| QR code generation for school-event mock-up | Low | Any QR generator. Include "scan me" image in demo video. |
-| Solo execution speed | Medium | Scope now fits in 48h with buffer. If W1 debugging extends past hour 12, invoke fallback: ship backend + unit tests only, demo via curl instead of browser. Frontend becomes Sprint 3.1 polish. |
+| `@base-org/account` SDK loadable as ESM via CDN | Medium | W2.1 spike validates before committing. Fallback is ~30min esbuild bundle step. |
+| viem `verifyMessage` handles ERC-6492 wrapping | Low | Documented behavior, version `^2.23.0` confirmed in `package.json`. Quick local test against undeployed Base Account. |
+| Coinbase Wallet popup UX on mobile | Medium | Coinbase Wallet has a mature in-app popup flow. Spike confirms via real mobile test (not just simulator). |
+| Railway existing deployment | Low | Unchanged pattern — same Express server, new endpoints, new static file. |
+| Success Academy partnership | Medium | Confirm before pitch. If aspirational, reframe honestly. |
+| Solo execution speed | Medium | Scope fits 20h with buffer. Smaller surface than v3. |
+| Setup code rotation breaks Member data | High | Rotation preserves Member identity via walletAddress → MemberIndex lookup, not via duplicate Member creation. Tested in RT1-RT3. |
+| Magic-link URL too long | Low | ~50 chars total, well within URL limits across all clients. |
+| Cross-family Manager confuses RBAC | Medium | Each `(walletAddress, familyId)` tuple has its own role. `resolveCallerRole` resolves with familyId from session token / setup code, not from wallet alone. Tested in CF1-CF2. |
+| Wallet address case sensitivity bugs | Medium | Normalize to lowercase at the storage and comparison layers (W3.4). EIP-55 checksums survive at display only. |
+| Sybil attack via cheap wallet creation | **Deferred to Sprint 4.0** | Documented. No paymaster sponsorship in 3.0 means no economic attack surface. Sprint 4.0 paymaster decision will name the sybil defense (rate limiting + Coinbase Verifications likely). |
 
 ## Fallback Approaches
 
-- **IDKit widget fails in demo browser:** Use curl with a Developer Portal test token to simulate the verify flow. Disclose in voiceover. Judges will understand tooling hiccups.
-- **Developer Portal rate-limited during demo:** Pre-record the IDKit verification in a clean environment beforehand. Use the recorded clip in the demo video if live capture fails.
-- **Success Academy can't be confirmed by submission:** Reframe pitch Slide 8. "Go-to-market: Orb-verified parents at partnered schools. Success Academy is our target pilot — conversations in progress." Less punchy but honest.
-- **World ID verification breaks mid-sprint:** Ship backend + all non-World-ID tests. Demo with mocked verification (disclosed). Pitch becomes "here's the architecture, here's the rigor, here's why we need Seoul to finish the World integration." Not ideal but recoverable.
-- **Sprint 2.75 validation surfaces bugs:** Stop. Do not proceed with Sprint 3.0 until Sprint 2.75 is green. Fixing bugs is the highest-priority use of the first 3 hours. If bugs extend past hour 6, cancel Sprint 3.0 and submit as "Sprint 2.75 production-ready with World ID in Sprint 3.1."
+- **`@base-org/account` ESM CDN spike fails:** Build esbuild bundle, single artifact at `/public/verify-app.js`. Adds ~30min build setup, no functional difference.
+- **Coinbase Wallet popup fails on mobile:** Document fallback to `eth_requestAccounts` + `personal_sign` per Base docs. Less elegant but universally supported across EIP-1193 wallets.
+- **viem `verifyMessage` ERC-6492 handling regresses:** Pin to a known-good viem version. Worst case, manually wrap and verify undeployed-wallet signatures via the published ERC-6492 spec.
+- **Verify page breaks mid-sprint:** Fall back to setup-code-only inline onboarding (Sprint 2.9.1 behavior). Adults paste setup code into MCP URL manually. Loses NYC-scale story but works for hackathon-scale.
+- **Setup code rotation reveals data corruption:** Rotation refuses, surfaces error, requires manual intervention via CLI script.
+- **Cross-family Manager surfaces RBAC bugs:** Restrict cross-family in v4 by enforcing one-Manager-role-per-walletAddress globally. Document as known limitation, address in Sprint 3.1.
+- **Recommendation B family creation form is too complex:** Defer to inline `configure-policy` (Sprint 2.9.1 behavior) for new Managers. Verify page becomes invite-redemption-only for adults, family creation happens in Claude. Loses some onboarding polish but unblocks ship.
 
 ---
 
-## Sprint Contract — Sprint 3.0 (Trimmed)
+## Sprint Contract — Sprint 3.0 v4
 
 ### Success Criteria
 
-1. **World ID verification for Manager role works end-to-end:** Parent scans QR (or visits `/verify`) → IDKit widget → proof validated by backend via Developer Portal API → nullifier recorded → session issued → parent can use all Manager MCP tools via Claude.
-2. **World ID verification for Co-parent role works end-to-end:** Same as Manager but with device-level verification and `allowme-become-coparent` action namespace.
-3. **Sybil defense functional:** Human A attempting second Manager registration with same World ID rejected with user-friendly error. Cross-role acceptance (Manager in Family A, Co-parent in Family B) succeeds.
-4. **Kids stay invite-code-only:** Learner role invite flow unchanged. Minors never verify.
-5. **Legacy Manager backward compat:** Pre-Sprint 3.0 Members (no `worldIdNullifier` field) continue to function. Startup warning logged. All 187 Sprint 2.75 tests still pass.
-6. **Static verify page renders correctly:** QR code → page loads on any mobile browser → IDKit widget fires → handoff instructions display on success.
-7. **Claude Desktop/Mobile integration unchanged:** Existing Sprint 2 auth paths (`X-Member-Id` header, `_callerId` arg) work without modification. Session token is additive.
-8. **Deployment extends Sprint 2.75 pattern:** Railway backend gets new env vars + one static file + two new endpoints. No new service, no new platform, no new deploy target.
-9. **Demo video captures three critical moments:** (a) orb-at-school verification (can be mocked visually), (b) allowance distribution via Claude, (c) sybil rejection. ≤3 minutes.
-10. **World Build application submitted by April 26 deadline** with demo video, pitch deck, GitHub link, verify page URL.
+1. **Sign-in-with-Base works end-to-end via verify page magic-link.** New Manager: visits `/verify`, signs in with Base, fills family creation form, gets magic-link URL, pastes into Claude, calls `check-progress` successfully. Session 1, session 2, session 3 all work without re-auth (within 30-day window).
+2. **Co-parent invite flow works via verify page magic-link.** Manager generates invite, Co-parent clicks verify-page URL, signs in with Base, invite redeemed, magic-link URL works in Claude across multiple sessions.
+3. **Learner invite flow unchanged from v3:** invite-only redemption, no SIWE, magic-link URL works.
+4. **Cross-family Manager works:** same wallet authenticates as Manager of two different families. MemberIndex returns both entries. Verify page picker surfaces choice.
+5. **Setup code rotation works:** known wallet revisits `/verify`, gets fresh 30-day code, old code is revoked, no duplicate Member created.
+6. **Wallet-address binding is durable:** Member record has `walletAddress` populated and `walletVerifiedAt` timestamp. Future Sprint 4.0 Smart Wallet treasury can use this address as signer.
+7. **Legacy backward compat:** Pre-Sprint-3.0 setup-code-only Members continue to function. All 246 Sprint 2.9.1 tests still pass. X-Member-Id header path still works.
+8. **Static verify page renders correctly for all five role flows:** manager (no invite, with invite, known wallet) / coparent / family / learner / advisor.
+9. **Magic-link MCP URL works on first paste — adult roles:** copy URL from verify page, paste into Claude connector, calls work session 1 through expiry. Tested across iOS Claude app, Android Claude app, Claude Desktop.
+10. **Claude Desktop/Mobile integration unchanged:** Sprint 2 auth paths work. Wallet auth path additive.
+11. **Deployment extends Sprint 2.9.1 pattern:** Railway backend + new env vars (none required for SIWE — Coinbase Wallet uses standard provider methods) + static file + new endpoints.
+12. **Demo video captures critical moments:** Manager Sign-in-with-Base, magic-link UX, Co-parent invite, Learner invite, cross-family Manager, allowance distribution.
+13. **Forward-compatible with Sprint 4.0 Approach A:** wallet address bound during 3.0 SIWE is the same address that becomes the family treasury Smart Wallet signer in Sprint 4.0. No second auth flow needed.
 
 ### Dynamic Rubric
 
 | Category | Weight | Justification |
 |----------|--------|---------------|
-| Functionality | 30% | World ID verify, nullifier uniqueness, verify page handoff, session auth, backward compat |
-| Auth/Security | 30% | Sybil defense, action namespacing, replay protection, legacy Manager protection, no plaintext nullifier storage |
-| Design/UX | 25% | Orb-at-school framing, static verify page clarity, handoff to Claude flow, demo video, pitch narrative |
-| Originality | 15% | Hybrid OWS + World ID, orb-at-school distribution model, AI-funded UBI framing for families, first sybil-resistant consumer MCP product |
+| Functionality | 35% | SIWE verification, magic-link URL, family creation form, cross-family Manager, rotation, backward compat |
+| Auth/Security | 30% | Nonce reuse rejection, session token validation, wallet-address case-normalization, no plaintext setup code in logs, signature verification correctness, role-scoping preserved through verify-page path |
+| Design/UX | 20% | Magic-link UX (one paste), Coinbase Wallet popup integration, age-appropriate Learner flow, family creation form usability, demo video |
+| Originality | 15% | All-Base stack coherence, magic-link MCP onboarding pattern, recommendation-B guided family creation, forward-compat Sprint 4.0 wallet handoff, AI-funded family economy framing |
 
 ### Grading Thresholds
 
-- **Pass:** All categories ≥ 70%. No category below 60%. Submission accepted by World Build. At minimum receives constructive feedback signaling Stage 2 candidacy.
-- **Fail:** Any category below 60%, OR Functionality below 70%, OR Auth/Security below 70%, OR sybil defense demo fails on camera, OR submission missed.
+- **Pass:** All categories ≥ 75%. No category below 70%. Magic-link UX works in demo for both adult and Learner paths. Setup code persists across sessions verified empirically. Wallet-address binding durably stored on every successful SIWE.
+- **Fail:** Any category below 70%, OR magic-link demo fails, OR Learner verify path doesn't ship, OR setup code rotation creates duplicate Members, OR existing Sprint 2.9.1 tests regress, OR wallet-address case-sensitivity bug surfaces in production.
 
 ### Success Conditions Beyond the Rubric
 
-- World Build judges invite AllowanceAgent to Seoul Build Week
-- At least one VC on the Demo Day list engages during the cohort
-- Success Academy conversation advances concretely as a result of the deck
-- Demo video is usable as a standalone marketing asset after the hackathon regardless of Seoul outcome
+- Magic-link UX is polished enough to demo to a non-technical operator (charter network admin) and have them complete onboarding without help, for both parent and kid
+- Sign-in-with-Base flow completes within ~10 seconds on a mid-range phone with Coinbase Wallet installed
+- Verify page total page weight is under 200KB (gzipped) for fast mobile loads
+- Cross-family Manager flow demonstrates the cleanest possible "one parent, multiple families" UX in the space — no other family allowance product handles this gracefully
 
 ---
 
-## Scope Guard — Explicitly NOT Building in Sprint 3.0
+## Scope Guard — Explicitly NOT Building in Sprint 3.0 v4
 
-1. **Next.js Mini App frontend** — replaced by static HTML
-2. **Vercel deployment** — not needed; Railway serves the static file
-3. **MiniKit SDK integration** — using IDKit standalone instead
-4. **Progress dashboard** — Claude is the progress UI
-5. **Invite acceptance UI** — invite codes + SMS (Sprint 2 pattern) still work
-6. **In-app chat** — Claude is the conversational surface
-7. **AgentKit / x402 re-integration** — Sprint 3.5 in Seoul
-8. **WLD payments** — USDC-only unchanged
-9. **World Chain USDC** — Base + Base Sepolia unchanged
-10. **Production Mini App directory submission** — dev environment sufficient for hackathon
-11. **Legacy Manager World ID upgrade flow** — Sprint 3.5
-12. **Full orb event coordination with Success Academy** — conversation-stage in pitch is acceptable; operationalizing is post-Seoul work
+1. Coinbase Smart Wallet treasury (Sprint 4.0 Approach A)
+2. Spend-permission delegation (Sprint 4.0)
+3. Paymaster-sponsored gas (Sprint 4.0)
+4. Sub-account architecture (Sprint 4.0 Approach B, deferred)
+5. Mini App / progress dashboard / in-app chat
+6. AgentKit / x402 re-integration
+7. World ID re-integration as a secondary primitive (deferred to Sprint 4.0+ if grant pitch warrants)
+8. WLD payments
+9. World Chain USDC
+10. Production Mini App directory submission
+11. Migration of Sprint 2.9.1 setup-code-only Members to wallet-bound Members (opt-in only — they continue to work via existing setup codes)
+12. Legacy Manager World ID upgrade flow (no World ID to upgrade from)
+13. Capability differences between wallet-bound and non-wallet-bound Members (no differences in 3.0; future sprints may add)
+14. Sybil defense at the auth layer (deferred to Sprint 4.0 paymaster decision)
+15. Coinbase Verifications integration (Sprint 4.0+ if needed)
+16. CAPTCHA / rate limiting on `/api/configure-family` (Sprint 4.0 if abuse observed; nothing to abuse pre-paymaster)
+17. Multi-device sync for verified sessions (each device re-signs separately, magic-link URL handles cross-device anyway)
+18. Wallet recovery flow (delegated to Coinbase Wallet's own recovery — AllowMe doesn't custody the wallet, doesn't need to)
+19. Parent-defined `learningGoals` task harness (Sprint 3.0.1 work, depends on Learner onboarding shipping first)
 
 ---
 
-## Sprint 3.5 Preview (Seoul Build Week, May 10–18)
+## Sprint 3.5 Preview (Post-Sprint-3.0 v4, ~Q3 2026)
 
-Assuming Sprint 3.0 passes and AllowanceAgent advances to Stage 2:
+Assuming Sprint 3.0 v4 ships and pilot data justifies continued investment:
 
-- AgentKit integration for agent-to-agent traffic (OpenMAIC, Fitbit-as-agent)
+- AgentKit integration for agent-to-agent traffic, using same wallet-as-identity primitive
 - AllowanceAgent's signing wallet registered in AgentBook
-- World Chain USDC support alongside Base
-- Legacy Manager upgrade flow (`/upgrade` for pre-Sprint 3.0 Members)
-- Mini App directory submission (production review)
-- First 10 test families onboarded at Success Academy pilot event
-- World Foundation grant conversation initiated
-- Interactive Mini App cards in Claude conversations (progress charts, streak visualizations)
-- WLD denomination as an option alongside USDC
+- Mini App directory submission (production review) — now that the auth story is coherent on Base
+- First 50–100 test families onboarded at Success Academy pilot event
+- Coinbase Developer Platform grant conversation (CDP Ambassador track)
+- Optional Coinbase Verifications layer for "verified humans get extra benefits" framing
+- Onboarding flow optimization based on pilot drop-off analytics
+- Multi-language verify page (Spanish, given NYC charter demographics)
+- Inline `learningGoals` task harness (Sprint 3.0.1 work folded in if not shipped earlier)
 
-Sprint 3.5 is additive polish + ecosystem work. Sprint 3.0 proves the thesis; Sprint 3.5 productionizes it.
+Sprint 3.5 is additive polish + ecosystem work. Sprint 3.0 v4 proves the wallet-auth thesis at pilot scale; Sprint 3.5 deepens the Base integration.
+
+---
+
+## Sprint 4.0 Preview (Post-Sprint-3.5, ~Q4 2026 / Q1 2027)
+
+Sprint 4.0 commits to **Approach A** for treasury architecture: family treasury becomes a Coinbase Smart Wallet, parent's Base Account (already bound from Sprint 3.0) is added as the owner/signer, AllowMe registers a session key with bounded spend permissions to execute distributions, paymaster sponsors gas. Postgres replaces filesystem JSON for multi-tenant scaling. OWS becomes keystore-only (or dissolves entirely depending on Smart Wallet integration depth).
+
+The Sprint 3.0 v4 wallet-binding work is the foundation Sprint 4.0 builds on. Every walletAddress in MemberIndex post-3.0 is a candidate for Smart Wallet treasury signer in 4.0.
+
+---
+
+## Migration Notes from v3 → v4
+
+If you have v3 partially implemented:
+
+1. **Drop:** `src/worldid/verify.ts`, `src/worldid/nullifier-store.ts`, IDKit script tag in verify page, World ID Developer Portal app registration, `requiresWorldId` field on InviteSchema, `worldIdNullifier`/`worldIdAction`/`worldIdVerifiedAt` fields on MemberSchema, `recoveryCode` field, `/api/onboard-unverified` endpoint, Optional-unverified path UX in verify page, sybil rejection state in verify page, NS1-NS5 + SB1-SB4 + UV1-UV4 test suites.
+2. **Add:** `src/auth/siwe.ts`, `src/auth/nonce-store.ts`, `src/auth/session-tokens.ts`, `walletVerifiedAt` field on MemberSchema (other wallet fields already exist from Sprint 2), Sign-in-with-Base button + flow in verify page, family creation form for recommendation B, cross-family Manager picker, SI1-SI5 + NO1-NO3 + ST1-ST5 + CF1-CF2 test suites.
+3. **Modify:** `resolveCallerRole` priority chain (add Priority 0 for session token), `/api/redeem-invite` endpoint (now receives optional walletAddress from SIWE session, threads onto Member), all v3 verify page UX states (replace IDKit logic with SIWE logic, remove opt-out path).
+4. **Keep unchanged:** Verify page magic-link success state, Learner invite-only flow, setup code generation/storage, MemberIndex API, MCP tool surface.
+
+Net additional v3 → v4 work: roughly equal (some adds, some drops). Effort scales with how much v3 was implemented before the pivot — if v3 was design-only, v4 is a clean greenfield Sprint 3.0 with no waste. If v3 had IDKit integration started, ~2-3h of code deletion before v4 work begins.
+
+## How to Use This Plan
+
+This document supersedes plan-3.0-trimmed-v3.md. Differences from v3:
+
+- **Auth primitive swapped** from World ID (IDKit + nullifiers) to Sign-in-with-Base (SIWE + wallet addresses)
+- **Decision 4 rewritten** as wallet-address-as-identity (was World ID gating)
+- **Decision 5 added** (cross-family Manager natively supported)
+- **Decision 11 rewritten** as recommendation B family creation form (was optional unverified path)
+- **Decision 14 added** (forward compatibility with Sprint 4.0 Approach A)
+- **Decision 13 unchanged** (Learner verify-page invite-only flow)
+- **W1 grows from 13 to 12 steps** (drops 4 World ID steps, adds 5 SIWE steps, net -1)
+- **W2 grows from 4 to 5 steps** (adds W2.1 ESM spike, otherwise structurally similar)
+- **W3 grows from 5 to 4 steps** (drops most sybil edge cases, adds wallet case-normalization)
+- **W4 shrinks from 13 to 10 test suites** (drops nullifier + sybil + recovery, adds SIWE + cross-family)
+- **Time estimate shrinks** from 26h to 20h
+- **Success criteria shifts** from 13 World-ID-shaped items to 13 wallet-auth-shaped items
+- **Scope guard explicitly defers** sybil defense to Sprint 4.0 paymaster decision
+
+If executing v4: the order is W2.1 (ESM CDN spike, blocking) → W1.12 (extract reusable core logic) → W1.1-W1.11 (SIWE backend) → W3 (edge cases) → W4 (tests) → W2.2-W2.5 (verify page UI) → W5 (demo + docs). Spike-first is critical because if `@base-org/account` doesn't load via ESM CDN, the W2.2 architecture changes meaningfully.
+
+---
+
+## Pre-Sprint Checklist (Pre-Execution)
+
+- [ ] Confirm Sprint 2.9.1 production deployment is healthy (no regressions from prior pivot work)
+- [ ] Pull a copy of production `data/` from Railway volume to local machine for migration testing
+- [ ] Confirm `@base-org/account` and `@base-org/account-ui` package versions on npm (pin versions in package.json before starting W1)
+- [ ] Spike-test `@base-org/account` ESM loadability via esm.sh in a throwaway HTML file (W2.1 prerequisite — can be done before sprint kickoff)
+- [ ] Verify viem version `^2.23.0` handles ERC-6492 wrapping in `verifyMessage` correctly (~15min smoke test)
+- [ ] Confirm Coinbase Wallet (mobile + extension) handles `wallet_connect` with `signInWithEthereum` capability — manual test in fresh browser
+- [ ] Identify Success Academy pilot status: confirmed / aspirational / decided-to-cut-from-pitch
+- [ ] Identify any other charter network or B2B partner that could be the demo distribution channel if Success Academy is aspirational
+
+These move to the top of the deployment checklist, blocking Railway production rollout of v4.
