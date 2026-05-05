@@ -144,6 +144,20 @@ h1 em {
   animation: fadeUp 0.6s 0.3s ease both;
 }
 
+.hero-aux {
+  margin-top: 1.25rem;
+  font-size: 0.85rem;
+  color: var(--slate);
+  animation: fadeUp 0.6s 0.35s ease both;
+}
+.hero-aux a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+  border-bottom: 1px dotted var(--accent);
+}
+.hero-aux a:hover { color: var(--accent-light); border-color: var(--accent-light); }
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -622,7 +636,7 @@ footer {
     <a href="#how">How it works</a>
     <a href="#use-cases">Use cases</a>
     <a href="https://github.com/JdejesusIsaac/AllowMeOWS" target="_blank">GitHub</a>
-    <a href="#connect" class="nav-cta">Connect</a>
+    <a href="/verify" class="nav-cta">Sign in with Base</a>
   </div>
 </nav>
 
@@ -635,9 +649,10 @@ footer {
   <h1>Give every dollar a rule.<br>Give every role <em>a boundary.</em></h1>
   <p class="hero-sub">Policy-gated allowances for families teaching financial literacy and teams governing AI spend. One MCP server. Five roles. Zero key management.</p>
   <div class="hero-actions">
-    <a href="#connect" class="btn btn-primary">Connect to Claude</a>
+    <a href="/verify" class="btn btn-primary">Set up your family</a>
     <a href="https://www.youtube.com/watch?v=EYAkpVwEWmg" target="_blank" class="btn btn-secondary">&#9654; Watch demo</a>
   </div>
+  <p class="hero-aux">Already onboarded? <a href="#connect">Paste your magic-link URL into Claude &rarr;</a></p>
 
   <!-- CONVERSATION DEMO -->
   <div class="demo-section">
@@ -662,7 +677,7 @@ footer {
       <div class="stat-label">MCP Tools</div>
     </div>
     <div>
-      <div class="stat-num">196</div>
+      <div class="stat-num">300</div>
       <div class="stat-label">Tests Passing</div>
     </div>
     <div>
@@ -784,23 +799,22 @@ footer {
     <div class="step">
       <div class="step-num">1</div>
       <div class="step-content">
-        <h3>Get Claude (free)</h3>
-        <p>Download Claude for <a href="https://apps.apple.com/app/claude/id6473753684" target="_blank">iPhone</a> or <a href="https://play.google.com/store/apps/details?id=com.anthropic.claude" target="_blank">Android</a>. Create a free account. That's it.</p>
+        <h3>Sign in with Base</h3>
+        <p>Tap <a href="/verify"><strong>Set up your family</strong></a> and sign the request in Coinbase Wallet (or any Base Account). No passwords. No keys to manage. Your wallet is your identity.</p>
       </div>
     </div>
     <div class="step">
       <div class="step-num">2</div>
       <div class="step-content">
-        <h3>Connect AllowanceAgent</h3>
-        <p>Open <strong>claude.ai</strong> in your browser &rarr; Settings &rarr; Connectors &rarr; Add custom connector. Paste this URL:</p>
-        <p style="margin-top:0.5rem"><code id="mcp-url-inline">https://allowme.dev/mcp</code></p>
+        <h3>Configure your family</h3>
+        <p>First time? A short form asks for your kids' names, weekly budgets, and category splits. Invited by a co-parent? Your invite redeems automatically.</p>
       </div>
     </div>
     <div class="step">
       <div class="step-num">3</div>
       <div class="step-content">
-        <h3>Start talking</h3>
-        <p>Open Claude &rarr; tap <strong>+</strong> &rarr; Connectors &rarr; enable AllowanceAgent. Then say:<br><em>"Set up allowance for my family"</em> or <em>"Set up AI allowance for my team."</em></p>
+        <h3>Paste your link into Claude</h3>
+        <p>You'll get a one-tap magic-link URL. Paste it into Claude &rarr; Settings &rarr; Connectors. Say <em>"What should we work on this week?"</em> and you're running.</p>
       </div>
     </div>
   </div>
@@ -808,17 +822,14 @@ footer {
 
 <!-- CONNECT CTA -->
 <section class="connect-section" id="connect">
-  <div class="section-label">Connect</div>
-  <div class="section-title">Your MCP server URL</div>
-  <p>Copy this URL and paste it in Claude &rarr; Settings &rarr; Connectors &rarr; Add custom connector.</p>
+  <div class="section-label">Returning user</div>
+  <div class="section-title">Already have a magic-link URL?</div>
+  <p>Paste your personal <code style="color:var(--accent-glow);background:rgba(255,255,255,0.08);padding:0.15rem 0.5rem;border-radius:4px;font-family:var(--font-mono);font-size:0.9em">https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX</code> URL into Claude &rarr; Settings &rarr; Connectors. No sign-in needed on subsequent sessions.</p>
 
-  <div class="url-box" onclick="copyUrl()">
-    <span class="url-text" id="mcp-url">https://allowme.dev/mcp</span>
-    <button class="copy-btn" id="copy-btn">Copy</button>
-  </div>
+  <p style="margin-top:2rem;font-size:0.9rem;color:rgba(250,249,246,0.5)">Don't have one yet? <a href="/verify" style="color:var(--accent-glow);text-decoration:underline">Sign in with Base &rarr;</a></p>
+  <p style="margin-top:1rem;font-size:0.9rem;color:rgba(250,249,246,0.5)">Lost your link or it expired? <a href="/verify" style="color:var(--accent-glow);text-decoration:underline">Re-sign in to rotate a fresh 30-day code &rarr;</a></p>
 
-  <p class="connect-note">Free Claude plan: 1 custom connector. Works on mobile, desktop, and web.</p>
-  <p class="connect-note" style="margin-top:0.5rem">Have an invite code? Connect first, then tell Claude your code.</p>
+  <p class="connect-note" style="margin-top:2rem">Free Claude plan: 1 custom connector. Works on mobile, desktop, and web.</p>
 </section>
 
 <!-- FOOTER -->
@@ -837,19 +848,6 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
   event.target.classList.add('active');
-}
-
-function copyUrl() {
-  const url = document.getElementById('mcp-url').textContent;
-  navigator.clipboard.writeText(url).then(() => {
-    const btn = document.getElementById('copy-btn');
-    btn.textContent = 'Copied!';
-    btn.style.background = '#40916c';
-    setTimeout(() => {
-      btn.textContent = 'Copy';
-      btn.style.background = '';
-    }, 2000);
-  });
 }
 
 // Animate conversation messages on scroll

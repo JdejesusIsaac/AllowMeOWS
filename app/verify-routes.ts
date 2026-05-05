@@ -158,6 +158,15 @@ export function buildVerifyRoutes(): Router {
   router.post("/api/auth/verify", async (req, res) => {
     const parsed = verifyBodySchema.safeParse(req.body);
     if (!parsed.success) {
+      console.error(
+        "[auth/verify] invalid-body",
+        JSON.stringify({
+          reason: parsed.error.message,
+          receivedKeys: Object.keys(req.body ?? {}),
+          messageType: typeof req.body?.message,
+          signaturePrefix: String(req.body?.signature ?? "").slice(0, 12),
+        })
+      );
       return res.status(400).json({ ok: false, error: "invalid-body", reason: parsed.error.message });
     }
 
@@ -169,6 +178,22 @@ export function buildVerifyRoutes(): Router {
     });
 
     if (!result.ok) {
+      // Diagnostic: on parse failures, log the raw message so we can see
+      // which EIP-4361 line viem's grammar is rejecting. Truncated to
+      // avoid dumping signatures or overly large payloads.
+      if (result.reason === "parse-error" || result.reason === "domain-mismatch") {
+        console.error(
+          `[auth/verify] ${result.reason}`,
+          JSON.stringify({
+            expectedDomain: expectedDomain(req),
+            hostHeader: req.headers.host,
+            parseErr: result.message?.slice(0, 400),
+            messageFirst600: parsed.data.message.slice(0, 600),
+            messageLength: parsed.data.message.length,
+            signaturePrefix: parsed.data.signature.slice(0, 12),
+          })
+        );
+      }
       // HE4 contract: invalid-signature leaves the nonce intact so the user
       // can retry. Other failures (domain/nonce) consume or ignore accordingly.
       const status =
