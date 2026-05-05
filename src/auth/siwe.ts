@@ -26,8 +26,58 @@
 
 import { createPublicClient, http, type PublicClient } from "viem";
 import { base, baseSepolia } from "viem/chains";
-import { parseSiweMessage, verifySiweMessage } from "viem/siwe";
 import type { NonceStore } from "./nonce-store.js";
+
+/**
+ * Tolerant SIWE field extraction.
+ *
+ * Why not viem's `parseSiweMessage`? Coinbase Wallet's `wallet_connect`
+ * +`signInWithEthereum` capability produces messages that omit two
+ * EIP-4361 mandatory fields (`Version: 1` and `Issued At: ...`).
+ * viem's strict parser then fails to extract `chainId` (because the
+ * grammar rule expects `Version` immediately before it), and the
+ * verifier returns parse-error before we ever reach the signature check.
+ *
+ * We extract the four fields we actually need with simple line-anchored
+ * regexes and let `client.verifyMessage` handle the cryptographic
+ * verification independently (which works against any signed bytes,
+ * EIP-4361-shaped or not, and still supports ERC-6492 counterfactual
+ * Smart Wallets via the public client's deploy-bytecode simulation).
+ *
+ * Replay defense remains intact:
+ *   - domain check binds the message to our origin
+ *   - chainId check rejects non-Base messages
+ *   - single-use NonceStore rejects replays
+ *   - signature check still cryptographically binds wallet → message
+ *
+ * Issued-At / Expiration-Time enforcement is currently delegated to the
+ * NonceStore TTL (5 min by default) since the wallet doesn't emit those
+ * fields. If a future Base Account SDK release starts emitting them, we
+ * can layer in stricter time-bound checks.
+ */
+function extractSiweFields(message: string): {
+  domain?: string;
+  address?: `0x${string}`;
+  uri?: string;
+  chainId?: number;
+  nonce?: string;
+} {
+  // Line 1: "${domain} wants you to sign in with your Ethereum account:"
+  const domainMatch = message.match(/^(\S+) wants you to sign in with your Ethereum account:/);
+  // Address: first 0x-prefixed 40-hex line in the message body
+  const addressMatch = message.match(/^(0x[a-fA-F0-9]{40})\s*$/m);
+  const uriMatch = message.match(/^URI:\s*(.+)$/m);
+  const chainIdMatch = message.match(/^Chain ID:\s*(\d+)\s*$/m);
+  const nonceMatch = message.match(/^Nonce:\s*([A-Za-z0-9_-]+)\s*$/m);
+
+  return {
+    domain: domainMatch?.[1],
+    address: addressMatch?.[1] as `0x${string}` | undefined,
+    uri: uriMatch?.[1].trim(),
+    chainId: chainIdMatch ? Number(chainIdMatch[1]) : undefined,
+    nonce: nonceMatch?.[1],
+  };
+}
 
 export type SiweFailureReason =
   | "parse-error"
@@ -77,20 +127,21 @@ const clients: Record<number, PublicClient> = {
 export async function verifySiwe(input: SiweVerifyInput): Promise<SiweVerifyResult> {
   const { message, signature, expectedDomain, nonceStore } = input;
 
-  // 1. Parse the SIWE message — extracts domain, address, nonce, chainId.
-  let parsed: ReturnType<typeof parseSiweMessage>;
-  try {
-    parsed = parseSiweMessage(message);
-  } catch (err) {
+  // 1. Tolerant field extraction (works for both strict EIP-4361 and the
+  //    Base Account / Coinbase Wallet variant that omits Version + Issued At).
+  const parsed = extractSiweFields(message);
+
+  if (!parsed.address || !parsed.nonce || !parsed.domain || typeof parsed.chainId !== "number") {
     return {
       ok: false,
       reason: "parse-error",
-      message: err instanceof Error ? err.message : String(err),
+      message: `missing required SIWE fields: ${JSON.stringify({
+        hasDomain: !!parsed.domain,
+        hasAddress: !!parsed.address,
+        hasChainId: typeof parsed.chainId === "number",
+        hasNonce: !!parsed.nonce,
+      })}`,
     };
-  }
-
-  if (!parsed.address || !parsed.nonce || !parsed.domain || typeof parsed.chainId !== "number") {
-    return { ok: false, reason: "parse-error", message: "missing required SIWE fields" };
   }
 
   // 2. Domain binding — EIP-4361 requires the verifier's origin to match.
@@ -111,19 +162,23 @@ export async function verifySiwe(input: SiweVerifyInput): Promise<SiweVerifyResu
     return { ok: false, reason: "nonce-invalid" };
   }
 
-  // 5. Signature — verifySiweMessage re-parses + re-validates + calls
-  //    verifyHash (public-client action) which simulates ERC-6492 deploys.
+  // 5. Signature — `client.verifyMessage` (public-client action) handles
+  //    EIP-191 personal_sign, ERC-1271 contract signatures, AND ERC-6492
+  //    counterfactual Smart Wallet deploys. We bypass viem's SIWE-specific
+  //    `verifySiweMessage` because it strictly re-parses the message and
+  //    rejects the Base Account format (missing Version line). Cryptographic
+  //    binding is identical — the signature is over the exact bytes the
+  //    wallet signed.
   const client = (input.clientsOverride ?? clients)[parsed.chainId];
   let isValid = false;
   try {
-    isValid = await verifySiweMessage(client, {
+    isValid = await client.verifyMessage({
+      address: parsed.address,
       message,
       signature,
-      domain: expectedDomain,
-      nonce: parsed.nonce,
     });
   } catch (err) {
-    // verifySiweMessage can throw on malformed 6492 envelopes, bad RPC, etc.
+    // verifyMessage can throw on malformed 6492 envelopes, bad RPC, etc.
     // Treat as invalid-signature (conservative) — nonce is NOT consumed.
     return {
       ok: false,

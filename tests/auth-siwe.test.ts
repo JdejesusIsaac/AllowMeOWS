@@ -143,6 +143,45 @@ describe("verifySiwe (W4.1)", () => {
     if (!result.ok) expect(result.reason).toBe("nonce-invalid");
   });
 
+  it("SI6: tolerates Base Account / Coinbase Wallet message format (no Version, no Issued At)", async () => {
+    // Regression fixture captured from production Railway logs after a
+    // real `wallet_connect` + `signInWithEthereum` capability call from
+    // Coinbase Wallet hit `/api/auth/verify`. The wallet-emitted message
+    // omits the EIP-4361 `Version: 1` and `Issued At: ...` lines that
+    // viem's strict `parseSiweMessage` requires. Our tolerant extractor
+    // must extract domain/address/uri/chainId/nonce regardless.
+    //
+    // Crypto verification still flows through `client.verifyMessage` so
+    // the signature must match the exact message bytes the wallet signs.
+    const nonceStore = new NonceStore();
+    const nonce = nonceStore.issue();
+    const message =
+      `${DOMAIN} wants you to sign in with your Ethereum account:\n` +
+      `${account.address}\n\n` +
+      `Sign in to AllowMe to manage your family's allowance.\n\n` +
+      `URI: https://allowme.dev\n` +
+      `Chain ID: ${baseSepolia.id}\n` +
+      `Nonce: ${nonce}`;
+    const signature = await account.signMessage({ message });
+
+    const result = await verifySiwe({
+      message,
+      signature,
+      expectedDomain: DOMAIN,
+      nonceStore,
+      clientsOverride: stubClients(),
+    });
+
+    // Must NOT be parse-error (the production bug). EOA signature against
+    // a synthetic test key should fully verify on the stub clients.
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.walletAddress).toBe(account.address.toLowerCase());
+      expect(result.chainId).toBe(baseSepolia.id);
+      expect(result.nonce).toBe(nonce);
+    }
+  });
+
   it.skip("SI5: ERC-6492-wrapped counterfactual Smart Wallet signature verifies (requires live-network fixture)", async () => {
     // TODO(sprint-3.0-v4): capture a real Coinbase Wallet SIWE signature from
     // a freshly-created Base Sepolia Base Account that has NOT yet been
