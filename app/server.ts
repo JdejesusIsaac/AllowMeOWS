@@ -264,16 +264,44 @@ app.get("/fitbit/callback", async (req, res) => {
   }
 });
 
-// ===== Landing page =====
+// ===== Landing page + Sprint 3.0 v4 verify page =====
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const publicDir = join(__dirname, "..", "public");
 const landingPath = join(publicDir, "index.html");
+const verifyPath = join(publicDir, "verify.html");
 
 if (existsSync(landingPath)) {
   const landingHtml = readFileSync(landingPath, "utf-8");
   app.get("/", (_req, res) => {
     res.type("html").send(landingHtml);
+  });
+}
+
+// W2.3 — GET /verify serves the Sign-in-with-Base onboarding SPA. Query
+// params (`?invite=CODE&role=ROLE`) are read client-side by the page JS.
+//
+// The page expects a `window.__ALLOWME_CONFIG__` blob to pick up the
+// network (testnet vs mainnet) and app branding, so we inject it inline
+// before sending the raw HTML through. Injection uses a unique placeholder
+// comment to avoid brittle string regex against the file's `<script>` tag.
+if (existsSync(verifyPath)) {
+  const rawVerifyHtml = readFileSync(verifyPath, "utf-8");
+  const useTestnet = process.env.ALLOWANCE_USE_TESTNET !== "false";
+  const config = {
+    appName: "AllowMe",
+    appLogoUrl: "/favicon.ico",
+    // Base Sepolia 84532 (0x14a34) for pilot; Base Mainnet 8453 (0x2105) if flipped.
+    chainId: useTestnet ? "0x14a34" : "0x2105",
+    statement: "Sign in to AllowMe to manage your family's allowance.",
+  };
+  const injection = `<script>window.__ALLOWME_CONFIG__ = ${JSON.stringify(config)};</script>`;
+  // The verify.html script block runs on DOMContentLoaded — inserting the
+  // config assignment anywhere inside <head> ensures it executes first.
+  const verifyHtml = rawVerifyHtml.replace("</head>", `${injection}\n</head>`);
+
+  app.get("/verify", (_req, res) => {
+    res.type("html").send(verifyHtml);
   });
 }
 

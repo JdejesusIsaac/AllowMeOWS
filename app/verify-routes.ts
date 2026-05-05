@@ -33,10 +33,17 @@ import {
   normalizeChildren,
 } from "../src/core/configure-family.js";
 import { acceptInviteCore } from "../src/core/accept-invite.js";
+import {
+  previewInvite,
+  InviteUsedError,
+  InviteExpiredError,
+  InviteMalformedError,
+} from "../src/core/invite-preview.js";
 import { listMembershipsByWallet } from "../src/core/wallet-memberships.js";
 import { SetupCodeStore } from "../src/identity/setup-codes.js";
 import { StateManager } from "../src/engine/state.js";
 import { CHAIN_IDS, USDC, DEFAULT_SAVINGS_PERCENT } from "../src/constants.js";
+import { previewRateLimit } from "../src/middleware/rate-limit.js";
 
 // 30-day setup codes for verify-page-issued rotations (plan Decision 6).
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -106,6 +113,38 @@ const redeemInviteBodySchema = z.object({
 
 export function buildVerifyRoutes(): Router {
   const router = makeRouter();
+
+  // --- HE8: GET /api/invites/:code/preview (read-only) -------------------
+  // Resolves invite metadata (family name, role, learner childName,
+  // expiresAt) without consuming the invite. See
+  // `@/Users/juanisaac/Desktop/allowmeOpenWalletStandard/sprint-3.0/research-3.0-v4.md`
+  // for the security/UX trade-off. Rate-limited to 30/min/IP.
+  router.get(
+    "/api/invites/:code/preview",
+    previewRateLimit,
+    async (req, res) => {
+      const code = String(req.params.code ?? "");
+      try {
+        const preview = await previewInvite(code);
+        if (!preview) {
+          return res.status(404).json({ error: "Invite not found" });
+        }
+        return res.status(200).json(preview);
+      } catch (err) {
+        if (err instanceof InviteMalformedError) {
+          return res.status(400).json({ error: err.message });
+        }
+        if (err instanceof InviteUsedError) {
+          return res.status(410).json({ error: err.message });
+        }
+        if (err instanceof InviteExpiredError) {
+          return res.status(410).json({ error: err.message, expired: true });
+        }
+        console.error("[preview] unexpected error", err);
+        return res.status(500).json({ error: "Internal error" });
+      }
+    }
+  );
 
   // --- W1.6: GET /api/auth/nonce -----------------------------------------
   router.get("/api/auth/nonce", (_req, res) => {

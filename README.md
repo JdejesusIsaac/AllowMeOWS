@@ -24,12 +24,13 @@ AllowanceAgent implements four of the nine Track 02 building opportunities in a 
 
 ### What's Built and Working
 
-- **9 MCP tools** — configure-policy, verify-achievement, distribute-allowance, check-progress, check-savings, invite-member, accept-invite, manage-members, get-funding-address
-- **84 passing tests** — 71 unit + 13 E2E covering policy engine, invite system, RBAC matrix, state management, and full flow
+- **12 MCP tools** — configure-policy, verify-achievement, distribute-allowance, check-progress, check-savings, invite-member, accept-invite, manage-members, get-funding-address, release-savings, connect-fitbit, convert-savings
+- **Sign-in-with-Base onboarding** *(Sprint 3.0 v4)* — one-tap verify page at `/verify` using `@base-org/account` SIWE. New families bootstrap without ever pasting JSON into Claude; returning users get fresh 30-day magic-link URLs auto-rotated from their wallet signature.
+- **297 passing tests** (1 skipped counterfactual-wallet fixture) — unit + integration + E2E covering policy engine, invite system, RBAC matrix, SIWE verification, session tokens, rate-limited invite preview, cross-family Manager flows, and full on-chain distribution.
 - **Live on-chain USDC transfers** — Confirmed on Base Sepolia (April 2, 2026). EIP-1559 transactions with viem. Partial success handling.
 - **Claude Desktop integration** — Live-tested with Sonnet 4.6. Full conversational flow. No OWS internals ever exposed to the user.
 - **Custom OWS policy executable** — `allowance-policy.py` handles all roles with ERC-20 calldata decoding, spend cap enforcement, and recipient allowlists
-- **Human-readable invite codes** — `MAYA-GIFT-7X2K`. Phone-speakable, 48h expiry, single-use. Deferred OWS key creation on acceptance.
+- **Human-readable invite codes** — `MAYA-GIFT-7X2K`. Phone-speakable, 48h expiry, single-use. One-tap redemption via `/verify?invite=CODE` with a read-only preview ("Joining the Asencio family as Learner — Sofia") before confirmation.
 - **External wallet support** — Children can use MetaMask, Coinbase, or any EVM address alongside OWS-managed wallets
 
 ### The Consumer Proof Point
@@ -209,6 +210,29 @@ child  role   random
 **OWS-managed wallets** are created automatically when you first run `configure-policy`. Children can alternatively use **external wallet addresses** (MetaMask, Coinbase, etc.) — just provide the address during setup and OWS wallet creation is skipped for that child.
 
 Distribution uses OWS for secure key storage (`exportWallet`) and viem for transaction construction, signing, and broadcast — giving full control over nonce management, gas estimation, and EIP-1559 formatting.
+
+### Sign-in-with-Base onboarding *(Sprint 3.0 v4)*
+
+Parents and co-parents skip the "paste this JSON into Claude Desktop" onboarding step entirely. The server hosts a static verify page at `/verify` that uses Coinbase's `@base-org/account` SDK to sign an [EIP-4361](https://eips.ethereum.org/EIPS/eip-4361) message with the user's Base wallet — no gas, no transaction, just a signature.
+
+**The five onboarding flows, all through one URL:**
+
+| URL | Who clicks | What happens |
+|-----|------------|--------------|
+| `/verify` | A new parent setting up their family | Signs in with Base → fills a short family-creation form → receives their MCP magic-link URL |
+| `/verify` | A returning parent whose laptop got wiped | Signs in with Base → the server recognizes their wallet → issues a fresh 30-day magic-link URL, revokes the old one |
+| `/verify?invite=ASEN-COPRT-X7K2&role=co-parent` | A Co-parent invited by SMS | Preview shows "Joining the Asencio Family as Co-parent" → signs in with Base → joined |
+| `/verify?invite=SOFI-LEARN-X7K2&role=learner` | A child (Sofia) who doesn't have a wallet | Preview shows "Joining the Asencio Family as Learner — Sofia" → confirms her name → receives her private magic-link URL |
+| `/verify` (multi-family wallet) | A Manager in Family A who is Co-parent in Family B | Signs in once → picker shows both memberships → picks one → fresh 30-day magic-link URL for that family only |
+
+**Security model:**
+- **SIWE verification** via viem's `verifySiweMessage` public-client action — supports ERC-6492 counterfactual Base Account signatures (wallets that haven't been deployed on-chain yet).
+- **Single-use nonces** with 5-minute TTL; replay-protected.
+- **Short-lived session tokens** (10-minute HMAC-SHA256 JWTs, `.session-secret` auto-generated on first boot).
+- **Invite preview is strictly read-only** — `GET /api/invites/:code/preview` never consumes the invite, even on transient error. Rate-limited to 30 requests/minute/IP to mitigate code enumeration against the ~20-bit suffix space.
+- **Cross-family isolation** — each `(memberId, familyId)` tuple is its own independent membership; rotating the setup code for Family A never affects Family B.
+
+See `sprint-3.0/research-3.0-v4.md` for the full threat model and security/UX trade-off analysis (particularly the "preview discloses child's first name for Learner invites" decision).
 
 ### Child Connection Paths
 
@@ -423,6 +447,13 @@ Endpoints:
 - `GET /.well-known/agent-card.json` — Agent discovery card
 - `GET /fitbit/connect?child=maya` — Fitbit OAuth redirect
 - `GET /fitbit/callback` — Fitbit OAuth callback
+- `GET /verify` *(Sprint 3.0 v4)* — Sign-in-with-Base onboarding SPA
+- `GET /api/auth/nonce` *(Sprint 3.0 v4)* — issue a SIWE nonce (5-min TTL)
+- `POST /api/auth/verify` *(Sprint 3.0 v4)* — verify SIWE signature, return session token + memberships
+- `POST /api/configure-family` *(Sprint 3.0 v4)* — bootstrap a family from a SIWE-verified wallet
+- `POST /api/redeem-invite` *(Sprint 3.0 v4)* — redeem an invite code (adult with Bearer token, or Learner without)
+- `POST /api/rotate-setup-code` *(Sprint 3.0 v4)* — issue a fresh 30-day setup code for a returning wallet
+- `GET /api/invites/:code/preview` *(Sprint 3.0 v4)* — read-only invite metadata lookup (rate-limited 30/min/IP)
 - `GET /health` — Health check
 
 ### Environment Variables
@@ -432,6 +463,8 @@ Endpoints:
 | `MASTER_KEY` | Optional | 256-bit hex key for encrypting per-family wallet keys. Auto-generated to `data/.master-key` if not set. Set this in Railway/Docker where filesystem is ephemeral. |
 | `OWS_PASSPHRASE` | Deprecated | Legacy passphrase for existing families set up before Sprint 2.75. Still works as fallback. New families use per-family keys from MASTER_KEY. |
 | `ALLOWANCE_AGENT_URL` | For HTTP | Public URL of the server (e.g. `https://allowme.dev`) |
+| `SESSION_SECRET` | Optional | 256-bit hex key for signing Sign-in-with-Base session-token JWTs. Auto-generated to `data/.session-secret` if not set. Required in Railway/Docker where filesystem is ephemeral. |
+| `ALLOWANCE_USE_TESTNET` | Optional | `"false"` to serve `/verify` pointed at Base Mainnet (chain id `0x2105`). Defaults to testnet (`0x14a34` Base Sepolia) for the pilot. |
 | `FITBIT_CLIENT_ID` | For Fitbit | AllowMe LLC Fitbit developer app client ID |
 | `FITBIT_CLIENT_SECRET` | For Fitbit | AllowMe LLC Fitbit developer app secret |
 | `X402_RECIPIENT_WALLET` | For x402 | Wallet address that receives x402 micropayments |
@@ -520,11 +553,20 @@ Successfully tested on Base Sepolia testnet (Apr 2, 2026):
 - [x] **Backward compatible** — existing OWS_PASSPHRASE families continue to work
 - [x] **Fitbit encryption upgraded** — token store uses MASTER_KEY instead of OWS_PASSPHRASE
 
-### Sprint 3 (Next)
-- [ ] **Roblox Robux redemption** — children can convert USDC earnings to Robux
-- [ ] **OpenMAIC integration** — Claude orchestrates verified classroom achievements
-- [ ] **LegacyLink estate vault** — dead-man's-switch + conditional release
-- [ ] **GiftFlow** — streak bonuses trigger automated gift purchases
+### Sprint 3.0 v4 (Done)
+- [x] **Sign-in-with-Base onboarding** — `/verify` SPA + SIWE verification + session-token JWTs. Families bootstrap without pasting JSON into Claude; returning users get fresh 30-day magic-link URLs auto-rotated from their wallet signature.
+- [x] **Invite preview endpoint** — `GET /api/invites/:code/preview` returns read-only family/role/childName/expiresAt metadata (rate-limited 30/min/IP). Learner invites render "Joining as Learner — Sofia" for recognition UX; non-Learner invites strip the childName to minimize PII disclosure.
+- [x] **One-tap invite redemption** — `invite-member` tool response emits `/verify?invite=CODE&role=ROLE` URLs; SMS the link, recipient taps once, redeems in <10 seconds.
+- [x] **Cross-family Manager support** — a single wallet can legitimately hold Manager in Family A AND Co-parent in Family B; `/api/auth/verify` surfaces all memberships; rotation on one never affects the others.
+- [x] **Priority 0 session-token access control** — short-lived Bearer tokens from the verify page can authenticate MCP tool calls without the setup-code detour.
+
+### Sprint 4.0 (Next)
+- [ ] **Postgres migration** — replace JSON file store; `listMembershipsByWallet` becomes O(1) on `wallet_address` index.
+- [ ] **Paymaster + Sybil defense** — Coinbase Verifications integration so Learner wallets get gasless transactions without opening a DoS vector.
+- [ ] **LegacyLink estate vault** — dead-man's-switch + conditional release with lawyer audit-read-only delegation.
+- [ ] **Roblox Robux redemption** — children can convert USDC earnings to Robux.
+- [ ] **OpenMAIC production integration** — move from manual `source: "openMAIC"` tagging to Claude-orchestrated verified classroom achievements.
+- [ ] **GiftFlow** — streak bonuses trigger automated gift purchases.
 
 ## License
 

@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <title>AllowMe — Sign in with Base</title>
+  <meta name="description" content="Join your family's AllowMe account. One tap with your Base wallet." />
+  <style>
+    :root {
+      --bg: #fafaf9;
+      --fg: #0c0a09;
+      --muted: #57534e;
+      --card: #ffffff;
+      --border: #e7e5e4;
+      --brand: #0052ff;
+      --brand-fg: #ffffff;
+      --success: #15803d;
+      --danger: #b91c1c;
+      --warn: #a16207;
+      --radius: 12px;
+      --shadow: 0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.04);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0c0a09;
+        --fg: #fafaf9;
+        --muted: #a8a29e;
+        --card: #1c1917;
+        --border: #292524;
+        --brand: #4c8dff;
+        --success: #4ade80;
+        --danger: #f87171;
+        --warn: #fbbf24;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+      min-height: 100svh;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    main {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 24px 20px 48px;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 0 24px;
+    }
+    .logo {
+      width: 28px; height: 28px; border-radius: 8px;
+      background: linear-gradient(135deg, #0052ff, #4c8dff);
+      display: grid; place-items: center;
+      font-weight: 700; color: #fff; font-size: 14px;
+    }
+    .brand { font-weight: 600; font-size: 16px; letter-spacing: -.01em; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+    h1 { font-size: 22px; letter-spacing: -.02em; margin: 0 0 8px; }
+    h2 { font-size: 18px; margin: 0 0 6px; letter-spacing: -.01em; }
+    p { margin: 0 0 12px; color: var(--muted); }
+    p.body { color: var(--fg); }
+    .muted { color: var(--muted); font-size: 14px; }
+    button, .btn {
+      -webkit-appearance: none;
+      appearance: none;
+      border: 0;
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: 10px;
+      font: inherit;
+      font-weight: 600;
+      font-size: 16px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: opacity .15s, transform .05s;
+      text-decoration: none;
+    }
+    button:active, .btn:active { transform: scale(.98); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary { background: var(--brand); color: var(--brand-fg); }
+    .btn-secondary { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+    .btn-ghost { background: transparent; color: var(--brand); }
+    .stack > * + * { margin-top: 12px; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    input[type=text], input[type=number] {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--card);
+      color: var(--fg);
+      font: inherit;
+      font-size: 16px; /* ≥16px avoids iOS auto-zoom */
+    }
+    input[type=text]:focus, input[type=number]:focus {
+      outline: 2px solid var(--brand);
+      outline-offset: 0;
+      border-color: transparent;
+    }
+    label { display: block; font-weight: 600; margin: 0 0 6px; font-size: 14px; }
+    .kv {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      column-gap: 12px;
+      row-gap: 6px;
+      font-size: 14px;
+    }
+    .kv dt { color: var(--muted); }
+    .kv dd { margin: 0; font-weight: 600; }
+    .chip {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(0,82,255,.1);
+      color: var(--brand);
+      text-transform: capitalize;
+    }
+    .chip-success { background: rgba(21,128,61,.12); color: var(--success); }
+    .chip-warn    { background: rgba(161,98,7,.12);  color: var(--warn); }
+    .chip-danger  { background: rgba(185,28,28,.12); color: var(--danger); }
+    .divider {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 12px;
+      align-items: center;
+      margin: 20px 0;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .divider::before, .divider::after {
+      content: "";
+      height: 1px;
+      background: var(--border);
+    }
+    .mcpurl {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      word-break: break-all;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+    .alert {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 14px;
+    }
+    .alert-error {
+      border-color: rgba(185,28,28,.3);
+      background: rgba(185,28,28,.06);
+      color: var(--danger);
+    }
+    .alert-warn {
+      border-color: rgba(161,98,7,.3);
+      background: rgba(161,98,7,.06);
+      color: var(--warn);
+    }
+    .footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 32px;
+    }
+    .hidden { display: none !important; }
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .child-row {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .category-row { display: flex; gap: 6px; margin-top: 6px; }
+    .category-row input[type=text] { flex: 3; }
+    .category-row input[type=number] { flex: 1; }
+    .subtle-link {
+      color: var(--muted);
+      text-decoration: underline;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="logo">A</div>
+      <div class="brand">AllowMe</div>
+    </header>
+
+    <!-- STATE: loading -->
+    <section id="state-loading" class="card">
+      <p class="body"><span class="spinner"></span> &nbsp; Loading…</p>
+    </section>
+
+    <!-- STATE: entry (no query params, default landing) -->
+    <section id="state-entry" class="card hidden stack">
+      <h1>Connect your family to AllowMe</h1>
+      <p>Sign in with your Base wallet to create a family account or return to one you already manage.</p>
+      <button id="btn-siwe-start" class="btn-primary">Sign in with Base</button>
+      <div class="divider">or</div>
+      <div class="stack">
+        <label for="manual-code">Have an invite code?</label>
+        <input id="manual-code" type="text" placeholder="SOFI-LEARN-X7K2" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+        <button id="btn-manual-lookup" class="btn-secondary">Look up invite</button>
+      </div>
+    </section>
+
+    <!-- STATE: invite-preview -->
+    <section id="state-invite-preview" class="card hidden stack">
+      <h1 id="preview-title">Joining a family on AllowMe</h1>
+      <p id="preview-copy"></p>
+      <dl class="kv" id="preview-kv"></dl>
+      <div id="preview-alert" class="alert alert-warn hidden"></div>
+
+      <!-- Adult path: SIWE before redeeming -->
+      <div id="preview-adult-actions" class="stack hidden">
+        <p class="muted">Sign in with your Base wallet, then we'll add you to the family.</p>
+        <button id="btn-preview-siwe" class="btn-primary">Sign in with Base &amp; join</button>
+      </div>
+
+      <!-- Learner / child path: confirm name + redeem (no SIWE) -->
+      <div id="preview-learner-actions" class="stack hidden">
+        <label for="learner-name">Confirm your first name</label>
+        <input id="learner-name" type="text" autocomplete="given-name" spellcheck="false" />
+        <button id="btn-preview-learner-join" class="btn-primary">Join the family</button>
+        <p class="muted">You won't need a wallet — we'll give you a private link for your Claude app.</p>
+      </div>
+    </section>
+
+    <!-- STATE: invite-preview-error -->
+    <section id="state-invite-preview-error" class="card hidden stack">
+      <h1 id="preview-error-title">This invite link can't be used</h1>
+      <p id="preview-error-body">Ask whoever sent this link for a fresh one.</p>
+      <button id="btn-preview-error-retry" class="btn-secondary">Try another code</button>
+    </section>
+
+    <!-- STATE: siwe-running -->
+    <section id="state-siwe-running" class="card hidden stack">
+      <h2><span class="spinner"></span> &nbsp; Opening Coinbase Wallet…</h2>
+      <p>Approve the sign-in request in your wallet. No transaction, no gas — just a signature.</p>
+    </section>
+
+    <!-- STATE: siwe-error -->
+    <section id="state-siwe-error" class="card hidden stack">
+      <h1>Sign-in didn't complete</h1>
+      <div id="siwe-error-body" class="alert alert-error"></div>
+      <button id="btn-siwe-retry" class="btn-primary">Try again</button>
+    </section>
+
+    <!-- STATE: picker (multi-family wallet) -->
+    <section id="state-picker" class="card hidden stack">
+      <h1>Pick a family</h1>
+      <p>Your wallet is connected to more than one AllowMe family. Which one do you want to open?</p>
+      <div id="picker-list" class="stack"></div>
+    </section>
+
+    <!-- STATE: family-create -->
+    <section id="state-family-create" class="card hidden stack">
+      <h1>Create your family</h1>
+      <p>This is brand-new. Tell us a family name and one child to start with. You can add more later from Claude.</p>
+
+      <label for="family-name">Family name</label>
+      <input id="family-name" type="text" placeholder="The Asencio Family" autocomplete="off" />
+
+      <div class="stack" id="children-list"></div>
+      <button id="btn-add-child" class="btn-secondary">+ Add another child</button>
+
+      <div class="row" style="justify-content: space-between; align-items: center; margin-top: 16px;">
+        <label for="use-testnet" style="margin: 0;">Use Base Sepolia (testnet)</label>
+        <input id="use-testnet" type="checkbox" checked />
+      </div>
+      <p class="muted">Testnet is free and safe for pilot families. Leave this on unless your admin told you otherwise.</p>
+
+      <div id="create-alert" class="alert alert-error hidden"></div>
+      <button id="btn-family-create" class="btn-primary">Create family</button>
+    </section>
+
+    <!-- STATE: success -->
+    <section id="state-success" class="card hidden stack">
+      <h1 id="success-title">You're in</h1>
+      <p id="success-body"></p>
+
+      <div>
+        <label>Your magic link (keep this private)</label>
+        <div id="success-url" class="mcpurl"></div>
+        <div class="row" style="margin-top: 8px; gap: 8px;">
+          <button id="btn-copy-url" class="btn-primary" style="flex: 1;">Copy link</button>
+          <a id="btn-open-claude" class="btn btn-secondary" style="flex: 1;" href="#" target="_blank" rel="noopener">Open in Claude</a>
+        </div>
+      </div>
+
+      <div class="alert alert-warn">
+        <strong>Don't share this link.</strong> Anyone who has it can act as you in AllowMe.
+      </div>
+
+      <div id="success-starter" class="stack"></div>
+    </section>
+
+    <!-- STATE: rate-limited (soft error) -->
+    <section id="state-rate-limited" class="card hidden stack">
+      <h1>Too many checks</h1>
+      <p id="rate-limited-body">Give it a minute and try again.</p>
+      <button id="btn-rate-retry" class="btn-secondary">Retry</button>
+    </section>
+
+    <p class="footer">
+      Trouble? Ask whoever sent you this link to generate a new one, or email
+      <a href="mailto:help@allowme.dev" class="subtle-link">help@allowme.dev</a>.
+    </p>
+  </main>
+
+  <script type="module">
+    // ---------- Config ----------
+    // Injected by GET /verify route — see app/server.ts. Falls back to
+    // sensible defaults for direct-file preview during development.
+    const CONFIG = window.__ALLOWME_CONFIG__ ?? {
+      appName: "AllowMe",
+      appLogoUrl: "/favicon.ico",
+      chainId: "0x14a34", // Base Sepolia (84532). Flip to "0x2105" (8453) for mainnet.
+      statement: "Sign in to AllowMe to manage your family's allowance.",
+    };
+
+    // ---------- State ----------
+    const qs = new URLSearchParams(window.location.search);
+    const inviteCode = (qs.get("invite") || "").toUpperCase().trim();
+    const inviteRole = (qs.get("role") || "").toLowerCase().trim();
+
+    let sessionToken = null; // set after SIWE verify
+    let walletAddress = null;
+    let pendingInviteMeta = null; // { familyName, role, childName?, expiresAt }
+
+    // ---------- DOM helpers ----------
+    const $ = (id) => document.getElementById(id);
+    const STATES = [
+      "loading",
+      "entry",
+      "invite-preview",
+      "invite-preview-error",
+      "siwe-running",
+      "siwe-error",
+      "picker",
+      "family-create",
+      "success",
+      "rate-limited",
+    ];
+    function show(state) {
+      for (const s of STATES) $("state-" + s).classList.add("hidden");
+      $("state-" + state).classList.remove("hidden");
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }
+
+    function escapeHtml(s) {
+      return String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function humanDurationUntil(iso) {
+      const ms = new Date(iso).getTime() - Date.now();
+      if (ms <= 0) return "expired";
+      const hrs = Math.floor(ms / 3_600_000);
+      if (hrs >= 24) return Math.floor(hrs / 24) + " day(s)";
+      if (hrs >= 1) return hrs + " hour" + (hrs === 1 ? "" : "s");
+      const mins = Math.max(1, Math.floor(ms / 60_000));
+      return mins + " minute" + (mins === 1 ? "" : "s");
+    }
+
+    // ---------- Base Account SDK ----------
+    let sdk = null;
+    let provider = null;
+    async function ensureSdk() {
+      if (sdk) return { sdk, provider };
+      const mod = await import("https://esm.sh/@base-org/account@2.5.5");
+      sdk = mod.createBaseAccountSDK({
+        appName: CONFIG.appName,
+        appLogoUrl: CONFIG.appLogoUrl,
+      });
+      provider = sdk.getProvider();
+      return { sdk, provider };
+    }
+
+    async function runSiwe() {
+      show("siwe-running");
+      let nonce;
+      try {
+        const nRes = await fetch("/api/auth/nonce");
+        if (!nRes.ok) throw new Error("Could not fetch nonce (" + nRes.status + ")");
+        nonce = (await nRes.text()).trim();
+      } catch (err) {
+        showSiweError("Couldn't reach the AllowMe server. Check your connection and try again.", err);
+        return null;
+      }
+
+      let walletResult;
+      try {
+        const { provider: p } = await ensureSdk();
+        walletResult = await p.request({
+          method: "wallet_connect",
+          params: [{
+            version: "1",
+            capabilities: {
+              signInWithEthereum: {
+                nonce,
+                chainId: CONFIG.chainId,
+                statement: CONFIG.statement,
+              },
+            },
+          }],
+        });
+      } catch (err) {
+        // User rejected, popup blocked, wallet not installed, etc.
+        showSiweError(err?.message || "The wallet sign-in was cancelled.", err);
+        return null;
+      }
+
+      // walletResult shape (ERC-5792 / Base Account):
+      //   { accounts: [{ address, capabilities: { signInWithEthereum: { message, signature } } }] }
+      const account = walletResult?.accounts?.[0];
+      const siwe = account?.capabilities?.signInWithEthereum;
+      if (!siwe?.message || !siwe?.signature) {
+        showSiweError("Wallet returned an unexpected response.", walletResult);
+        return null;
+      }
+
+      let verifyBody;
+      try {
+        const vRes = await fetch("/api/auth/verify", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ message: siwe.message, signature: siwe.signature }),
+        });
+        verifyBody = await vRes.json();
+        if (!vRes.ok || !verifyBody.ok) {
+          const reason = verifyBody?.reason || "verification-failed";
+          showSiweError("Server couldn't verify your wallet signature. (" + reason + ")");
+          return null;
+        }
+      } catch (err) {
+        showSiweError("Couldn't reach the AllowMe server.", err);
+        return null;
+      }
+
+      sessionToken = verifyBody.sessionToken;
+      walletAddress = verifyBody.walletAddress;
+      return verifyBody;
+    }
+
+    function showSiweError(msg, detail) {
+      $("siwe-error-body").textContent = msg;
+      if (detail) console.error("[siwe]", msg, detail);
+      show("siwe-error");
+    }
+
+    // ---------- Invite preview ----------
+    async function fetchInvitePreview(code) {
+      const res = await fetch(`/api/invites/${encodeURIComponent(code)}/preview`);
+      if (res.status === 429) {
+        const retry = res.headers.get("retry-after") || "60";
+        return { kind: "rate-limited", retryAfter: parseInt(retry, 10) || 60 };
+      }
+      let body = null;
+      try { body = await res.json(); } catch { /* non-JSON */ }
+      if (res.ok) return { kind: "ok", data: body };
+      if (res.status === 400) return { kind: "malformed" };
+      if (res.status === 404) return { kind: "not-found" };
+      if (res.status === 410 && body?.expired) return { kind: "expired" };
+      if (res.status === 410) return { kind: "used" };
+      return { kind: "error", status: res.status };
+    }
+
+    function renderPreviewFor(meta, codeForJoin) {
+      pendingInviteMeta = meta;
+      const isLearner = meta.role === "learner";
+
+      $("preview-title").textContent = isLearner
+        ? `Join the ${meta.familyName}`
+        : `Join ${meta.familyName} on AllowMe`;
+
+      const roleCopy = {
+        "manager":   "You'll have full control of the family economy.",
+        "co-parent": "You'll be able to verify achievements and see progress.",
+        "family":    "You'll be able to view progress and send gifts.",
+        "advisor":   "You'll be able to view the audit log.",
+        "learner":   "You'll be able to log achievements and see your progress.",
+      };
+      $("preview-copy").textContent = roleCopy[meta.role] || "You'll be added to the family.";
+
+      const kv = $("preview-kv");
+      const parts = [
+        `<dt>Family</dt><dd>${escapeHtml(meta.familyName)}</dd>`,
+        `<dt>Role</dt><dd><span class="chip">${escapeHtml(meta.role)}</span></dd>`,
+      ];
+      if (isLearner && meta.childName) {
+        parts.push(`<dt>Name</dt><dd>${escapeHtml(meta.childName)}</dd>`);
+      }
+      parts.push(`<dt>Expires</dt><dd>${escapeHtml(humanDurationUntil(meta.expiresAt))}</dd>`);
+      kv.innerHTML = parts.join("");
+
+      // Expiry warning when <6h left
+      const hrsLeft = (new Date(meta.expiresAt).getTime() - Date.now()) / 3_600_000;
+      const alertEl = $("preview-alert");
+      if (hrsLeft < 6) {
+        alertEl.textContent = "This invite will expire soon. Finish joining now or ask for a fresh link.";
+        alertEl.classList.remove("hidden");
+      } else {
+        alertEl.classList.add("hidden");
+      }
+
+      // Role-specific action block
+      const adult = $("preview-adult-actions");
+      const learner = $("preview-learner-actions");
+      adult.classList.toggle("hidden", isLearner);
+      learner.classList.toggle("hidden", !isLearner);
+      if (isLearner && meta.childName) {
+        $("learner-name").value = meta.childName;
+      }
+
+      // Stash the join code for the button handlers.
+      adult.dataset.code = codeForJoin;
+      learner.dataset.code = codeForJoin;
+
+      show("invite-preview");
+    }
+
+    function renderPreviewError(kind, extra) {
+      const t = $("preview-error-title");
+      const b = $("preview-error-body");
+      if (kind === "not-found") {
+        t.textContent = "That invite wasn't found";
+        b.textContent = "Double-check the code or ask whoever invited you for a fresh link.";
+      } else if (kind === "used") {
+        t.textContent = "This invite was already used";
+        b.textContent = "Ask whoever sent it to generate a new one.";
+      } else if (kind === "expired") {
+        t.textContent = "This invite has expired";
+        b.textContent = "Invites last 48 hours. Ask for a new one.";
+      } else if (kind === "malformed") {
+        t.textContent = "This code doesn't look right";
+        b.textContent = "Codes look like SOFI-LEARN-X7K2. Try entering it again.";
+      } else {
+        t.textContent = "Something went wrong";
+        b.textContent = "We couldn't check this invite. Try again in a moment.";
+      }
+      show("invite-preview-error");
+    }
+
+    async function handleRedeem(code, name, requireSessionToken) {
+      try {
+        const headers = { "content-type": "application/json" };
+        if (requireSessionToken && sessionToken) {
+          headers.authorization = "Bearer " + sessionToken;
+        }
+        const res = await fetch("/api/redeem-invite", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ code, name }),
+        });
+        const body = await res.json();
+        if (!res.ok || !body.ok) {
+          $("siwe-error-body").textContent =
+            "Couldn't complete the join: " + (body?.reason || body?.error || res.status);
+          show("siwe-error");
+          return;
+        }
+        sessionToken = body.sessionToken || sessionToken;
+        renderSuccess({
+          kind: "invite",
+          role: body.role,
+          mcpUrl: body.mcpUrl,
+          childName: body.childName,
+          familyName: pendingInviteMeta?.familyName,
+        });
+      } catch (err) {
+        $("siwe-error-body").textContent = "Network error while joining. Try again.";
+        console.error("[redeem]", err);
+        show("siwe-error");
+      }
+    }
+
+    // ---------- Family creation ----------
+    function blankChildRow() {
+      return {
+        name: "",
+        weeklyBudgetUsd: 10,
+        savingsPercent: 20,
+        categories: [
+          { name: "reading",    pct: 40 },
+          { name: "movement",   pct: 35 },
+          { name: "creativity", pct: 25 },
+        ],
+      };
+    }
+    let childrenDraft = [blankChildRow()];
+
+    function renderChildren() {
+      const list = $("children-list");
+      list.innerHTML = "";
+      childrenDraft.forEach((child, i) => {
+        const row = document.createElement("div");
+        row.className = "child-row stack";
+        row.innerHTML = `
+          <label>Child ${i + 1}</label>
+          <input type="text" data-field="name" placeholder="e.g. Sofia" value="${escapeHtml(child.name)}" />
+          <div class="row" style="gap: 8px;">
+            <div style="flex: 1;">
+              <label class="muted">Weekly budget (USD)</label>
+              <input type="number" min="1" step="0.5" data-field="weeklyBudgetUsd" value="${child.weeklyBudgetUsd}" />
+            </div>
+            <div style="flex: 1;">
+              <label class="muted">Savings %</label>
+              <input type="number" min="0" max="100" data-field="savingsPercent" value="${child.savingsPercent}" />
+            </div>
+          </div>
+          <label class="muted">Categories (must sum to 100%)</label>
+          <div data-cats></div>
+        `;
+        const cats = row.querySelector("[data-cats]");
+        child.categories.forEach((cat, ci) => {
+          const catRow = document.createElement("div");
+          catRow.className = "category-row";
+          catRow.innerHTML = `
+            <input type="text" data-cat-field="name" value="${escapeHtml(cat.name)}" />
+            <input type="number" min="0" max="100" data-cat-field="pct" value="${cat.pct}" />
+          `;
+          catRow.querySelectorAll("input").forEach((inp) => {
+            inp.addEventListener("input", (e) => {
+              const field = e.target.dataset.catField;
+              child.categories[ci][field] = field === "pct" ? Number(e.target.value) : e.target.value;
+            });
+          });
+          cats.appendChild(catRow);
+        });
+        row.querySelectorAll("input[data-field]").forEach((inp) => {
+          inp.addEventListener("input", (e) => {
+            const field = e.target.dataset.field;
+            child[field] = (field === "name") ? e.target.value : Number(e.target.value);
+          });
+        });
+        if (childrenDraft.length > 1) {
+          const rm = document.createElement("button");
+          rm.className = "btn-ghost";
+          rm.type = "button";
+          rm.textContent = "Remove";
+          rm.addEventListener("click", () => {
+            childrenDraft.splice(i, 1);
+            renderChildren();
+          });
+          row.appendChild(rm);
+        }
+        list.appendChild(row);
+      });
+    }
+
+    async function submitFamilyCreate() {
+      const familyName = $("family-name").value.trim();
+      const useTestnet = $("use-testnet").checked;
+      const alertEl = $("create-alert");
+      alertEl.classList.add("hidden");
+
+      if (!familyName) {
+        alertEl.textContent = "Please enter a family name.";
+        alertEl.classList.remove("hidden");
+        return;
+      }
+      for (const c of childrenDraft) {
+        if (!c.name.trim()) {
+          alertEl.textContent = "Every child needs a name.";
+          alertEl.classList.remove("hidden");
+          return;
+        }
+        const pctSum = c.categories.reduce((s, x) => s + Number(x.pct || 0), 0);
+        if (Math.abs(pctSum - 100) > 0.01) {
+          alertEl.textContent = `Categories for ${c.name} must sum to 100% (currently ${pctSum}).`;
+          alertEl.classList.remove("hidden");
+          return;
+        }
+      }
+
+      const btn = $("btn-family-create");
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>&nbsp; Creating family…';
+
+      try {
+        const res = await fetch("/api/configure-family", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "authorization": "Bearer " + sessionToken,
+          },
+          body: JSON.stringify({ familyName, useTestnet, children: childrenDraft }),
+        });
+        const body = await res.json();
+        if (!res.ok || !body.ok) {
+          alertEl.textContent = "Couldn't create family: " + (body?.error || res.status);
+          alertEl.classList.remove("hidden");
+          btn.disabled = false;
+          btn.textContent = "Create family";
+          return;
+        }
+        sessionToken = body.sessionToken;
+        renderSuccess({
+          kind: "create",
+          role: "manager",
+          mcpUrl: body.mcpUrl,
+          familyName: body.familyName,
+        });
+      } catch (err) {
+        alertEl.textContent = "Network error creating family.";
+        alertEl.classList.remove("hidden");
+        console.error("[create]", err);
+        btn.disabled = false;
+        btn.textContent = "Create family";
+      }
+    }
+
+    // ---------- Multi-family picker ----------
+    function renderPicker(families) {
+      const list = $("picker-list");
+      list.innerHTML = "";
+      for (const f of families) {
+        const btn = document.createElement("button");
+        btn.className = "btn-secondary";
+        btn.style.justifyContent = "space-between";
+        btn.innerHTML = `
+          <span style="text-align: left;">
+            <strong>${escapeHtml(f.familyName)}</strong><br>
+            <span class="muted" style="font-size: 13px;">${escapeHtml(f.memberName)} · <span class="chip">${escapeHtml(f.role)}</span></span>
+          </span>
+          <span aria-hidden="true">→</span>
+        `;
+        btn.addEventListener("click", () => rotateAndShow(f));
+        list.appendChild(btn);
+      }
+      show("picker");
+    }
+
+    async function rotateAndShow(family) {
+      show("siwe-running"); // repurpose as "working…"
+      $("state-siwe-running").querySelector("h2").innerHTML =
+        '<span class="spinner"></span> &nbsp; Refreshing your link…';
+      try {
+        const res = await fetch("/api/rotate-setup-code", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "authorization": "Bearer " + sessionToken,
+          },
+          body: JSON.stringify(family ? { memberId: family.memberId } : {}),
+        });
+        const body = await res.json();
+        if (!res.ok || !body.ok) {
+          showSiweError("Couldn't refresh the link: " + (body?.error || res.status));
+          return;
+        }
+        sessionToken = body.sessionToken;
+        renderSuccess({
+          kind: "returning",
+          role: body.role,
+          mcpUrl: body.mcpUrl,
+          familyName: body.familyName,
+        });
+      } catch (err) {
+        showSiweError("Network error while refreshing the link.", err);
+      }
+    }
+
+    // ---------- Success ----------
+    function renderSuccess({ kind, role, mcpUrl, familyName, childName }) {
+      const title = $("success-title");
+      const body = $("success-body");
+      if (kind === "create") {
+        title.textContent = "Family created";
+        body.textContent = `${familyName || "Your family"} is ready. Paste the link below into Claude Desktop to start managing it.`;
+      } else if (kind === "returning") {
+        title.textContent = "Welcome back";
+        body.textContent = `You're signed in as a ${role} of ${familyName || "your family"}. Here's a fresh 30-day link.`;
+      } else {
+        title.textContent = "You're in";
+        const who = childName ? `, ${childName}` : "";
+        body.textContent = `Joined ${familyName || "the family"} as a ${role}${who}. Paste the link below into Claude.`;
+      }
+
+      $("success-url").textContent = mcpUrl;
+
+      // Deep-link: claude://mcp/add?url=... works on Claude Desktop ≥0.8.
+      // Fallback to the raw URL on browsers where the scheme is unregistered.
+      const openBtn = $("btn-open-claude");
+      openBtn.href = "claude://mcp/add?url=" + encodeURIComponent(mcpUrl);
+
+      const starter = $("success-starter");
+      starter.innerHTML = "";
+      const starterCopy = {
+        "manager":   "Try saying: <em>\"Check progress for the family.\"</em>",
+        "co-parent": "Try saying: <em>\"Verify that Sofia read for 30 minutes today.\"</em>",
+        "family":    "Try saying: <em>\"Show me the kids' progress.\"</em>",
+        "advisor":   "Try saying: <em>\"Show the audit log for this week.\"</em>",
+        "learner":   `Try saying: <em>\"I did my reading today!\"</em>`,
+      };
+      const line = starterCopy[role];
+      if (line) {
+        const tip = document.createElement("p");
+        tip.className = "muted";
+        tip.innerHTML = line;
+        starter.appendChild(tip);
+      }
+
+      show("success");
+    }
+
+    // ---------- Wiring ----------
+    $("btn-siwe-start").addEventListener("click", async () => {
+      const result = await runSiwe();
+      if (!result) return;
+      if (result.requiresFamilyCreation) {
+        childrenDraft = [blankChildRow()];
+        renderChildren();
+        show("family-create");
+      } else if (result.families.length === 1) {
+        await rotateAndShow(result.families[0]);
+      } else {
+        renderPicker(result.families);
+      }
+    });
+
+    $("btn-siwe-retry").addEventListener("click", () => {
+      // Restart from the state we were in before — default to entry.
+      if (pendingInviteMeta) show("invite-preview"); else show("entry");
+    });
+
+    $("btn-manual-lookup").addEventListener("click", async () => {
+      const code = $("manual-code").value.toUpperCase().trim();
+      if (!code) return;
+      const result = await fetchInvitePreview(code);
+      handlePreviewResult(result, code, /* role-hint */ "");
+    });
+
+    $("btn-preview-error-retry").addEventListener("click", () => {
+      pendingInviteMeta = null;
+      show("entry");
+    });
+
+    $("btn-preview-siwe").addEventListener("click", async () => {
+      const code = $("preview-adult-actions").dataset.code;
+      const siweResult = await runSiwe();
+      if (!siweResult) return;
+      // Use the SIWE-verified wallet's owner name if we can infer it from
+      // memberships; otherwise ask the redeem endpoint for a display name
+      // derived from the invite. For now, pull the logged-in wallet's
+      // short hex as a placeholder display name so the server has something
+      // to pin the Member record under. The verify page's primary signal
+      // to the server is the SIWE session token (threaded as Bearer).
+      const name = pendingInviteMeta?.role === "co-parent"
+        ? (prompt("What's your name? (for the family roster)") || "Co-parent").trim()
+        : (prompt("Your name?") || "Member").trim();
+      await handleRedeem(code, name, /* requireSessionToken */ true);
+    });
+
+    $("btn-preview-learner-join").addEventListener("click", async () => {
+      const code = $("preview-learner-actions").dataset.code;
+      const name = $("learner-name").value.trim();
+      if (!name) {
+        $("learner-name").focus();
+        return;
+      }
+      await handleRedeem(code, name, /* requireSessionToken */ false);
+    });
+
+    $("btn-add-child").addEventListener("click", () => {
+      childrenDraft.push(blankChildRow());
+      renderChildren();
+    });
+
+    $("btn-family-create").addEventListener("click", submitFamilyCreate);
+
+    $("btn-copy-url").addEventListener("click", async () => {
+      const url = $("success-url").textContent;
+      try {
+        await navigator.clipboard.writeText(url);
+        const b = $("btn-copy-url");
+        const original = b.textContent;
+        b.textContent = "✓ Copied";
+        setTimeout(() => (b.textContent = original), 1500);
+      } catch {
+        // Fallback: select text so user can long-press → copy on mobile
+        const range = document.createRange();
+        range.selectNodeContents($("success-url"));
+        const sel = window.getSelection();
+        sel.removeAllRanges(); sel.addRange(range);
+      }
+    });
+
+    $("btn-rate-retry").addEventListener("click", () => {
+      if (inviteCode) bootstrap();
+      else show("entry");
+    });
+
+    function handlePreviewResult(result, code) {
+      if (result.kind === "ok") {
+        renderPreviewFor(result.data, code);
+      } else if (result.kind === "rate-limited") {
+        $("rate-limited-body").textContent =
+          `Give it ${result.retryAfter}s and try again.`;
+        show("rate-limited");
+      } else {
+        renderPreviewError(result.kind);
+      }
+    }
+
+    // ---------- Boot ----------
+    async function bootstrap() {
+      show("loading");
+      if (inviteCode) {
+        const result = await fetchInvitePreview(inviteCode);
+        handlePreviewResult(result, inviteCode);
+        return;
+      }
+      // No invite — default landing.
+      show("entry");
+    }
+
+    bootstrap().catch((err) => {
+      console.error("[bootstrap]", err);
+      showSiweError("Something went wrong loading the page. Refresh to try again.", err);
+    });
+  </script>
+</body>
+</html>
