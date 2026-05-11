@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { acceptInviteCore, ROLE_DESCRIPTIONS } from "../core/accept-invite.js";
+import { acceptInviteCore } from "../core/accept-invite.js";
 import { withAccessControl, rbacFields } from "../middleware/access-control.js";
 
 export function registerAcceptInviteTool(server: McpServer): void {
@@ -46,14 +46,13 @@ export function registerAcceptInviteTool(server: McpServer): void {
                 role: result.role,
                 childName: result.childName,
                 familyId: result.familyId,
+                familyName: result.familyName,
                 memberId: result.memberId,
                 setupCode: result.setupCode,
                 mcpUrl: result.mcpUrl,
-                message:
-                  `Welcome, ${result.name}! You're connected as a ${result.role} member. ` +
-                  `You can ${ROLE_DESCRIPTIONS[result.role]}. ` +
-                  `To continue using AllowanceAgent in your own Claude, update your MCP connector URL to:\n\n${result.mcpUrl}\n\n` +
-                  `The setup code expires in 48 hours.`,
+                // Sprint 3.0.4: role-flavored welcome with concrete starter
+                // prompts (built in core; same copy for MCP + verify-page).
+                message: result.welcomeMessage,
               }),
             },
           ],
