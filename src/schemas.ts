@@ -22,12 +22,30 @@ export type CategoryEntry = z.infer<typeof CategoryEntrySchema>;
 // Parent sets WHAT the child learns (curriculum). Claude Learning Mode handles
 // HOW (Socratic dialogue). AllowanceAgent tracks WHETHER it happened by
 // fuzzy-matching achievements against goals at verify-achievement time.
+// Sprint 3.0.3: optional sub-steps for mastery-driven goal progressions.
+// E.g. "Catch up to 7th grade math" decomposes into fractions → decimals →
+// ratios → pre-algebra. Each subgoal completes independently; the parent
+// goal completes when the parent marks it (via verify-achievement or a
+// future explicit "mark-goal-complete" tool).
+export const SubgoalSchema = z.object({
+  topic: z.string().min(1).max(200),
+  completed: z.boolean().default(false),
+});
+export type Subgoal = z.infer<typeof SubgoalSchema>;
+
 export const LearningGoalSchema = z.object({
   topic: z.string().min(1).max(200),
   category: z.string().min(1), // must match a configured category name on the child
   completed: z.boolean().default(false),
   completedAt: z.string().datetime().optional(),
   achievementId: z.string().optional(),
+  // Sprint 3.0.3: optional sub-steps. 20-cap is intentional — more than that
+  // looks like a curriculum, which is a different product.
+  subgoals: z.array(SubgoalSchema).max(20).optional(),
+  // Sprint 3.0.3: optional deadline for time-bounded goals
+  // (e.g., "catch up to grade level before school starts").
+  // ISO-8601 datetime — Claude formats parent's natural-language dates on input.
+  deadline: z.string().datetime().optional(),
 });
 export type LearningGoal = z.infer<typeof LearningGoalSchema>;
 
@@ -59,6 +77,10 @@ export const FamilyConfigSchema = z.object({
   updatedAt: z.string().datetime(),
   chainId: z.string().default("eip155:84532"), // default to testnet
   usdcAddress: z.string(),
+  // Sprint 3.0.2 — destination allowlist enforced by distribute-allowance /
+  // release-savings on the child-wallet leg only. Internal vaults
+  // (savings-vault, gift-fund) are exempt. Addresses stored lowercased.
+  authorizedDestinations: z.array(z.string()).default([]),
 });
 export type FamilyConfig = z.infer<typeof FamilyConfigSchema>;
 
@@ -198,6 +220,11 @@ export const AuditEntrySchema = z.object({
     "setup-code-rotated-via-wallet-reauth",
     "family-created-via-verify-page",
     "learner-invite-redeemed-via-verify-page",
+    // Sprint 3.0.2 — destination allowlist
+    "transfer-rejected-by-allowlist",
+    "transfer-rejected-by-policy-enforcer",
+    "authorized-destinations-updated",
+    "authorized-destinations-removal-blocked",
   ]),
   actor: z.string(), // member ID or "system"
   details: z.record(z.unknown()),

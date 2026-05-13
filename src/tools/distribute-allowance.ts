@@ -6,22 +6,22 @@ import { PolicyEngine } from "../engine/policy.js";
 import { WalletDistributor } from "../wallet/distributor.js";
 import { FamilyKeyManager } from "../keys/family-keys.js";
 import { USDC, WALLET_NAMES } from "../constants.js";
+import { checkDestinationAllowlist } from "../core/allowlist.js";
 import {
   withAccessControl,
   buildNoIdentityResponse,
   rbacFields,
+  type CallerContext,
+  type ToolResponse,
 } from "../middleware/access-control.js";
 
-export function registerDistributeAllowanceTool(server: McpServer): void {
-  server.tool(
-    "distribute-allowance",
-    "Distribute pending achievement rewards to child wallets and savings vault via USDC transfers.",
-    {
-      childName: z.string().optional().describe("Distribute for a specific child, or all children if omitted"),
-      dryRun: z.boolean().default(false).describe("Preview distribution without sending transactions"),
-      ...rbacFields,
-    },
-    withAccessControl("distribute-allowance", async (args, caller) => {
+// Sprint 3.0.2 — extracted core handler so integration tests (AL1–AL5) can
+// invoke it directly with a mocked WalletDistributor. The MCP server wires
+// the same closure via `registerDistributeAllowanceTool` below.
+async function distributeAllowanceCore(
+  args: Record<string, unknown>,
+  caller: CallerContext | null
+): Promise<ToolResponse> {
       if (!caller) return buildNoIdentityResponse("distribute-allowance");
       const requestedChild = args.childName as string | undefined;
       const dryRun = args.dryRun as boolean;
@@ -90,6 +90,12 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
           txHash?: string;
           savingsTxHash?: string;
           savingsError?: string;
+          // Sprint 3.0.2 — set when the destination allowlist rejects this
+          // child's leg. When set, no on-chain transfer is attempted and
+          // achievements remain undistributed (caller retries after
+          // updating the allowlist).
+          rejectedReason?: string;
+          attemptedDestination?: string;
         }> = [];
 
         for (const [childName, childAchievements] of byChild) {
@@ -107,6 +113,8 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
           let txHash: string | undefined;
           let savingsTxHash: string | undefined;
           let savingsError: string | undefined;
+          let rejectedReason: string | undefined;
+          let attemptedDestination: string | undefined;
 
           if (!dryRun) {
             if (!passphrase) {
@@ -119,6 +127,48 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
                   }),
                 }],
               };
+            }
+
+            // Sprint 3.0.2 — Destination allowlist check on the child-wallet
+            // leg. Decision 2: the savings-vault leg below is exempt (internal
+            // vault plumbing). The check only applies when the child has an
+            // external walletAddress configured — the OWS-internal-wallet path
+            // (childConfig.walletAddress === undefined) is also exempt because
+            // that destination lives in the family's own OWS vault, not a
+            // user-facing address that can be tampered with.
+            if (childAmount > 0 && childConfig.walletAddress) {
+              const check = checkDestinationAllowlist(
+                childConfig.walletAddress,
+                config.authorizedDestinations
+              );
+              if (!check.allowed) {
+                rejectedReason = check.reason;
+                attemptedDestination = childConfig.walletAddress;
+                await state.addAuditEntry(familyId, {
+                  id: randomUUID(),
+                  timestamp: new Date().toISOString(),
+                  action: "transfer-rejected-by-allowlist",
+                  actor: caller.memberId,
+                  details: {
+                    tool: "distribute-allowance",
+                    childName,
+                    attemptedDestination: childConfig.walletAddress,
+                    reason: check.reason,
+                  },
+                });
+                // Push the result and skip to the next child. Achievements
+                // remain undistributed; treasury USDC unchanged.
+                results.push({
+                  childName,
+                  totalUsd: (totalAmount / 10 ** USDC.DECIMALS).toFixed(2),
+                  childAmountUsd: (childAmount / 10 ** USDC.DECIMALS).toFixed(2),
+                  savingsAmountUsd: (savingsAmount / 10 ** USDC.DECIMALS).toFixed(2),
+                  achievements: childAchievements.length,
+                  rejectedReason,
+                  attemptedDestination,
+                });
+                continue;
+              }
             }
 
             // Transfer to child wallet (use external address if configured, else OWS wallet)
@@ -236,6 +286,25 @@ export function registerDistributeAllowanceTool(server: McpServer): void {
           }],
         };
       }
-    })
+}
+
+// Sprint 3.0.2 — wrapped handler that performs the standard access-control
+// dance, then delegates to `distributeAllowanceCore`. Exported so AL1–AL5
+// integration tests can invoke without spinning up an McpServer.
+export const distributeAllowanceHandler = withAccessControl(
+  "distribute-allowance",
+  distributeAllowanceCore
+);
+
+export function registerDistributeAllowanceTool(server: McpServer): void {
+  server.tool(
+    "distribute-allowance",
+    "Distribute pending achievement rewards to child wallets and savings vault via USDC transfers.",
+    {
+      childName: z.string().optional().describe("Distribute for a specific child, or all children if omitted"),
+      dryRun: z.boolean().default(false).describe("Preview distribution without sending transactions"),
+      ...rbacFields,
+    },
+    distributeAllowanceHandler
   );
 }

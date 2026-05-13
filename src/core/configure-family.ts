@@ -28,6 +28,12 @@ import { ROLES, USDC } from "../constants.js";
 import type { FamilyConfig, ChildConfig, Member } from "../schemas.js";
 import { mergeLearningGoals } from "../engine/learning-goals.js";
 import type { CallerContext } from "../middleware/access-control.js";
+import { tryNormalizeWallet } from "../auth/wallet.js";
+import {
+  computeRemovedDestinations,
+  findBlockedRemovals,
+  type BlockedRemoval,
+} from "./allowlist.js";
 
 export interface ConfigureFamilyInput {
   familyName: string;
@@ -47,6 +53,140 @@ export interface ConfigureFamilyInput {
    * fall back to "{familyName} Manager".
    */
   managerName?: string;
+  /**
+   * Sprint 3.0.2: optional explicit destination allowlist. If supplied,
+   * each entry is validated; invalid entries cause a
+   * `ConfigureValidationError`. If omitted: existing config's list is
+   * preserved (update path) or empty (bootstrap). In both cases, the
+   * caller's wallet and every child's wallet are force-added before
+   * persistence.
+   */
+  authorizedDestinations?: string[];
+}
+
+/**
+ * Sprint 3.0.2 — thrown by `configureFamilyCore` when destination-allowlist
+ * validation fails. Caught at the MCP tool boundary so the conversational
+ * surface can render a structured error (rather than a generic 500).
+ */
+export class ConfigureValidationError extends Error {
+  readonly kind: "removal-blocked" | "invalid-address";
+  readonly affected?: BlockedRemoval[];
+  readonly invalidValue?: string;
+
+  constructor(opts: {
+    kind: "removal-blocked";
+    affected: BlockedRemoval[];
+    message: string;
+  });
+  constructor(opts: {
+    kind: "invalid-address";
+    invalidValue: string;
+    message: string;
+  });
+  constructor(opts: {
+    kind: "removal-blocked" | "invalid-address";
+    affected?: BlockedRemoval[];
+    invalidValue?: string;
+    message: string;
+  }) {
+    super(opts.message);
+    this.name = "ConfigureValidationError";
+    this.kind = opts.kind;
+    this.affected = opts.affected;
+    this.invalidValue = opts.invalidValue;
+  }
+}
+
+/**
+ * Build the authorized-destinations list for a family configure call.
+ *
+ * Resolution order:
+ *   1. If `inputAuthorizedDestinations` is supplied, validate each entry
+ *      via `tryNormalizeWallet`. Invalid entries throw
+ *      `ConfigureValidationError({kind: "invalid-address"})`.
+ *   2. Otherwise: start from `existingAuthorizedDestinations` (lowercased
+ *      via `tryNormalizeWallet`).
+ *   3. Force-add each child's `walletAddress` (skip undefined and
+ *      unnormalizable).
+ *   4. Force-add `callerWalletAddress` (skip if missing/unnormalizable).
+ *   5. Dedupe (case-insensitive). Persist lowercase.
+ *
+ * Returns the resolved list along with `added` and `removed` diff arrays
+ * (vs `existingAuthorizedDestinations`), so the caller can: (a) emit the
+ * `authorized-destinations-updated` audit entry with the diff details,
+ * (b) decide whether to run Decision-3 block-on-removal scan.
+ */
+export function buildAuthorizedDestinations(opts: {
+  inputAuthorizedDestinations?: string[];
+  existingAuthorizedDestinations?: string[];
+  callerWalletAddress?: string;
+  children: ChildConfig[];
+}): {
+  destinations: string[];
+  added: string[];
+  removed: string[];
+} {
+  const existing: string[] = [];
+  const existingSet = new Set<string>();
+  for (const e of opts.existingAuthorizedDestinations ?? []) {
+    const n = tryNormalizeWallet(e);
+    if (n && !existingSet.has(n)) {
+      existing.push(n);
+      existingSet.add(n);
+    }
+  }
+
+  const start: string[] = [];
+  const startSet = new Set<string>();
+
+  if (opts.inputAuthorizedDestinations !== undefined) {
+    for (const entry of opts.inputAuthorizedDestinations) {
+      const n = tryNormalizeWallet(entry);
+      if (!n) {
+        throw new ConfigureValidationError({
+          kind: "invalid-address",
+          invalidValue: String(entry),
+          message: `Invalid wallet address in authorizedDestinations: ${entry}`,
+        });
+      }
+      if (!startSet.has(n)) {
+        start.push(n);
+        startSet.add(n);
+      }
+    }
+  } else {
+    for (const e of existing) {
+      if (!startSet.has(e)) {
+        start.push(e);
+        startSet.add(e);
+      }
+    }
+  }
+
+  // Force-add each child's wallet (Q2 confirmed yes).
+  for (const child of opts.children) {
+    if (!child.walletAddress) continue;
+    const n = tryNormalizeWallet(child.walletAddress);
+    if (n && !startSet.has(n)) {
+      start.push(n);
+      startSet.add(n);
+    }
+  }
+
+  // Force-add caller's wallet (Q2 confirmed yes).
+  if (opts.callerWalletAddress) {
+    const n = tryNormalizeWallet(opts.callerWalletAddress);
+    if (n && !startSet.has(n)) {
+      start.push(n);
+      startSet.add(n);
+    }
+  }
+
+  const removed = computeRemovedDestinations(existing, start);
+  const added = start.filter((s) => !existingSet.has(s));
+
+  return { destinations: start, added, removed };
 }
 
 export interface ConfigureFamilyBootstrapResult {
@@ -111,6 +251,16 @@ async function bootstrapFamily(
   const memberId = randomUUID();
   const now = new Date().toISOString();
 
+  // Sprint 3.0.2 — build the destination allowlist from input + caller +
+  // child wallets. Invalid explicit input throws ConfigureValidationError,
+  // which bubbles to the MCP tool boundary as a structured error.
+  const allowlist = buildAuthorizedDestinations({
+    inputAuthorizedDestinations: input.authorizedDestinations,
+    existingAuthorizedDestinations: [],
+    callerWalletAddress: input.managerWalletAddress,
+    children: input.children,
+  });
+
   const familyConfig: FamilyConfig = {
     familyId,
     familyName: input.familyName,
@@ -119,6 +269,7 @@ async function bootstrapFamily(
     updatedAt: now,
     chainId: input.chainId,
     usdcAddress: input.usdcAddress,
+    authorizedDestinations: allowlist.destinations,
   };
 
   const keyManager = new FamilyKeyManager();
@@ -156,6 +307,24 @@ async function bootstrapFamily(
       ...(input.managerWalletAddress
         ? { walletAddress: input.managerWalletAddress.toLowerCase() }
         : {}),
+    },
+  });
+
+  // Sprint 3.0.2 — record the initial allowlist population. Bootstrap
+  // always emits this entry (even if the resolved list is empty, e.g. a
+  // family bootstrapped without any external child wallets and no
+  // managerWalletAddress) so the audit trail records the state.
+  await state.addAuditEntry(familyId, {
+    id: randomUUID(),
+    timestamp: now,
+    action: "authorized-destinations-updated",
+    actor: memberId,
+    details: {
+      tool: "configure-policy",
+      bootstrap: true,
+      added: allowlist.added,
+      removed: allowlist.removed,
+      destinations: allowlist.destinations,
     },
   });
 
@@ -203,6 +372,72 @@ async function updateExistingFamily(
   });
 
   const now = new Date().toISOString();
+
+  // Sprint 3.0.2 — resolve the caller's wallet from the Member record.
+  // CallerContext doesn't carry walletAddress directly; we look it up
+  // from the persisted Member so the force-add behaviour (Q2 confirmed)
+  // works whether the caller authenticated via setup-code or via SIWE.
+  const callerMember = await state.loadMember(familyId, caller.memberId);
+  const callerWalletAddress = callerMember?.walletAddress;
+
+  // Sprint 3.0.2 — build the new allowlist. Throws
+  // ConfigureValidationError({kind:"invalid-address"}) on malformed input.
+  const allowlist = buildAuthorizedDestinations({
+    inputAuthorizedDestinations: input.authorizedDestinations,
+    existingAuthorizedDestinations: existingConfig?.authorizedDestinations,
+    callerWalletAddress,
+    children: mergedChildren,
+  });
+
+  // Sprint 3.0.2 — Decision 3: block removals that would orphan unreleased,
+  // unconverted savings entries. Scans only the addresses actually being
+  // removed; emits one BlockedRemoval per affected (address, child) pair so
+  // the error surface can list ALL affected children (AL14), not just the
+  // first.
+  if (allowlist.removed.length > 0) {
+    const savings = await state.loadSavingsEntries(familyId);
+    // Scan against EXISTING children (not mergedChildren). Decision 3 asks:
+    // "Did a removed address belong to a child who has unreleased savings?"
+    // The savings entries are bound to childName; the existing config tells
+    // us which child historically owned each address. If a parent
+    // simultaneously updates a child's wallet AND removes the old address
+    // from the allowlist while unreleased savings exist, that is still a
+    // block — the entries would orphan without a clear release path.
+    const blocked = findBlockedRemovals(
+      allowlist.removed,
+      savings,
+      existingConfig?.children ?? []
+    );
+    if (blocked.length > 0) {
+      await state.addAuditEntry(familyId, {
+        id: randomUUID(),
+        timestamp: now,
+        action: "authorized-destinations-removal-blocked",
+        actor: caller.memberId,
+        details: {
+          tool: "configure-policy",
+          attemptedRemoval: allowlist.removed,
+          blocked,
+        },
+      });
+      const summary = blocked
+        .map(
+          (b) =>
+            `${b.childName} (${b.address}): ${b.entryIds.length} entries, ` +
+            `${(b.totalUsdcLocked / 10 ** USDC.DECIMALS).toFixed(2)} USDC locked`
+        )
+        .join("; ");
+      throw new ConfigureValidationError({
+        kind: "removal-blocked",
+        affected: blocked,
+        message:
+          `Cannot remove wallet(s) from authorizedDestinations while ` +
+          `children have unreleased savings: ${summary}. ` +
+          `Release or convert the savings first, then retry.`,
+      });
+    }
+  }
+
   const familyConfig: FamilyConfig = {
     familyId,
     familyName: input.familyName,
@@ -211,6 +446,7 @@ async function updateExistingFamily(
     updatedAt: now,
     chainId: input.chainId,
     usdcAddress: input.usdcAddress,
+    authorizedDestinations: allowlist.destinations,
   };
 
   const keyManager = new FamilyKeyManager();
@@ -235,6 +471,26 @@ async function updateExistingFamily(
       childCount: input.children.length,
     },
   });
+
+  // Sprint 3.0.2 — emit an `authorized-destinations-updated` entry whenever
+  // the resolved list differs from the existing one. Force-add behaviour
+  // (Q2) means a "no-op" update with a different caller wallet still
+  // mutates the list — and that mutation belongs in the audit trail.
+  if (allowlist.added.length > 0 || allowlist.removed.length > 0) {
+    await state.addAuditEntry(familyId, {
+      id: randomUUID(),
+      timestamp: now,
+      action: "authorized-destinations-updated",
+      actor: caller.memberId,
+      details: {
+        tool: "configure-policy",
+        bootstrap: false,
+        added: allowlist.added,
+        removed: allowlist.removed,
+        destinations: allowlist.destinations,
+      },
+    });
+  }
 
   return {
     ok: true,
@@ -271,7 +527,12 @@ export function validateChildren(
   children: Array<{
     name: string;
     categories: Array<{ name: string; pct: number }>;
-    learningGoals?: Array<{ topic: string; category: string }>;
+    learningGoals?: Array<{
+      topic: string;
+      category: string;
+      subgoals?: Array<{ topic: string }>;
+      deadline?: string;
+    }>;
   }>
 ): string | null {
   for (const child of children) {
@@ -305,7 +566,12 @@ export function normalizeChildren(
     weeklyBudgetUsd: number;
     categories: Array<{ name: string; pct: number }>;
     savingsPercent: number;
-    learningGoals?: Array<{ topic: string; category: string }>;
+    learningGoals?: Array<{
+      topic: string;
+      category: string;
+      subgoals?: Array<{ topic: string }>;
+      deadline?: string;
+    }>;
   }>
 ): ChildConfig[] {
   return children.map((child) => {
@@ -326,6 +592,10 @@ export function normalizeChildren(
         topic: g.topic,
         category: g.category,
         completed: false,
+        // Sprint 3.0.3: pass through optional subgoals + deadline. Subgoals
+        // start with completed=false; deadline is preserved as-is (ISO).
+        subgoals: g.subgoals?.map((sg) => ({ topic: sg.topic, completed: false })),
+        deadline: g.deadline,
       })),
     };
   });

@@ -19,6 +19,7 @@ import { registerVerifyAchievementTool } from "../src/tools/verify-achievement.j
 import { registerDistributeAllowanceTool } from "../src/tools/distribute-allowance.js";
 import { registerCheckProgressTool } from "../src/tools/check-progress.js";
 import { registerCheckSavingsTool } from "../src/tools/check-savings.js";
+import { registerCheckGoalsTool } from "../src/tools/check-goals.js";
 import { registerInviteMemberTool } from "../src/tools/invite-member.js";
 import { registerAcceptInviteTool } from "../src/tools/accept-invite.js";
 import { registerManageMembersTool } from "../src/tools/manage-members.js";
@@ -71,6 +72,7 @@ function createMcpServer(): McpServer {
   registerVerifyAchievementTool(server);
   registerDistributeAllowanceTool(server);
   registerCheckProgressTool(server);
+  registerCheckGoalsTool(server);
   registerCheckSavingsTool(server);
   registerInviteMemberTool(server);
   registerAcceptInviteTool(server);

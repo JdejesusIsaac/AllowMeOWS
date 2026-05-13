@@ -38,7 +38,7 @@ describe("H1: Health check endpoint", () => {
 });
 
 describe("H2: MCP tool registration", () => {
-  it("H2: All 11 tools are defined in ROLE_TOOL_ACCESS", () => {
+  it("H2: All 12 tools are defined in ROLE_TOOL_ACCESS", () => {
     // Verify the tool names that should be registered on the MCP server
     const expectedTools = [
       "configure-policy",
@@ -46,6 +46,7 @@ describe("H2: MCP tool registration", () => {
       "distribute-allowance",
       "check-progress",
       "check-savings",
+      "check-goals",
       "invite-member",
       "accept-invite",
       "manage-members",
@@ -63,8 +64,9 @@ describe("H2: MCP tool registration", () => {
       expect(hasAccess, `Tool "${tool}" should exist in ROLE_TOOL_ACCESS`).toBe(true);
     }
 
-    // Verify count: manager has 12 tools (11 + convert-savings from Sprint 2.5)
-    expect(managerTools.length).toBe(12);
+    // Manager: 12 in expectedTools + convert-savings (Sprint 2.5) = 13.
+    // Sprint 3.0.3 added check-goals to the Manager allowlist.
+    expect(managerTools.length).toBe(13);
   });
 });
 
@@ -83,6 +85,7 @@ describe("H3-H5: x402 pricing configuration", () => {
     "verify-achievement",
     "check-progress",
     "check-savings",
+    "check-goals",
     "release-savings",
     "connect-fitbit",
   ];

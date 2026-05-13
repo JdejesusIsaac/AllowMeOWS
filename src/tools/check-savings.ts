@@ -106,6 +106,38 @@ export function registerCheckSavingsTool(server: McpServer): void {
           positions.PAXG = paxgPosition;
         }
 
+        // Empty-state and populated-state messages are kid-facing — lead with
+        // the child's name, end with a concrete next action when relevant,
+        // avoid system-shaped phrasing like "0 entries" or "none scheduled".
+        const hasAnyActivity = locked.length > 0 || released.length > 0;
+        const hasReady = readyToRelease.length > 0;
+        const nextReleaseDays = upcoming.length > 0 ? upcoming[0].daysRemaining : null;
+
+        let message: string;
+        if (!hasAnyActivity) {
+          message =
+            `You haven't saved anything yet, ${targetChild}! As you earn allowance, ` +
+            `a portion gets set aside in your savings vault and grows with your streak. ` +
+            `Complete an achievement to start building it up.`;
+        } else if (hasReady) {
+          const entriesWord = readyToRelease.length === 1 ? "entry is" : "entries are";
+          message =
+            `Good news, ${targetChild} — ${readyToRelease.length} savings ${entriesWord} ` +
+            `ready to release! Ask your parent to run release-savings to send the matured ` +
+            `funds to your wallet.`;
+        } else if (nextReleaseDays !== null) {
+          const dayWord = nextReleaseDays === 1 ? "day" : "days";
+          message =
+            `${targetChild}, you have $${(totalUsdcLocked / 10 ** USDC.DECIMALS).toFixed(2)} ` +
+            `locked in savings. Your next release unlocks in ${nextReleaseDays} ${dayWord}. ` +
+            `Keep your streak going to grow the multiplier before then.`;
+        } else {
+          message =
+            `${targetChild}, you have $${(totalUsdcLocked / 10 ** USDC.DECIMALS).toFixed(2)} ` +
+            `locked in savings. Nothing's scheduled to unlock yet — keep earning to start ` +
+            `the 90-day lock clock.`;
+        }
+
         return {
           content: [{
             type: "text" as const,
@@ -118,10 +150,7 @@ export function registerCheckSavingsTool(server: McpServer): void {
               lockedEntries: locked.length,
               readyToRelease: readyToRelease.length,
               currentMultiplier: streak?.multiplier ?? 1.0,
-              message:
-                readyToRelease.length > 0
-                  ? `${readyToRelease.length} savings entries are ready to release!`
-                  : `${locked.length} entries locked. Next release: ${upcoming.length > 0 ? `${upcoming[0].daysRemaining} days` : "none scheduled"}.`,
+              message,
             }),
           }],
         };

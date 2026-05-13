@@ -560,6 +560,14 @@ Successfully tested on Base Sepolia testnet (Apr 2, 2026):
 - [x] **Cross-family Manager support** — a single wallet can legitimately hold Manager in Family A AND Co-parent in Family B; `/api/auth/verify` surfaces all memberships; rotation on one never affects the others.
 - [x] **Priority 0 session-token access control** — short-lived Bearer tokens from the verify page can authenticate MCP tool calls without the setup-code detour.
 
+### Sprint 3.0.2 (Done)
+- [x] **Destination allowlist** — `FamilyConfig.authorizedDestinations` constrains every USDC outflow on the child-wallet leg of `distribute-allowance` and `release-savings`. Internal vaults (savings, gift fund) are exempt by construction. A compromised Manager session can no longer drain treasury to an attacker address: the allowlist check fires before `transferUSDC`, the rejection records an audit entry (`transfer-rejected-by-allowlist`), and the on-chain transfer is never attempted.
+- [x] **Auto-populated + force-added** — `configure-policy` auto-populates the allowlist on bootstrap (admin wallet + every child's `walletAddress`) and force-adds the caller's wallet + every child's wallet on every update. Your wallet and each child's wallet are *always* on the allowlist — explicitly omitting them in an update does not remove them. Prevents the parent from locking themselves out and prevents an attacker from "swapping" an address via configure-policy.
+- [x] **Block-on-removal protection (Decision 3)** — `configure-policy` rejects any update that would remove an address from the allowlist when the corresponding child has unreleased and unconverted savings entries. The error lists *every* affected child (not just the first) so the parent knows exactly which savings to release or convert before retrying.
+- [x] **Four new audit-log actions** — `transfer-rejected-by-allowlist`, `transfer-rejected-by-policy-enforcer`, `authorized-destinations-updated`, `authorized-destinations-removal-blocked`. Every mutation and every rejection leaves a record.
+- [x] **Backward-compatible schema** — pre-3.0.2 family configs load cleanly via Zod default; the first `configure-policy` call after deploy lazy-migrates the allowlist field. No data migration script required.
+- [x] **Forward-compatible for Sprint 4.0** — `authorizedDestinations` is the exact data shape a Coinbase Smart Wallet spend permission consumes as its recipient constraint. When the enforcement layer migrates from the app to the chain in Sprint 4.0, the data model survives unchanged.
+
 ### Sprint 4.0 (Next)
 - [ ] **Postgres migration** — replace JSON file store; `listMembershipsByWallet` becomes O(1) on `wallet_address` index.
 - [ ] **Paymaster + Sybil defense** — Coinbase Verifications integration so Learner wallets get gasless transactions without opening a DoS vector.

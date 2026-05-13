@@ -104,8 +104,47 @@ export function registerCheckProgressTool(server: McpServer): void {
           const completedGoals = goals.filter((g) => g.completed).length;
           const nextGoal = goals.find((g) => !g.completed)?.topic ?? null;
 
+          // Build a friendly summary string per child. Empty-state, low-streak,
+          // and mid-week states each get distinct framing instead of bare zeros.
+          const hasEarned = totalEarned > 0;
+          const hasPending = pending > 0;
+          const streakDays = streak?.currentStreak ?? 0;
+          const streakMultiplier = streak?.multiplier ?? 1.0;
+          const daysToNextStreakLevel = streakDays > 0 ? 7 - (streakDays % 7) : 7;
+          const nextMultiplier = Math.min(2.0, streakMultiplier + 0.1);
+
+          let summary: string;
+          if (!hasEarned && childAchievements.length === 0) {
+            summary =
+              `Fresh start for ${child.name} this week! No achievements logged yet. ` +
+              `Try saying "${child.name} read for 30 minutes today, score 85, reading" ` +
+              `to log your first one and start a streak.`;
+          } else if (!hasEarned && thisWeek.length === 0 && childAchievements.length > 0) {
+            summary =
+              `${child.name} hasn't logged anything this week yet. Your overall streak ` +
+              `is ${streakDays} day${streakDays === 1 ? "" : "s"} at ${streakMultiplier}x — ` +
+              `complete an achievement today to keep it going.`;
+          } else if (hasPending && !hasEarned) {
+            summary =
+              `${child.name} has $${(pending / 10 ** USDC.DECIMALS).toFixed(2)} pending ` +
+              `distribution. Ask your parent to run distribute-allowance when ready.`;
+          } else {
+            const streakNote = streakDays > 0 && streakMultiplier < 2.0
+              ? ` ${daysToNextStreakLevel} more day${daysToNextStreakLevel === 1 ? "" : "s"} ` +
+                `at this pace and your multiplier goes to ${nextMultiplier}x.`
+              : streakMultiplier >= 2.0
+                ? ` You're at the max 2x streak multiplier — keep it going!`
+                : "";
+            summary =
+              `${child.name} this week: $${(totalEarned / 10 ** USDC.DECIMALS).toFixed(2)} ` +
+              `earned across ${thisWeek.length} achievement${thisWeek.length === 1 ? "" : "s"}. ` +
+              `Streak: ${streakDays} day${streakDays === 1 ? "" : "s"} (${streakMultiplier}x).` +
+              streakNote;
+          }
+
           reports.push({
             childName: child.name,
+            summary,
             weeklyBudgetUsd: (child.weeklyBudget / 10 ** USDC.DECIMALS).toFixed(2),
             totalEarnedUsd: (totalEarned / 10 ** USDC.DECIMALS).toFixed(2),
             distributedUsd: (distributed / 10 ** USDC.DECIMALS).toFixed(2),

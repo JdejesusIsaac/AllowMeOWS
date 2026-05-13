@@ -15,6 +15,7 @@ import type {
   SavingsEntryInput,
   AuditEntry,
 } from "../schemas.js";
+import { FamilyConfigSchema } from "../schemas.js";
 import { STREAK } from "../constants.js";
 
 // Resolve project root from this file's location (src/engine/state.ts → ../../)
@@ -151,7 +152,11 @@ export class StateManager {
     if (migrated) {
       await this.saveFamilyConfig(familyId, config);
     }
-    return config;
+    // Sprint 3.0.2 — run the config through Zod parse so schema defaults
+    // apply on load. Pre-3.0.2 configs missing `authorizedDestinations`
+    // load with `[]`, which the subsequent `configure-policy` call
+    // auto-populates (AL15 / migration test).
+    return FamilyConfigSchema.parse(config);
   }
 
   async saveFamilyConfig(familyId: string, config: FamilyConfig): Promise<void> {

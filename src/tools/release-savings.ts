@@ -5,22 +5,21 @@ import { StateManager, getFamilyVaultPath } from "../engine/state.js";
 import { WalletDistributor } from "../wallet/distributor.js";
 import { FamilyKeyManager } from "../keys/family-keys.js";
 import { USDC, WALLET_NAMES } from "../constants.js";
+import { checkDestinationAllowlist } from "../core/allowlist.js";
 import {
   withAccessControl,
   buildNoIdentityResponse,
   rbacFields,
+  type CallerContext,
+  type ToolResponse,
 } from "../middleware/access-control.js";
 
-export function registerReleaseSavingsTool(server: McpServer): void {
-  server.tool(
-    "release-savings",
-    "Release matured savings entries: finds expired locks, applies streak multiplier, transfers to child wallet, and marks released.",
-    {
-      childName: z.string().optional().describe("Release for a specific child, or all children if omitted"),
-      dryRun: z.boolean().default(false).describe("Preview release without sending transactions"),
-      ...rbacFields,
-    },
-    withAccessControl("release-savings", async (args, caller) => {
+// Sprint 3.0.2 — extracted core handler so integration tests (AL6, AL7) can
+// invoke it directly with a mocked WalletDistributor.
+async function releaseSavingsCore(
+  args: Record<string, unknown>,
+  caller: CallerContext | null
+): Promise<ToolResponse> {
       if (!caller) return buildNoIdentityResponse("release-savings");
       const requestedChild = args.childName as string | undefined;
       const dryRun = args.dryRun as boolean;
@@ -92,6 +91,11 @@ export function registerReleaseSavingsTool(server: McpServer): void {
           multipliedAmountUsd: string;
           txHash?: string;
           paxgReleased?: { entries: number; totalOz: string; message: string };
+          // Sprint 3.0.2 — set when the destination allowlist rejects this
+          // child's release. When set, the entries remain locked
+          // (released:false) and no on-chain transfer is attempted.
+          rejectedReason?: string;
+          attemptedDestination?: string;
         }> = [];
 
         for (const [childName, entries] of byChild) {
@@ -114,6 +118,8 @@ export function registerReleaseSavingsTool(server: McpServer): void {
           }
 
           let txHash: string | undefined;
+          let rejectedReason: string | undefined;
+          let attemptedDestination: string | undefined;
 
           if (!dryRun) {
             if (!passphrase) {
@@ -126,6 +132,57 @@ export function registerReleaseSavingsTool(server: McpServer): void {
                   }),
                 }],
               };
+            }
+
+            // Sprint 3.0.2 — Destination allowlist check on the child-wallet
+            // leg. Decision 2: the savings-vault-as-source is exempt by
+            // construction (fromWallet=SAVINGS_VAULT below); we constrain
+            // only the destination. The OWS-internal-wallet path
+            // (childConfig.walletAddress === undefined) is exempt — that
+            // destination lives in the family's own OWS vault, not a
+            // user-facing address that can be tampered with.
+            //
+            // On rejection: write audit entry with affectedEntryIds for the
+            // parent's debugging trail, skip this child entirely (entries
+            // remain `released: false`, no on-chain transfer, no PAXG
+            // ledger update either — see "Mark PAXG entries as released"
+            // below, which is also guarded by this rejection).
+            if (totalMultiplied > 0 && childConfig.walletAddress) {
+              const check = checkDestinationAllowlist(
+                childConfig.walletAddress,
+                config.authorizedDestinations
+              );
+              if (!check.allowed) {
+                rejectedReason = check.reason;
+                attemptedDestination = childConfig.walletAddress;
+                const affectedEntryIds = [
+                  ...usdcEntries.map((e) => e.id),
+                  ...paxgEntries.map((e) => e.id),
+                ];
+                await state.addAuditEntry(familyId, {
+                  id: randomUUID(),
+                  timestamp: new Date().toISOString(),
+                  action: "transfer-rejected-by-allowlist",
+                  actor: caller.memberId,
+                  details: {
+                    tool: "release-savings",
+                    childName,
+                    attemptedDestination: childConfig.walletAddress,
+                    reason: check.reason,
+                    affectedEntryIds,
+                    note: "savings entries remain locked",
+                  },
+                });
+                results.push({
+                  childName,
+                  entriesReleased: 0,
+                  baseAmountUsd: (totalBase / 10 ** USDC.DECIMALS).toFixed(2),
+                  multipliedAmountUsd: (totalMultiplied / 10 ** USDC.DECIMALS).toFixed(2),
+                  rejectedReason,
+                  attemptedDestination,
+                });
+                continue;
+              }
             }
 
             // Transfer USDC from savings vault to child wallet
@@ -235,6 +292,23 @@ export function registerReleaseSavingsTool(server: McpServer): void {
           }],
         };
       }
-    })
+}
+
+// Sprint 3.0.2 — wrapped handler exported for integration tests (AL6, AL7).
+export const releaseSavingsHandler = withAccessControl(
+  "release-savings",
+  releaseSavingsCore
+);
+
+export function registerReleaseSavingsTool(server: McpServer): void {
+  server.tool(
+    "release-savings",
+    "Release matured savings entries: finds expired locks, applies streak multiplier, transfers to child wallet, and marks released.",
+    {
+      childName: z.string().optional().describe("Release for a specific child, or all children if omitted"),
+      dryRun: z.boolean().default(false).describe("Preview release without sending transactions"),
+      ...rbacFields,
+    },
+    releaseSavingsHandler
   );
 }

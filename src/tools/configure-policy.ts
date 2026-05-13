@@ -5,6 +5,7 @@ import {
   configureFamilyCore,
   validateChildren,
   normalizeChildren,
+  ConfigureValidationError,
   type ConfigureFamilyResult,
 } from "../core/configure-family.js";
 import {
@@ -74,6 +75,29 @@ export function registerConfigurePolicyTool(server: McpServer): void {
                   .describe(
                     "Which configured category this goal counts toward (e.g. 'education')"
                   ),
+                // Sprint 3.0.3: optional mastery sub-steps and deadline.
+                subgoals: z
+                  .array(
+                    z.object({
+                      topic: z
+                        .string()
+                        .min(1)
+                        .max(200)
+                        .describe("Sub-step description (e.g. 'equivalent fractions')"),
+                    })
+                  )
+                  .max(20)
+                  .optional()
+                  .describe(
+                    "Optional ordered sub-steps for mastery-driven progressions (max 20)"
+                  ),
+                deadline: z
+                  .string()
+                  .datetime()
+                  .optional()
+                  .describe(
+                    "Optional ISO-8601 deadline (e.g. '2026-08-15T00:00:00.000Z'). Surfaced as urgency in check-goals."
+                  ),
               })
             )
             .max(20)
@@ -87,6 +111,14 @@ export function registerConfigurePolicyTool(server: McpServer): void {
         .boolean()
         .default(true)
         .describe("Use Base Sepolia testnet (recommended for setup)"),
+      authorizedDestinations: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Sprint 3.0.2: optional destination allowlist (EVM addresses). " +
+            "If omitted, the existing list is preserved on update or auto-populated on bootstrap. " +
+            "Your wallet and each child's wallet are always force-added."
+        ),
       ...rbacFields,
     },
     withAccessControl("configure-policy", async (args, caller) => {
@@ -111,12 +143,29 @@ export function registerConfigurePolicyTool(server: McpServer): void {
             chainId,
             usdcAddress,
             useTestnet,
+            authorizedDestinations: args.authorizedDestinations as
+              | string[]
+              | undefined,
           },
           caller
         );
 
         return jsonResponse(toMcpPayload(result, useTestnet));
       } catch (error) {
+        // Sprint 3.0.2 — surface destination-allowlist validation errors
+        // as structured payloads so the conversational surface can list
+        // ALL affected children (AL14) rather than a flat error string.
+        if (error instanceof ConfigureValidationError) {
+          return jsonResponse({
+            success: false,
+            error: error.message,
+            kind: error.kind,
+            ...(error.affected ? { affected: error.affected } : {}),
+            ...(error.invalidValue !== undefined
+              ? { invalidValue: error.invalidValue }
+              : {}),
+          });
+        }
         return jsonResponse({
           success: false,
           error: error instanceof Error ? error.message : "Unknown error",

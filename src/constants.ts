@@ -63,6 +63,7 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     "distribute-allowance",
     "check-progress",
     "check-savings",
+    "check-goals",
     "invite-member",
     "accept-invite",
     "manage-members",
@@ -75,11 +76,15 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     "verify-achievement",
     "check-progress",
     "check-savings",
+    "check-goals",
     "accept-invite",
   ],
   [ROLES.FAMILY]: [
     "check-progress",
-    "contribute-gift",
+    "check-goals",
+    // Sprint 3.0.2: `contribute-gift` removed — the tool is not registered
+    // in this codebase (deferred per Decision 5). Leaving the stale RBAC
+    // entry confused security review.
     "accept-invite",
   ],
   [ROLES.ADVISOR]: [
@@ -89,6 +94,7 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
   [ROLES.LEARNER]: [
     "check-progress",
     "check-savings",
+    "check-goals",
     "verify-achievement",
     "accept-invite",
   ],
