@@ -122,4 +122,61 @@ describe("GET /verify (W2.3)", () => {
       await new Promise<void>((r) => tmp.close(() => r()));
     }
   });
+
+  // Sprint 3.0.5 VP4 — locks the verify-page HTML structural markers added
+  // by W3 (form fields), W4 (serializer), W5 (validation), and W6 (allowlist
+  // transparency panel). Each `data-*` attribute and the panel placeholder
+  // is a DOM contract the client-side script relies on; removing one
+  // silently breaks the bootstrap UX. Maps to contract C8 / C10.
+  it("VP4: Sprint 3.0.5 HTML markers — wallet input, goals section, subgoals, caps, allowlist panel", async () => {
+    const res = await fetch(`${baseUrl}/verify`);
+    expect(res.status).toBe(200);
+    const body = await res.text();
+
+    // W3 — per-child wallet input + inline error span.
+    expect(body, "missing data-field=\"walletAddress\" input").toContain(
+      'data-field="walletAddress"'
+    );
+    expect(body, "missing data-wallet-error placeholder").toContain(
+      "data-wallet-error"
+    );
+
+    // W3 — learning-goals scaffolding (container + add button + goal/subgoal fields).
+    expect(body, "missing data-goals container").toContain("data-goals");
+    expect(body, "missing data-add-goal button").toContain("data-add-goal");
+    expect(body, "missing data-goal-field hooks").toContain("data-goal-field");
+    expect(body, "missing data-subgoals container").toContain("data-subgoals");
+    expect(body, "missing data-add-subgoal button").toContain("data-add-subgoal");
+    expect(body, "missing data-subgoal-field hooks").toContain("data-subgoal-field");
+    expect(body, "missing data-remove-goal button").toContain("data-remove-goal");
+    expect(body, "missing data-remove-subgoal button").toContain(
+      "data-remove-subgoal"
+    );
+    // W5.2 — goal-topic inline error placeholder.
+    expect(body, "missing data-goal-topic-error placeholder").toContain(
+      "data-goal-topic-error"
+    );
+
+    // W3 — cap constants are inlined in the served HTML so the cap-button
+    // disabled label "Maximum 5 goals reached" is reachable in code.
+    expect(body, "missing MAX_GOALS_PER_CHILD constant").toContain(
+      "MAX_GOALS_PER_CHILD"
+    );
+    expect(body, "missing MAX_SUBGOALS_PER_GOAL constant").toContain(
+      "MAX_SUBGOALS_PER_GOAL"
+    );
+
+    // W6 — allowlist transparency panel placeholder.
+    expect(body, "missing #success-allowlist placeholder").toContain(
+      'id="success-allowlist"'
+    );
+
+    // W4 — submit serializer + W5.2 hooks.
+    expect(body, "missing buildSubmitPayload helper").toContain(
+      "buildSubmitPayload"
+    );
+    expect(body, "missing showGoalTopicErrors helper").toContain(
+      "showGoalTopicErrors"
+    );
+  });
 });

@@ -91,11 +91,24 @@ const configureFamilyBodySchema = z.object({
           .min(1)
           .max(10),
         savingsPercent: z.number().min(0).max(100).default(DEFAULT_SAVINGS_PERCENT),
+        // Sprint 3.0.5 — accept the full LearningGoalSchema shape so the
+        // verify-page bootstrap form can capture subgoals + deadlines that
+        // src/core/configure-family.ts:normalizeChildren already passes
+        // through to persistence. Pre-3.0.5 payloads (no subgoals, no
+        // deadline) remain valid because both fields are `.optional()`.
+        // Both caps (subgoals.max(20), deadline as ISO datetime) mirror
+        // LearningGoalSchema in src/schemas.ts so the HTTP boundary is
+        // strictly equivalent, not laxer, than the persistence layer.
         learningGoals: z
           .array(
             z.object({
               topic: z.string().min(1).max(200),
               category: z.string().min(1),
+              subgoals: z
+                .array(z.object({ topic: z.string().min(1).max(200) }))
+                .max(20)
+                .optional(),
+              deadline: z.string().datetime().optional(),
             })
           )
           .max(20)
@@ -332,6 +345,8 @@ export function buildVerifyRoutes(): Router {
       memberId: result.memberId,
       familyName: result.familyName,
       children: result.children,
+      // Sprint 3.0.5 — verify-page transparency panel data source.
+      authorizedDestinations: result.authorizedDestinations,
       mcpUrl: result.mcpUrl,
       setupCode: result.setupCode,
       sessionToken: newSession,

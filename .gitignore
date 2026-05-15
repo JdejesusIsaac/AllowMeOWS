@@ -4,8 +4,7 @@ data/
 *.tmp.*
 .env
 .env.local
+.cursor/mcp.json
+.cursor/state/
 .windsurf
-evaluation/
-implementation/
-AGENTS.md
 

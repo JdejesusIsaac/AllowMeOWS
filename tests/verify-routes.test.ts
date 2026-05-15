@@ -190,6 +190,362 @@ describe("HTTP verify-routes (W4.4)", () => {
     expect(body.error).toBe("missing-or-invalid-session-token");
   });
 
+  // Sprint 3.0.5 HE5c — backward-compat regression bar (contract C1, DEL8).
+  // Locks the central correctness constraint of Sprint 3.0.5: the *old* form
+  // payload (no walletAddress, no learningGoals on any child) must continue
+  // to bootstrap a valid family with no schema-default surprises. Asserts on
+  // the persisted FamilyConfig file (per evaluator E-PB1: API 200 is necessary
+  // but not sufficient — disk shape is the truth), and on the Sprint 3.0.2
+  // auto-populate behaviour (`authorizedDestinations` contains the manager
+  // wallet lowercased). The body-level `authorizedDestinations` assertion
+  // becomes green once W2 (DEL5/DEL6) lands the response field.
+  it("HE5c: backward-compat — pre-3.0.5 form payload still bootstraps cleanly", async () => {
+    const { message, signature } = await siweExchange(account);
+    const verifyRes = await fetch(`${baseUrl}/api/auth/verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message, signature }),
+    });
+    const verifyBody = await verifyRes.json();
+    expect(verifyBody.requiresFamilyCreation).toBe(true);
+    const managerWallet = account.address.toLowerCase();
+    expect(verifyBody.walletAddress).toBe(managerWallet);
+
+    const cfgRes = await fetch(`${baseUrl}/api/configure-family`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${verifyBody.sessionToken}`,
+      },
+      // *Exact* shape the pre-3.0.5 form posted — no walletAddress, no
+      // learningGoals, no subgoals, no deadline. If this stops being accepted
+      // by `/api/configure-family`, Sprint 3.0.5 has broken its central
+      // promise (DEL3 + contract Scope "out of scope").
+      body: JSON.stringify({
+        familyName: "Backward Compat Family",
+        useTestnet: true,
+        children: [
+          {
+            name: "Sofia",
+            weeklyBudgetUsd: 15,
+            categories: [
+              { name: "reading", pct: 40 },
+              { name: "movement", pct: 35 },
+              { name: "creativity", pct: 25 },
+            ],
+            savingsPercent: 20,
+          },
+        ],
+      }),
+    });
+
+    expect(cfgRes.status).toBe(200);
+    const body = await cfgRes.json();
+    expect(body.ok).toBe(true);
+    expect(typeof body.familyId).toBe("string");
+    expect(typeof body.memberId).toBe("string");
+    expect(typeof body.setupCode).toBe("string");
+    expect(body.mcpUrl).toMatch(/\?setup=SETUP-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
+    expect(typeof body.sessionToken).toBe("string");
+
+    // E-PB1: the persisted shape is the truth. Load via StateManager
+    // (parses through FamilyConfigSchema so defaults apply on read per
+    // Sprint 3.0.2 lazy-migration enabler) and assert against it.
+    const { StateManager } = await import("../src/engine/state.js");
+    const state = new StateManager();
+    const persisted = await state.loadFamilyConfig(body.familyId);
+    expect(persisted).not.toBeNull();
+    if (!persisted) throw new Error("loadFamilyConfig returned null"); // narrowing
+
+    expect(persisted.children.length).toBe(1);
+    const sofia = persisted.children[0];
+    expect(sofia.name).toBe("Sofia");
+    // Backward-compat shape — no opt-in 3.0.5 fields persisted.
+    expect(sofia.walletAddress).toBeUndefined();
+    expect(sofia.learningGoals).toBeUndefined();
+    // Sprint 3.0.2 auto-populate (regardless of 3.0.5 changes) — manager
+    // wallet from the SIWE session lands on the family's allowlist.
+    expect(persisted.authorizedDestinations).toContain(managerWallet);
+
+    // W2 forward bar (DEL5/DEL6): the HTTP response carries
+    // `authorizedDestinations` so the verify-page transparency panel can
+    // render it. Currently undefined; becomes the manager-wallet-only array
+    // after W2 ships. Until then, this assertion is the spec for W2.
+    expect(Array.isArray(body.authorizedDestinations)).toBe(true);
+    expect(body.authorizedDestinations).toContain(managerWallet);
+  });
+
+  // Sprint 3.0.5 HE5d — rich-payload persistence (contract C2/C3/C5, DEL9).
+  // The mirror of HE5c: post the *new* form's payload with walletAddress,
+  // learningGoals carrying subgoals + an ISO deadline, and confirm the
+  // backend persists everything correctly AND the response carries the
+  // BYO-wallet address back to the form via `authorizedDestinations` so
+  // the transparency panel can render it. This test was the silent-data-
+  // loss failure-mode shield called out by evaluator E-PB5.
+  it("HE5d: rich payload — walletAddress + subgoals + deadline persist; allowlist includes child wallet", async () => {
+    const { message, signature } = await siweExchange(account);
+    const verifyRes = await fetch(`${baseUrl}/api/auth/verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message, signature }),
+    });
+    const verifyBody = await verifyRes.json();
+    const managerWallet = account.address.toLowerCase();
+    // Vitalik's address — EIP-55 checksummed input; tryNormalizeWallet
+    // lower-cases on persistence per the canonical Sprint 3.0 v4 W3.4
+    // helper. Using a checksummed input also exercises the case-
+    // insensitive comparison path the allowlist relies on (Sprint 3.0.2
+    // AL-CORE5).
+    const childWalletInput = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
+    const childWalletLower = childWalletInput.toLowerCase();
+    const deadlineIso = "2026-08-15T00:00:00.000Z";
+
+    const cfgRes = await fetch(`${baseUrl}/api/configure-family`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${verifyBody.sessionToken}`,
+      },
+      body: JSON.stringify({
+        familyName: "Rich Payload Family",
+        useTestnet: true,
+        children: [
+          {
+            name: "Aiden",
+            walletAddress: childWalletInput,
+            weeklyBudgetUsd: 20,
+            categories: [
+              { name: "reading", pct: 50 },
+              { name: "movement", pct: 50 },
+            ],
+            savingsPercent: 25,
+            learningGoals: [
+              {
+                topic: "Catch up to grade-level math",
+                category: "reading",
+                subgoals: [
+                  { topic: "Fractions" },
+                  { topic: "Decimals" },
+                ],
+                deadline: deadlineIso,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    expect(cfgRes.status).toBe(200);
+    const body = await cfgRes.json();
+    expect(body.ok).toBe(true);
+
+    // C3 — Sprint 3.0.2 allowlist auto-feed: BYO child wallet lands on the
+    // family's `authorizedDestinations` after `buildAuthorizedDestinations`
+    // resolves. Manager wallet is force-added in the same pass.
+    expect(Array.isArray(body.authorizedDestinations)).toBe(true);
+    expect(body.authorizedDestinations).toContain(managerWallet);
+    expect(body.authorizedDestinations).toContain(childWalletLower);
+
+    // C2/C5 — disk-shape is the truth. Load via StateManager and assert
+    // the persisted shape matches what the form posted (with the
+    // expected Sprint 3.0.4 `subgoal.completed = false` default applied).
+    const { StateManager } = await import("../src/engine/state.js");
+    const state = new StateManager();
+    const persisted = await state.loadFamilyConfig(body.familyId);
+    expect(persisted).not.toBeNull();
+    if (!persisted) throw new Error("loadFamilyConfig returned null");
+
+    const aiden = persisted.children[0];
+    expect(aiden.name).toBe("Aiden");
+    expect(aiden.walletAddress).toBe(childWalletInput); // raw input — server-side `tryNormalizeWallet` canonicalises in allowlist only
+    expect(Array.isArray(aiden.learningGoals)).toBe(true);
+    expect(aiden.learningGoals?.length).toBe(1);
+
+    const goal = aiden.learningGoals?.[0];
+    expect(goal).toBeDefined();
+    if (!goal) throw new Error("expected learning goal to be present");
+    expect(goal.topic).toBe("Catch up to grade-level math");
+    expect(goal.category).toBe("reading");
+    // Sprint 3.0.4 — subgoals persist with `completed: false` default
+    // applied by `normalizeChildren` (see src/core/configure-family.ts).
+    expect(goal.subgoals?.length).toBe(2);
+    expect(goal.subgoals?.[0]?.topic).toBe("Fractions");
+    expect(goal.subgoals?.[0]?.completed).toBe(false);
+    expect(goal.subgoals?.[1]?.topic).toBe("Decimals");
+    expect(goal.subgoals?.[1]?.completed).toBe(false);
+    // C5 — deadline ISO datetime round-trips verbatim.
+    expect(goal.deadline).toBe(deadlineIso);
+
+    // Persisted allowlist agrees with the response. The disk file is the
+    // ultimate authority; the response is a convenience surface.
+    expect(persisted.authorizedDestinations).toContain(managerWallet);
+    expect(persisted.authorizedDestinations).toContain(childWalletLower);
+  });
+
+  // Sprint 3.0.5 HE5e — multi-child mixed-wallet path. One child supplies
+  // a BYO wallet (goes on the allowlist); the second omits it (OWS-managed,
+  // not on the allowlist). Locks contract C3 + C4 as a single integration.
+  it("HE5e: multi-child mix — BYO + OWS-managed coexist; allowlist contains only the BYO wallet", async () => {
+    const { message, signature } = await siweExchange(account);
+    const verifyRes = await fetch(`${baseUrl}/api/auth/verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message, signature }),
+    });
+    const verifyBody = await verifyRes.json();
+    const managerWallet = account.address.toLowerCase();
+    const byoWallet = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045".toLowerCase();
+
+    const cfgRes = await fetch(`${baseUrl}/api/configure-family`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${verifyBody.sessionToken}`,
+      },
+      body: JSON.stringify({
+        familyName: "Mixed Wallet Family",
+        useTestnet: true,
+        children: [
+          {
+            name: "Aiden",
+            walletAddress: byoWallet,
+            weeklyBudgetUsd: 15,
+            categories: [{ name: "reading", pct: 100 }],
+            savingsPercent: 20,
+          },
+          {
+            name: "Sofia",
+            weeklyBudgetUsd: 10,
+            categories: [{ name: "reading", pct: 100 }],
+            savingsPercent: 30,
+          },
+        ],
+      }),
+    });
+    expect(cfgRes.status).toBe(200);
+    const body = await cfgRes.json();
+    expect(body.ok).toBe(true);
+    expect(body.authorizedDestinations).toContain(managerWallet);
+    expect(body.authorizedDestinations).toContain(byoWallet);
+
+    const { StateManager } = await import("../src/engine/state.js");
+    const state = new StateManager();
+    const persisted = await state.loadFamilyConfig(body.familyId);
+    if (!persisted) throw new Error("loadFamilyConfig returned null");
+    expect(persisted.children.length).toBe(2);
+    const aiden = persisted.children.find((c) => c.name === "Aiden");
+    const sofia = persisted.children.find((c) => c.name === "Sofia");
+    expect(aiden?.walletAddress).toBe(byoWallet);
+    expect(sofia?.walletAddress).toBeUndefined(); // OWS-managed path
+  });
+
+  // Sprint 3.0.5 HE5f — a goal with a deadline but no subgoals must persist.
+  // Locks Sprint 3.0.4's deadline-without-subgoals independence (each
+  // optional field stands alone).
+  it("HE5f: deadline without subgoals — goal persists with deadline only", async () => {
+    const { message, signature } = await siweExchange(account);
+    const verifyRes = await fetch(`${baseUrl}/api/auth/verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message, signature }),
+    });
+    const verifyBody = await verifyRes.json();
+    const deadlineIso = "2026-12-31T00:00:00.000Z";
+
+    const cfgRes = await fetch(`${baseUrl}/api/configure-family`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${verifyBody.sessionToken}`,
+      },
+      body: JSON.stringify({
+        familyName: "Deadline Only Family",
+        useTestnet: true,
+        children: [
+          {
+            name: "Sofia",
+            weeklyBudgetUsd: 10,
+            categories: [{ name: "reading", pct: 100 }],
+            savingsPercent: 20,
+            learningGoals: [
+              { topic: "Finish Charlotte's Web", category: "reading", deadline: deadlineIso },
+            ],
+          },
+        ],
+      }),
+    });
+    expect(cfgRes.status).toBe(200);
+    const body = await cfgRes.json();
+    expect(body.ok).toBe(true);
+
+    const { StateManager } = await import("../src/engine/state.js");
+    const state = new StateManager();
+    const persisted = await state.loadFamilyConfig(body.familyId);
+    if (!persisted) throw new Error("loadFamilyConfig returned null");
+    const goal = persisted.children[0].learningGoals?.[0];
+    expect(goal).toBeDefined();
+    expect(goal?.topic).toBe("Finish Charlotte's Web");
+    expect(goal?.deadline).toBe(deadlineIso);
+    expect(goal?.subgoals).toBeUndefined();
+  });
+
+  // Sprint 3.0.5 HE5g — a goal with subgoals but no deadline must persist.
+  // Mirror of HE5f for the other optional field.
+  it("HE5g: subgoals without deadline — goal persists with subgoals only", async () => {
+    const { message, signature } = await siweExchange(account);
+    const verifyRes = await fetch(`${baseUrl}/api/auth/verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message, signature }),
+    });
+    const verifyBody = await verifyRes.json();
+
+    const cfgRes = await fetch(`${baseUrl}/api/configure-family`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${verifyBody.sessionToken}`,
+      },
+      body: JSON.stringify({
+        familyName: "Subgoals Only Family",
+        useTestnet: true,
+        children: [
+          {
+            name: "Aiden",
+            weeklyBudgetUsd: 12,
+            categories: [{ name: "reading", pct: 100 }],
+            savingsPercent: 20,
+            learningGoals: [
+              {
+                topic: "Improve handwriting",
+                category: "reading",
+                subgoals: [{ topic: "Letter shapes" }, { topic: "Spacing" }, { topic: "Speed" }],
+              },
+            ],
+          },
+        ],
+      }),
+    });
+    expect(cfgRes.status).toBe(200);
+    const body = await cfgRes.json();
+    expect(body.ok).toBe(true);
+
+    const { StateManager } = await import("../src/engine/state.js");
+    const state = new StateManager();
+    const persisted = await state.loadFamilyConfig(body.familyId);
+    if (!persisted) throw new Error("loadFamilyConfig returned null");
+    const goal = persisted.children[0].learningGoals?.[0];
+    expect(goal?.topic).toBe("Improve handwriting");
+    expect(goal?.subgoals?.length).toBe(3);
+    expect(goal?.subgoals?.map((s) => s.topic)).toEqual([
+      "Letter shapes",
+      "Spacing",
+      "Speed",
+    ]);
+    expect(goal?.subgoals?.every((s) => s.completed === false)).toBe(true);
+    expect(goal?.deadline).toBeUndefined();
+  });
+
   it("HE3: POST /api/auth/verify with known wallet returns family list + memberships", async () => {
     // Arrange: sign in, create family, sign in again with same wallet.
     {

@@ -1,0 +1,14 @@
+---
+description: "Generator phase - implements per plan.md and contract.md"
+globs: ["implementation/**", "src/**", "app/**", "scripts/**"]
+alwaysApply: false
+---
+
+# Generator Phase Constraints
+
+- Read `implementation/progress.md` "Failed Approaches" before writing code.
+- Repeating a documented failed approach is a rubric penalty.
+- Update `implementation/progress.md` on every significant code change.
+- Deviate from `planning/plan.md` or `planning/contract.md` ONLY when blocked; document immediately.
+- Run smoke tests against contract verification criteria before handoff.
+- Do NOT self-evaluate. Hand off to evaluator without judgment.

@@ -198,6 +198,12 @@ export interface ConfigureFamilyBootstrapResult {
   mcpUrl: string;
   familyName: string;
   children: ChildConfigSummary[];
+  // Sprint 3.0.5 — surfaced for the verify-page transparency panel. Mirrors
+  // `FamilyConfig.authorizedDestinations` after `buildAuthorizedDestinations`
+  // has run. The HTTP boundary (app/verify-routes.ts) forwards this in the
+  // JSON response so the bootstrap success state can render the allowlist
+  // without an extra round-trip.
+  authorizedDestinations: string[];
 }
 
 export interface ConfigureFamilyUpdateResult {
@@ -341,6 +347,7 @@ async function bootstrapFamily(
     mcpUrl,
     familyName: input.familyName,
     children: buildChildrenSummary(input.children),
+    authorizedDestinations: allowlist.destinations,
   };
 }
 

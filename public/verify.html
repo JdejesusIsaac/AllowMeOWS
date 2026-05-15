@@ -212,6 +212,84 @@
       text-decoration: underline;
       font-size: 13px;
     }
+    /* Sprint 3.0.5 — learning-goals form additions. Visually nested inside
+       each child block; deliberately quieter than the categories block so
+       parents read goals as "optional add-on" not "more required setup". */
+    input[type=text]:disabled, input[type=number]:disabled, select:disabled {
+      opacity: .6;
+      cursor: not-allowed;
+    }
+    input[type=date] {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--card);
+      color: var(--fg);
+      font: inherit;
+      font-size: 16px; /* iOS auto-zoom guard */
+    }
+    input[type=date]:focus {
+      outline: 2px solid var(--brand);
+      outline-offset: 0;
+      border-color: transparent;
+    }
+    select {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--card);
+      color: var(--fg);
+      font: inherit;
+      font-size: 16px;
+      -webkit-appearance: none;
+      appearance: none;
+      background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+      background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%;
+      background-size: 6px 6px;
+      background-repeat: no-repeat;
+    }
+    select:focus {
+      outline: 2px solid var(--brand);
+      outline-offset: 0;
+      border-color: transparent;
+    }
+    .goal-row {
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 8px;
+      background: var(--bg);
+    }
+    .goal-row > * + * { margin-top: 8px; }
+    .subgoal-row {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+      align-items: center;
+    }
+    .subgoal-row input[type=text] { flex: 1; }
+    .btn-icon {
+      width: auto;
+      padding: 6px 10px;
+      font-size: 13px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      border-radius: 8px;
+    }
+    .btn-icon:hover:not(:disabled) {
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+    .field-error {
+      color: var(--danger);
+      font-size: 13px;
+      margin-top: 4px;
+      display: block;
+    }
+    .field-error[hidden] { display: none; }
   </style>
 </head>
 <body>
@@ -313,6 +391,11 @@
     <section id="state-success" class="card hidden stack">
       <h1 id="success-title">You're in</h1>
       <p id="success-body"></p>
+
+      <!-- Sprint 3.0.5 — allowlist transparency panel. Rendered post-bootstrap
+           by renderSuccess() when `kind === "create"` so parents see (and
+           can talk about with kids) what Sprint 3.0.2 actually enforces. -->
+      <div id="success-allowlist" class="hidden"></div>
 
       <div>
         <label>Your magic link (keep this private)</label>
@@ -615,9 +698,21 @@
     }
 
     // ---------- Family creation ----------
+    // Sprint 3.0.5 form caps. Schema cap is 20 for both (src/schemas.ts), the
+    // form cap is a UX guardrail — parents needing more configure via Claude
+    // `configure-policy` post-bootstrap. See planning/contract.md C8.
+    const MAX_GOALS_PER_CHILD = 5;
+    const MAX_SUBGOALS_PER_GOAL = 5;
+    // Sprint 3.0.5 — client-side wallet shape check. Defence-in-depth only;
+    // server-side `tryNormalizeWallet` (src/auth/wallet.ts) is authoritative.
+    const WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
     function blankChildRow() {
       return {
         name: "",
+        // Sprint 3.0.5 — optional BYO wallet address. Empty string ≡ undefined
+        // at the persistence layer (the serializer in submitFamilyCreate drops
+        // the field when blank so the OWS-managed wallet path runs).
+        walletAddress: "",
         weeklyBudgetUsd: 10,
         savingsPercent: 20,
         categories: [
@@ -625,9 +720,22 @@
           { name: "movement",   pct: 35 },
           { name: "creativity", pct: 25 },
         ],
+        // Sprint 3.0.5 — optional curriculum. Form-cap 5 (see above).
+        learningGoals: [],
       };
     }
+    function blankGoalRow() {
+      return { topic: "", category: "", subgoals: [], deadline: "" };
+    }
+    function blankSubgoalRow() {
+      return { topic: "" };
+    }
     let childrenDraft = [blankChildRow()];
+
+    // Sprint 3.0.5 — string-valued child fields. Everything not in this set
+    // gets `Number()` coerced in the input handler (matches the existing
+    // pattern for `weeklyBudgetUsd` / `savingsPercent`).
+    const CHILD_STRING_FIELDS = new Set(["name", "walletAddress"]);
 
     function renderChildren() {
       const list = $("children-list");
@@ -638,6 +746,12 @@
         row.innerHTML = `
           <label>Child ${i + 1}</label>
           <input type="text" data-field="name" placeholder="e.g. Sofia" value="${escapeHtml(child.name)}" />
+
+          <label class="muted">Child's wallet address (optional)</label>
+          <input type="text" data-field="walletAddress" placeholder="0x… (leave blank for AllowMe-managed)" value="${escapeHtml(child.walletAddress || "")}" autocomplete="off" spellcheck="false" />
+          <span class="field-error" data-wallet-error hidden></span>
+          <p class="muted" style="font-size: 13px; margin-top: 4px;">Paste a kid's existing wallet (e.g. their MetaMask) to receive USDC there. Leave blank to have AllowMe create one for them.</p>
+
           <div class="row" style="gap: 8px;">
             <div style="flex: 1;">
               <label class="muted">Weekly budget (USD)</label>
@@ -650,6 +764,10 @@
           </div>
           <label class="muted">Categories (must sum to 100%)</label>
           <div data-cats></div>
+
+          <label class="muted" style="margin-top: 8px;">Learning goals (optional, up to ${MAX_GOALS_PER_CHILD})</label>
+          <div data-goals></div>
+          <button type="button" class="btn-ghost" data-add-goal style="margin-top: 6px; width: auto;">+ Add learning goal</button>
         `;
         const cats = row.querySelector("[data-cats]");
         child.categories.forEach((cat, ci) => {
@@ -670,14 +788,62 @@
         row.querySelectorAll("input[data-field]").forEach((inp) => {
           inp.addEventListener("input", (e) => {
             const field = e.target.dataset.field;
-            child[field] = (field === "name") ? e.target.value : Number(e.target.value);
+            child[field] = CHILD_STRING_FIELDS.has(field)
+              ? e.target.value
+              : Number(e.target.value);
           });
         });
+
+        // Sprint 3.0.5 — wallet-address inline validation on blur (W5.1).
+        // Empty string is valid (means OWS-managed). Non-empty must match
+        // the canonical EVM address shape — `tryNormalizeWallet` is still
+        // authoritative server-side; this is the immediate-feedback layer.
+        const walletInput = row.querySelector('input[data-field="walletAddress"]');
+        const walletErr = row.querySelector("[data-wallet-error]");
+        walletInput.addEventListener("blur", () => {
+          const v = walletInput.value.trim();
+          if (v.length === 0 || WALLET_RE.test(v)) {
+            walletErr.hidden = true;
+            walletErr.textContent = "";
+          } else {
+            walletErr.textContent = "Must be a valid Ethereum address starting with 0x and 40 hex characters.";
+            walletErr.hidden = false;
+          }
+        });
+        // Hide the error as soon as the user starts editing again, so the
+        // alert clears on the next valid character without waiting for blur.
+        walletInput.addEventListener("input", () => {
+          if (!walletErr.hidden) {
+            walletErr.hidden = true;
+            walletErr.textContent = "";
+          }
+        });
+
+        // Sprint 3.0.5 — goals section.
+        const goalsContainer = row.querySelector("[data-goals]");
+        const addGoalBtn = row.querySelector("[data-add-goal]");
+        renderGoals(child, goalsContainer, i);
+        // C8 — `disabled` attribute (not just CSS) when at cap, plus the
+        // ARIA mirror for screen readers. Re-evaluated on every render.
+        if (child.learningGoals.length >= MAX_GOALS_PER_CHILD) {
+          addGoalBtn.disabled = true;
+          addGoalBtn.setAttribute("aria-disabled", "true");
+          addGoalBtn.textContent = `Maximum ${MAX_GOALS_PER_CHILD} goals reached`;
+        } else {
+          addGoalBtn.disabled = false;
+          addGoalBtn.removeAttribute("aria-disabled");
+        }
+        addGoalBtn.addEventListener("click", () => {
+          if (child.learningGoals.length >= MAX_GOALS_PER_CHILD) return;
+          child.learningGoals.push(blankGoalRow());
+          renderChildren();
+        });
+
         if (childrenDraft.length > 1) {
           const rm = document.createElement("button");
           rm.className = "btn-ghost";
           rm.type = "button";
-          rm.textContent = "Remove";
+          rm.textContent = "Remove child";
           rm.addEventListener("click", () => {
             childrenDraft.splice(i, 1);
             renderChildren();
@@ -688,11 +854,199 @@
       });
     }
 
+    function renderGoals(child, container, childIdx) {
+      container.innerHTML = "";
+      child.learningGoals.forEach((goal, gi) => {
+        const goalRow = document.createElement("div");
+        goalRow.className = "goal-row stack";
+        // Category options reflect THIS child's just-configured categories
+        // (research D1 / contract C11). We populate via DOM rather than a
+        // string literal so option text and the selection state both ride
+        // through `escapeHtml` cleanly.
+        const optsHtml = ['<option value="">— pick a category —</option>']
+          .concat(child.categories.map((cat) => {
+            const sel = goal.category && goal.category.toLowerCase() === cat.name.toLowerCase() ? " selected" : "";
+            return `<option value="${escapeHtml(cat.name)}"${sel}>${escapeHtml(cat.name)}</option>`;
+          }))
+          .join("");
+        goalRow.innerHTML = `
+          <input type="text" data-goal-field="topic" placeholder="What's the goal? e.g. Read 10 chapter books" value="${escapeHtml(goal.topic)}" />
+          <span class="field-error" data-goal-topic-error hidden></span>
+          <select data-goal-field="category" aria-label="Category for this goal">${optsHtml}</select>
+          <div>
+            <label class="muted" style="font-size: 13px;">Deadline (optional)</label>
+            <input type="date" data-goal-field="deadline" value="${escapeHtml(goal.deadline || "")}" />
+          </div>
+          <div>
+            <label class="muted" style="font-size: 13px;">Sub-steps (optional, up to ${MAX_SUBGOALS_PER_GOAL})</label>
+            <div data-subgoals></div>
+            <button type="button" class="btn-icon" data-add-subgoal style="margin-top: 6px;">+ Add sub-step</button>
+          </div>
+          <button type="button" class="btn-icon" data-remove-goal>× Remove this goal</button>
+        `;
+        // Topic + deadline use string passthrough; the <select> sets a
+        // string. Listen for both `input` and `change` so the date picker
+        // and dropdown both flow into state without a second render.
+        goalRow.querySelectorAll("[data-goal-field]").forEach((inp) => {
+          inp.addEventListener("input", (e) => {
+            goal[e.target.dataset.goalField] = e.target.value;
+          });
+          inp.addEventListener("change", (e) => {
+            goal[e.target.dataset.goalField] = e.target.value;
+          });
+        });
+        // Topic-required-on-submit error span clears on any input.
+        const topicErr = goalRow.querySelector("[data-goal-topic-error]");
+        const topicInput = goalRow.querySelector('input[data-goal-field="topic"]');
+        topicInput.addEventListener("input", () => {
+          if (!topicErr.hidden) {
+            topicErr.hidden = true;
+            topicErr.textContent = "";
+          }
+        });
+
+        const subgoalsContainer = goalRow.querySelector("[data-subgoals]");
+        const addSubBtn = goalRow.querySelector("[data-add-subgoal]");
+        renderSubgoals(goal, subgoalsContainer);
+        if (goal.subgoals.length >= MAX_SUBGOALS_PER_GOAL) {
+          addSubBtn.disabled = true;
+          addSubBtn.setAttribute("aria-disabled", "true");
+          addSubBtn.textContent = `Max ${MAX_SUBGOALS_PER_GOAL} sub-steps`;
+        } else {
+          addSubBtn.disabled = false;
+          addSubBtn.removeAttribute("aria-disabled");
+        }
+        addSubBtn.addEventListener("click", () => {
+          if (goal.subgoals.length >= MAX_SUBGOALS_PER_GOAL) return;
+          goal.subgoals.push(blankSubgoalRow());
+          renderChildren();
+        });
+        goalRow.querySelector("[data-remove-goal]").addEventListener("click", () => {
+          child.learningGoals.splice(gi, 1);
+          renderChildren();
+        });
+        container.appendChild(goalRow);
+      });
+    }
+
+    function renderSubgoals(goal, container) {
+      container.innerHTML = "";
+      goal.subgoals.forEach((sg, sgi) => {
+        const sgRow = document.createElement("div");
+        sgRow.className = "subgoal-row";
+        sgRow.innerHTML = `
+          <input type="text" data-subgoal-field="topic" placeholder="Sub-step (e.g. Fractions, Decimals)" value="${escapeHtml(sg.topic)}" />
+          <button type="button" class="btn-icon" data-remove-subgoal>×</button>
+        `;
+        sgRow.querySelector("[data-subgoal-field]").addEventListener("input", (e) => {
+          goal.subgoals[sgi].topic = e.target.value;
+        });
+        sgRow.querySelector("[data-remove-subgoal]").addEventListener("click", () => {
+          goal.subgoals.splice(sgi, 1);
+          renderChildren();
+        });
+        container.appendChild(sgRow);
+      });
+    }
+
+    // Sprint 3.0.5 — build the POST payload from `childrenDraft`. Drops
+    // optional fields when empty so the HTTP boundary's `.optional()` paths
+    // are exercised correctly (a literal `""` is NOT the same as `undefined`
+    // — `tryNormalizeWallet("")` returns null, which would error).
+    //
+    //   - walletAddress: omitted when empty/whitespace
+    //   - learningGoals: filtered to goals with non-empty `topic.trim()`;
+    //     entire field omitted if zero remain
+    //   - subgoals: filtered to non-empty `topic.trim()`; omitted if empty
+    //   - deadline: serialized to ISO datetime (`${date}T00:00:00.000Z`) when
+    //     non-empty; omitted when empty
+    //
+    // Returns `{ payload, goalTopicErrors }` so the caller (submit handler)
+    // can render inline errors for goals whose topic is required (W5.2 — a
+    // goal has subgoals, a deadline, or a category but no topic).
+    function buildSubmitPayload() {
+      const goalTopicErrors = []; // { childIdx, goalIdx } pairs
+      const cleanedChildren = childrenDraft.map((c, childIdx) => {
+        const out = {
+          name: c.name.trim(),
+          weeklyBudgetUsd: c.weeklyBudgetUsd,
+          categories: c.categories.map((cat) => ({
+            name: cat.name,
+            pct: cat.pct,
+          })),
+          savingsPercent: c.savingsPercent,
+        };
+        const wallet = (c.walletAddress || "").trim();
+        if (wallet.length > 0) {
+          out.walletAddress = wallet;
+        }
+        const cleanGoals = [];
+        c.learningGoals.forEach((g, goalIdx) => {
+          const topic = (g.topic || "").trim();
+          const hasOtherSignal =
+            (g.subgoals && g.subgoals.some((sg) => (sg.topic || "").trim().length > 0)) ||
+            (g.deadline && g.deadline.length > 0) ||
+            (g.category && g.category.length > 0);
+          if (topic.length === 0) {
+            // No topic AND no other content → silently dropped (parent
+            // clicked "+ Add" then changed their mind, no error needed).
+            // No topic BUT other signal → topic became required (W5.2).
+            if (hasOtherSignal) {
+              goalTopicErrors.push({ childIdx, goalIdx });
+            }
+            return;
+          }
+          const goal = { topic, category: g.category || "" };
+          const cleanSubs = (g.subgoals || [])
+            .map((sg) => ({ topic: (sg.topic || "").trim() }))
+            .filter((sg) => sg.topic.length > 0);
+          if (cleanSubs.length > 0) goal.subgoals = cleanSubs;
+          const deadline = (g.deadline || "").trim();
+          if (deadline.length > 0) {
+            // YYYY-MM-DD → end-of-day UTC. Sprint 3.0.4 schema demands ISO
+            // datetime; midnight UTC is the conventional "by this date".
+            goal.deadline = `${deadline}T00:00:00.000Z`;
+          }
+          cleanGoals.push(goal);
+        });
+        if (cleanGoals.length > 0) {
+          out.learningGoals = cleanGoals;
+        }
+        return out;
+      });
+      return { children: cleanedChildren, goalTopicErrors };
+    }
+
+    function clearGoalTopicErrors() {
+      document.querySelectorAll("[data-goal-topic-error]").forEach((e) => {
+        e.hidden = true;
+        e.textContent = "";
+      });
+    }
+
+    // W5.2 — flag the first error inline on the offending goal-row in the
+    // DOM. `errors` is a list of {childIdx, goalIdx} from buildSubmitPayload.
+    function showGoalTopicErrors(errors) {
+      const childRows = $("children-list").querySelectorAll(".child-row");
+      errors.forEach(({ childIdx, goalIdx }) => {
+        const childRow = childRows[childIdx];
+        if (!childRow) return;
+        const goalRows = childRow.querySelectorAll(".goal-row");
+        const goalRow = goalRows[goalIdx];
+        if (!goalRow) return;
+        const errSpan = goalRow.querySelector("[data-goal-topic-error]");
+        if (!errSpan) return;
+        errSpan.textContent = "Add a topic for this goal, or remove its sub-steps / deadline / category.";
+        errSpan.hidden = false;
+      });
+    }
+
     async function submitFamilyCreate() {
       const familyName = $("family-name").value.trim();
       const useTestnet = $("use-testnet").checked;
       const alertEl = $("create-alert");
       alertEl.classList.add("hidden");
+      clearGoalTopicErrors();
 
       if (!familyName) {
         alertEl.textContent = "Please enter a family name.";
@@ -705,12 +1059,30 @@
           alertEl.classList.remove("hidden");
           return;
         }
+        // W4.1 — wallet regex (client-side; server still authoritative).
+        const wallet = (c.walletAddress || "").trim();
+        if (wallet.length > 0 && !WALLET_RE.test(wallet)) {
+          alertEl.textContent = `Wallet for ${c.name} must start with 0x and have 40 hex characters.`;
+          alertEl.classList.remove("hidden");
+          return;
+        }
         const pctSum = c.categories.reduce((s, x) => s + Number(x.pct || 0), 0);
         if (Math.abs(pctSum - 100) > 0.01) {
           alertEl.textContent = `Categories for ${c.name} must sum to 100% (currently ${pctSum}).`;
           alertEl.classList.remove("hidden");
           return;
         }
+      }
+
+      // W4.2 — serialize and run W5.2's goal-topic-required check. The
+      // payload is built once; if goals are malformed, we render errors
+      // in-line and bail without a network round-trip.
+      const { children: cleanedChildren, goalTopicErrors } = buildSubmitPayload();
+      if (goalTopicErrors.length > 0) {
+        showGoalTopicErrors(goalTopicErrors);
+        alertEl.textContent = "Some learning goals are missing a topic. Add one or remove the goal.";
+        alertEl.classList.remove("hidden");
+        return;
       }
 
       const btn = $("btn-family-create");
@@ -724,11 +1096,11 @@
             "content-type": "application/json",
             "authorization": "Bearer " + sessionToken,
           },
-          body: JSON.stringify({ familyName, useTestnet, children: childrenDraft }),
+          body: JSON.stringify({ familyName, useTestnet, children: cleanedChildren }),
         });
         const body = await res.json();
         if (!res.ok || !body.ok) {
-          alertEl.textContent = "Couldn't create family: " + (body?.error || res.status);
+          alertEl.textContent = "Couldn't create family: " + (body?.error || body?.reason || res.status);
           alertEl.classList.remove("hidden");
           btn.disabled = false;
           btn.textContent = "Create family";
@@ -740,6 +1112,11 @@
           role: "manager",
           mcpUrl: body.mcpUrl,
           familyName: body.familyName,
+          // Sprint 3.0.5 — pass through allowlist data so the post-submit
+          // transparency panel (W6) can render the admin + child wallets.
+          authorizedDestinations: body.authorizedDestinations || [],
+          children: body.children || [],
+          managerWallet: walletAddress,
         });
       } catch (err) {
         alertEl.textContent = "Network error creating family.";
@@ -802,7 +1179,61 @@
     }
 
     // ---------- Success ----------
-    function renderSuccess({ kind, role, mcpUrl, familyName, childName }) {
+
+    // Sprint 3.0.5 — display helper. Hex addresses are 42 chars total; show
+    // the first 6 and last 4 to match conventional crypto-wallet UX without
+    // overwhelming the layout on mobile. Returns the full address when the
+    // input is suspiciously short (defensive — should never trigger since
+    // the allowlist is server-validated by `tryNormalizeWallet`).
+    function shortAddr(addr) {
+      if (typeof addr !== "string") return "";
+      if (addr.length <= 12) return addr;
+      return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+    }
+
+    // Sprint 3.0.5 — render the post-bootstrap allowlist transparency panel
+    // (DEL7, contract C10). Walks the response's `authorizedDestinations`
+    // and labels each entry as the admin / a specific child / a fallback
+    // generic address. Case-insensitive match against the manager wallet
+    // (lower-cased server-side) and each child summary's `wallet` field.
+    function renderAllowlistPanel(authorizedDestinations, children, managerWalletAddr) {
+      const panel = $("success-allowlist");
+      if (!Array.isArray(authorizedDestinations) || authorizedDestinations.length === 0) {
+        panel.classList.add("hidden");
+        panel.innerHTML = "";
+        return;
+      }
+      const managerLower = (managerWalletAddr || "").toLowerCase();
+      const childrenLower = (Array.isArray(children) ? children : []).map((c) => ({
+        name: c?.name || "",
+        wallet: (c?.wallet || "").toLowerCase(),
+      }));
+      const rows = authorizedDestinations.map((addr, idx) => {
+        const lower = String(addr).toLowerCase();
+        let label;
+        if (managerLower && lower === managerLower) {
+          label = "Admin (you)";
+        } else {
+          const match = childrenLower.find((c) => c.wallet === lower);
+          if (match && match.name) {
+            label = `${match.name}'s wallet`;
+          } else {
+            label = `Authorized address ${idx + 1}`;
+          }
+        }
+        return `<dt>${escapeHtml(label)}</dt><dd title="${escapeHtml(addr)}">${escapeHtml(shortAddr(addr))}</dd>`;
+      }).join("");
+      panel.innerHTML = `
+        <div class="alert" style="border-color: var(--brand); background: rgba(0,82,255,.04);">
+          <strong>Your family's allowlist</strong>
+          <p class="muted" style="margin-top: 6px; margin-bottom: 8px;">USDC transfers from the treasury can only land at the addresses below. To update this list later, ask Claude to <code>configure-policy</code>.</p>
+          <dl class="kv">${rows}</dl>
+        </div>
+      `;
+      panel.classList.remove("hidden");
+    }
+
+    function renderSuccess({ kind, role, mcpUrl, familyName, childName, authorizedDestinations, children, managerWallet }) {
       const title = $("success-title");
       const body = $("success-body");
       if (kind === "create") {
@@ -815,6 +1246,16 @@
         title.textContent = "You're in";
         const who = childName ? `, ${childName}` : "";
         body.textContent = `Joined ${familyName || "the family"} as a ${role}${who}. Paste the link below into Claude.`;
+      }
+
+      // Sprint 3.0.5 — the transparency panel only meaningfully applies to
+      // freshly-created families. For "returning" / invite flows, the user
+      // can review their allowlist via configure-policy in Claude.
+      if (kind === "create") {
+        renderAllowlistPanel(authorizedDestinations, children, managerWallet);
+      } else {
+        $("success-allowlist").classList.add("hidden");
+        $("success-allowlist").innerHTML = "";
       }
 
       $("success-url").textContent = mcpUrl;
