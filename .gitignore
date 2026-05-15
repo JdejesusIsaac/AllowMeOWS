@@ -4,3 +4,8 @@ data/
 *.tmp.*
 .env
 .env.local
+.windsurf
+evaluation/
+implementation/
+AGENTS.md
+
