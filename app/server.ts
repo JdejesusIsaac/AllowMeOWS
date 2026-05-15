@@ -15,6 +15,7 @@ import { readFileSync, existsSync } from "node:fs";
 
 // Tool registrations (same as src/index.ts)
 import { registerConfigurePolicyTool } from "../src/tools/configure-policy.js";
+import { registerViewPolicyTool } from "../src/tools/view-policy.js";
 import { registerVerifyAchievementTool } from "../src/tools/verify-achievement.js";
 import { registerDistributeAllowanceTool } from "../src/tools/distribute-allowance.js";
 import { registerCheckProgressTool } from "../src/tools/check-progress.js";
@@ -67,8 +68,9 @@ function createMcpServer(): McpServer {
     version: "0.3.0",
   });
 
-  // Register all 12 tools — same registrations as src/index.ts
+  // Register all 14 tools — same registrations as src/index.ts
   registerConfigurePolicyTool(server);
+  registerViewPolicyTool(server);
   registerVerifyAchievementTool(server);
   registerDistributeAllowanceTool(server);
   registerCheckProgressTool(server);
