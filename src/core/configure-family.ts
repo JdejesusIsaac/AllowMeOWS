@@ -29,6 +29,7 @@ import type { FamilyConfig, ChildConfig, Member } from "../schemas.js";
 import { mergeLearningGoals } from "../engine/learning-goals.js";
 import type { CallerContext } from "../middleware/access-control.js";
 import { tryNormalizeWallet } from "../auth/wallet.js";
+import { policyCache } from "../cache/policy-cache.js";
 import {
   computeRemovedDestinations,
   findBlockedRemovals,
@@ -276,6 +277,11 @@ async function bootstrapFamily(
     chainId: input.chainId,
     usdcAddress: input.usdcAddress,
     authorizedDestinations: allowlist.destinations,
+    // Sprint 3.0.6 — bootstrap is the first write, so policyVersion starts
+    // at 1. Pre-3.0.6 configs lazy-migrate to 0 (via Zod default in
+    // FamilyConfigSchema); anything ≥ 1 means "has been through configure
+    // since the counter shipped". W2 / CP-VER1.
+    policyVersion: 1,
   };
 
   const keyManager = new FamilyKeyManager();
@@ -286,6 +292,10 @@ async function bootstrapFamily(
   await setup.initializeFamily(familyConfig, familyKey);
 
   await state.saveFamilyConfig(familyId, familyConfig);
+  // Sprint 3.0.6 — synchronous cache invalidation immediately after the
+  // disk write rules out stale `view-policy` reads within the single-process
+  // Railway window. PC4 integration test locks this end-to-end.
+  policyCache.invalidate(familyId);
   for (const child of input.children) {
     await state.initializeStreak(familyId, child.name);
   }
@@ -454,6 +464,10 @@ async function updateExistingFamily(
     chainId: input.chainId,
     usdcAddress: input.usdcAddress,
     authorizedDestinations: allowlist.destinations,
+    // Sprint 3.0.6 — increment by exactly 1 per update. Pre-3.0.6 configs
+    // load with policyVersion: 0 (Zod default), so their first post-deploy
+    // update bumps to 1 — matching the bootstrap semantics. W2 / CP-VER2.
+    policyVersion: (existingConfig?.policyVersion ?? 0) + 1,
   };
 
   const keyManager = new FamilyKeyManager();
@@ -463,6 +477,10 @@ async function updateExistingFamily(
   await setup.initializeFamily(familyConfig, familyKey);
 
   await state.saveFamilyConfig(familyId, familyConfig);
+  // Sprint 3.0.6 — synchronous cache invalidation on every update path
+  // (same rationale as the bootstrap site above). PC4 integration test
+  // locks "no stale read after write" end-to-end.
+  policyCache.invalidate(familyId);
   for (const child of input.children) {
     await state.initializeStreak(familyId, child.name);
   }

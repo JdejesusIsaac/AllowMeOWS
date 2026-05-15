@@ -1,213 +1,252 @@
-# Sprint 3.0.5 — Plan (Phase 1)
+# Plan — `view-policy` MCP tool
 
-**Sprint type:** Frontend/UX (verify-page bootstrap form extension) + thin HTTP-boundary surfacing
-**Rubric weighting:** Func 35% / Auth 15% / Design 40% / Orig 10% (per [`planning/AGENTS.md`](AGENTS.md))
-**Inputs:** [`research/research.md`](../research/research.md) (spike-resolved, no `⚠️` open)
-**Test delta target:** +6 to +9 net tests (backward-compat regression, HTTP body schema for new fields, response carries `authorizedDestinations`, form-render smoke, end-to-end persistence round-trip)
-**Duration estimate:** ~5 hours (form work primary; ~30 min for HTTP plumbing)
-
----
-
-## Feature Summary
-
-Extend [`public/verify.html`](../public/verify.html)'s bootstrap form (`state-family-create`) so it can collect everything Sprints 3.0.2 / 3.0.3 / 3.0.4 added to the backend, and surface the Sprint 3.0.2 allowlist in the success state. Three deliverables:
-
-1. **Per-child `walletAddress` input** (optional, regex-validated on blur) — feeds the Sprint 3.0.2 allowlist via `buildAuthorizedDestinations`.
-2. **Per-child `learningGoals` section** — up to 5 goals per child, each with `topic` + `category` (dropdown sourced from the child's just-configured categories) + optional `subgoals` (up to 5, topic only) + optional native `<input type="date">` deadline serialized as `${YYYY-MM-DD}T00:00:00.000Z`.
-3. **Post-submit allowlist transparency panel** — renders in `renderSuccess()` before the magic-link URL, listing admin wallet + each child's wallet, sourced from a new `authorizedDestinations` field on the `/api/configure-family` response.
-
-The HTTP boundary at [`app/verify-routes.ts`](../app/verify-routes.ts) gets two additive changes (locked by Phase 0.5 spike):
-
-- `configureFamilyBodySchema.learningGoals` accepts `subgoals` (array of `{topic}`, max 20) and `deadline` (ISO datetime).
-- `/api/configure-family` response includes `authorizedDestinations: string[]`, populated from the resolved `buildAuthorizedDestinations` result inside `bootstrapFamily()`.
-
-No schema changes. No new tools. No new endpoints. The form learns to ask for what the persistence schema already accepts, and the HTTP boundary stops dropping the new fields.
+**Sprint:** 3.0.6 (proposed — patch-level, additive only) OR 3.1.0 (minor, per Windsurf draft) — user decides in contract negotiation.
+**Source:** [`research/research.md`](../research/research.md) — spike resolved S1–S5; OQ1/OQ2/OQ4/OQ5 deferred to contract negotiation.
+**Depends on:** Sprint 3.0.2 (`authorizedDestinations` write path), Sprint 3.0.5 (verify-page bootstrap form — live data source).
+**Class:** Security-critical — RBAC-sensitive read tool exposing custody-adjacent state across 5 roles. Rubric weight per [`planning/AGENTS.md:18`](AGENTS.md): **Func 30 / Auth/Security 50 / Design 10 / Originality 10**.
 
 ---
 
-## Architecture Decisions
+## Feature summary
 
-Locked from [`research/research.md`](../research/research.md) D1–D10 plus Spike Results.
+Add `view-policy`, a read-only MCP tool that surfaces family policy (children config, categories, savings %, learning goals, authorized destinations, summary aggregates) through the existing decryption layer. Role-aware filtering across `manager | co-parent | advisor | family | learner`. Section filter (`all | summary | children | destinations | learning-goals`). Child scoping via `childName`. Wallet redaction via `includeWallets`. Destination provenance discriminator (`source: "force-added" | "configured"`). `policyVersion` monotonic counter shipped (no enforcement yet — foothold for a future optimistic-concurrency guard). 60s in-memory cache with synchronous write-invalidation.
 
-### D1 — Per-child nesting (Option A)
-Goals nest inside each `child-row` in `public/verify.html`, after the categories block and before the optional remove button. The category dropdown for each goal reads directly from `child.categories[].name`, eliminating cross-reference validation.
-
-### D2 — Form caps (5 goals / 5 subgoals)
-Persistence schema caps at 20 (`src/schemas.ts:44, 68`); form caps at 5 per child / 5 per goal as UX guardrail. "+ Add" buttons disable at the cap. Parents needing more configure post-bootstrap via Claude `configure-policy`.
-
-### D3 — All new fields optional, old payload still valid
-Backward-compat is the central correctness bar. Old form payload (no `walletAddress`, no `learningGoals`) must still create a valid family with empty goals and an auto-created managed wallet per child. A dedicated regression test in `tests/verify-routes.test.ts` locks this contract.
-
-### D4 — Native `<input type="date">` for deadlines
-Submit handler converts `YYYY-MM-DD → YYYY-MM-DDT00:00:00.000Z`. Mobile-native picker; no JS date library. Fallback to `<input type="text" pattern="\d{4}-\d{2}-\d{2}">` only if iOS smoke test surfaces a real issue (W6).
-
-### D5 — Wallet validation: client-side regex on blur, server-side `tryNormalizeWallet` authoritative
-Regex `/^0x[a-fA-F0-9]{40}$/` for immediate UX feedback only. `src/auth/wallet.ts:35` enforces canonical normalization at the persistence boundary via viem's `isAddress`. Defense-in-depth, not replacement.
-
-### D6 — Post-submit allowlist transparency panel
-Renders in `renderSuccess({kind: "create", ...})` before the existing `success-url` block. Lists admin wallet (from `walletAddress` already captured in the SIWE session) + each entry from `response.authorizedDestinations` not equal to the admin (so child wallets render as "Sofia's wallet (BYO)" vs "Sofia's wallet (AllowMe-managed)" — distinguishable by whether the parent supplied an address). One-line explainer: "These are the only addresses the family treasury can send USDC to. Update this list with Claude using `configure-policy`."
-
-### D7 — Single-file vanilla JS, zero new npm deps
-All work lives in `public/verify.html`. No React, no Formik, no date library, no Tailwind addition. The form is one file by Sprint 3.0 v4 Decision 2 — Sprint 3.0.5 preserves that commitment.
-
-### D8 — HTTP body schema mirror (locked in spike Q1)
-`configureFamilyBodySchema.learningGoals` extended to accept `subgoals: z.array(z.object({topic: z.string().min(1).max(200)})).max(20).optional()` and `deadline: z.string().datetime().optional()`. ~8 added lines. Additive; old payloads validate as before.
-
-### D9 — Response carries `authorizedDestinations` (locked in spike Q2)
-`ConfigureFamilyBootstrapResult` interface extended with `authorizedDestinations: string[]`; populated from the resolved `allowlist.destinations` already computed by `buildAuthorizedDestinations` at `src/core/configure-family.ts:257`; passed through in the `res.json({...})` block at `app/verify-routes.ts:329–339`. ~5 added lines.
-
-### D10 — No editing of Windsurf source material
-[`sprint-3.0.5/plan-3.0.5.md`](../sprint-3.0.5/plan-3.0.5.md) and siblings are read-only references. The canonical artifacts for this sprint are `research/research.md`, `planning/plan.md`, `planning/contract.md`, `implementation/progress.md`, `evaluation/test.md`.
+**Failure modes the plan defends against:**
+1. **Role-stripping bug exposes destinations to learner** (research §"Risks", high severity) — addressed by W5's per-cell matrix test (5 roles × 4 sections = 20 cells, every cell asserted).
+2. **`policyVersion` non-monotonic across writes** — addressed by W2's increment-by-exactly-1 assertion, not "policyVersion increased".
+3. **Cache stale read** — addressed by W6's `configure-policy` write → `policyCache.invalidate()` in the same handler, before the response returns.
+4. **Pre-3.0.6 family configs fail to load after schema addition** — addressed by W2's lazy-migration via Zod default and W1's regression bar.
+5. **Provenance mislabels a custom-configured wallet as force-added** — addressed by W3's helper unit tests covering manager-only, child-wallet, custom, and the overlap (manager + child + custom in one family).
 
 ---
 
-## Implementation Steps
+## Architecture decisions (refined from research)
 
-Six workstreams, sequenced to keep the backward-compat regression test green at every checkpoint.
+| ID | Decision | Rationale |
+|---|---|---|
+| D1 | Tool file: `src/tools/view-policy.ts` (new) | Matches existing kebab-case-per-file convention; flat tree at `src/tools/`. |
+| D2 | Register via `registerViewPolicyTool(server)` in [`src/index.ts`](../src/index.ts) | Mirrors all 13 existing tool registrations; no tool registry abstraction needed. |
+| D3 | RBAC entry: `withAccessControl("view-policy", ...)` | Identical to every existing tool. Tool-level access gated by `ROLE_TOOL_ACCESS`; section-level gated inside handler via `filterPolicyForRole` (D7). |
+| D4 | `policyVersion: z.number().int().nonnegative().default(0)` on `FamilyConfigSchema` | Zod default applies on load — lazy migration. `0` = predates the counter; `1+` = has been through ≥1 `configure-policy` call post-3.0.6. |
+| D5 | Increment `policyVersion` inside `configureFamilyCore` at the same point `state.saveFamilyConfig` is called | Single write site; no race in single-process Railway. Both bootstrap and update paths increment. |
+| D6 | Provenance derived on read: `force-added = managerWallets ∪ childWallets`, everything else `configured` | No storage change. Label union: `"manager-wallet" \| "child:<name>" \| "custom"` (vault labels dropped per research OQ6/S5). |
+| D7 | Filter helper: `src/middleware/policy-view-filter.ts` (new) — pure function `filterPolicyForRole(policy, caller, args) → filtered \| error` | Self-contained; unit-testable without the full MCP transport. Holds the 5×4 access-control matrix in one place. |
+| D8 | Cache: `src/cache/policy-cache.ts` (new) — Map<familyId, FamilyConfig> with 60s TTL, in-process | Stores decrypted pre-filter config. Filter is cheap; decryption is the expensive op worth caching. Single-process scope (Railway constraint, research D8). |
+| D9 | `POLICY_NOT_INITIALIZED` returns success-shaped shell, not error | Bootstrap pollers expect `success: true`; error reserved for unrecoverable states (`FAMILY_NOT_FOUND`, `INSUFFICIENT_ROLE`, `CHILD_NOT_FOUND`). |
+| D10 | Default access-control matrix (subject to contract negotiation per ⚠️ OQ1/OQ2/OQ4/OQ5): see below | Defaults match Windsurf proposal; contract pushback may tighten. |
+
+### v1 access-control matrix (locked per [`planning/contract.md`](contract.md) §"Resolved decisions")
+
+**Tool-level gate (`ROLE_TOOL_ACCESS`):** view-policy added for `manager`, `co-parent`, `advisor` only. `family` and `learner` are denied at the `withAccessControl` gate per user-confirmed D-OQ4 (tight v1).
+
+**Filter helper matrix data** (encoded as inspectable data in `policy-view-filter.ts` — all 5 rows so the future sprint adding family/learner inherits cleanly):
+
+| Role | Tool access | children | destinations | learning-goals | summary |
+|---|---|---|---|---|---|
+| manager | ✅ | full | full | full | full |
+| co-parent | ✅ | full | full | full | full |
+| advisor | ✅ | full (no wallets — D-OQ1 tight) | full | full | full |
+| family | ❌ denied at gate | (data: full, no wallets — D-OQ5 consistent, future use) | (data: hidden — D-OQ2 tight) | (data: full) | (data: full) |
+| learner | ❌ denied at gate | (data: own-record only) | (data: hidden) | (data: own-only) | (data: scoped) |
+
+---
+
+## Implementation steps
 
 ### W0 — Pre-sprint backstop (10 min)
-1. Confirm [`src/schemas.ts:30–34, 36–49, 52–69, 72–84`](../src/schemas.ts) contains `SubgoalSchema`, `LearningGoalSchema.subgoals/deadline`, `ChildConfigSchema.walletAddress`, `FamilyConfigSchema.authorizedDestinations` as documented in research. (Verified in spike; smoke check the file hasn't drifted.)
-2. Run `npx vitest run` → expect 363 passing + 1 skipped (Sprint 3.0.2 baseline).
-3. Run `npx tsc --noEmit` → expect clean.
 
-**Exit:** baseline locked; any drift halts the sprint before touching code.
+1. Clean `data/` to avoid Sprint 3.0.5's data-leakage trap (workaround documented in 3.0.5 progress.md).
+2. `npx vitest run` → expect **369 passing + 1 skipped** (Sprint 3.0.5 exit state).
+3. `npx tsc --project ./tsconfig.json --noEmit` → expect clean.
 
-### W1 — Backward-compat regression test FIRST (25 min)
-**File:** `tests/verify-routes.test.ts` (extend).
+### W1 — Regression bar tests FIRST (30 min)
 
-Before any UI work, write the regression bar. New test `HE5c` posts the *old* form's payload shape (no `walletAddress`, no `learningGoals`) to `/api/configure-family`, asserts:
-- 200 response, `body.ok === true`
-- `body.familyId`, `body.memberId`, `body.setupCode`, `body.mcpUrl` populated
-- The persisted `FamilyConfig` (loaded via `StateManager.loadFamilyConfig(familyId)`) has `children[0].learningGoals === undefined` (or empty array — read the existing `normalizeChildren` behavior to lock which) and `children[0].walletAddress === undefined`
-- `body.authorizedDestinations` is an array containing the SIWE-verified manager wallet (lowercased)
+Following the Sprint 3.0.5 HE5c precedent. Tests are written BEFORE any code change; they lock the contract before the implementation can violate it.
 
-This test must pass with the existing code before any other work. After W1, every subsequent step runs this test between checkpoints. **If it ever fails, stop and revert.**
+**File:** [`tests/configure-policy-version.test.ts`](../tests/configure-policy-version.test.ts) (new).
 
-**Exit:** HE5c green; 364 passing total.
+1. **CP-VER1** — `configure-policy` on a fresh family persists `policyVersion: 1` (NOT `0`). Bootstrap path. Loads via `StateManager.loadFamilyConfig`, asserts on the disk shape (per Sprint 3.0.5 E-PB1 disk-shape-is-the-truth pattern).
+2. **CP-VER2** — Two consecutive `configure-policy` calls on the same family persist `policyVersion: 2`. Update path. Locks "increments by exactly 1 per write", not "increases".
+3. **CP-VER3** — Pre-3.0.6 family configs (missing `policyVersion` field) load with `policyVersion: 0` via Zod default. Backward-compat regression — write a `family-config.json` to disk WITHOUT the field, then `loadFamilyConfig` returns the parsed shape with `policyVersion: 0`.
 
-### W2 — HTTP boundary extensions (D8 + D9) (30 min)
-**Files:** [`app/verify-routes.ts`](../app/verify-routes.ts), [`src/core/configure-family.ts`](../src/core/configure-family.ts).
+All three are RED on the current `main` (field doesn't exist yet). W2 makes them GREEN.
 
-1. Extend `configureFamilyBodySchema.learningGoals` per D8 spike diff. Verify `npx tsc --noEmit` clean.
-2. Extend `ConfigureFamilyBootstrapResult` and `bootstrapFamily()` return statement per D9 spike diff.
-3. Extend the `res.json({...})` block at verify-routes.ts:329–339 to include `authorizedDestinations`.
-4. Add a new test `HE5d` to `tests/verify-routes.test.ts`: post a payload WITH `walletAddress` and a goal containing `subgoals` + `deadline`; assert the persisted `FamilyConfig.children[0]` has the goal with `subgoals.length === 2` and `deadline` matches `${date}T00:00:00.000Z`. Also assert `body.authorizedDestinations` includes the lowercased child wallet AND the manager wallet.
-5. Run `HE5c` (backward-compat) — must still pass. Run `HE5d` (new). Run full suite — must be 365 passing.
+### W2 — `policyVersion` schema + increment + lazy migration (30 min)
 
-**Exit:** Both new HTTP-layer tests green; 365 passing; no existing test regressed.
+1. **D4 schema diff:** [`src/schemas.ts:72–84`](../src/schemas.ts) `FamilyConfigSchema` — add one line:
+   ```ts
+   policyVersion: z.number().int().nonnegative().default(0),
+   ```
+2. **D5 increment site:** [`src/core/configure-family.ts`](../src/core/configure-family.ts) — find the `state.saveFamilyConfig` call in both `bootstrapFamily` and `updateExistingFamily` paths. Bump `policyVersion` immediately before save:
+   ```ts
+   const currentVersion = existingConfig?.policyVersion ?? 0;
+   const newConfig = { ...config, policyVersion: currentVersion + 1 };
+   await state.saveFamilyConfig(familyId, newConfig);
+   ```
+   Bootstrap path: `existingConfig` is undefined → `currentVersion = 0` → save with `1`. Update path: load existing → increment → save.
+3. **W1 regression bar:** CP-VER1, CP-VER2, CP-VER3 must ALL go green after this step. Run between checkpoints.
+4. **Full suite:** `npx vitest run` → expect **372 passing + 1 skipped** (369 baseline + 3 W1 tests).
+5. `tsc --noEmit` clean.
 
-### W3 — Form field additions (W1 from Windsurf plan recast, ~1.5h)
-**File:** [`public/verify.html`](../public/verify.html).
+### W3 — Destination provenance hydration (1 h)
 
-Following the Windsurf workstream decomposition (W1.1–W1.6) but recast against current code paths and harness rubric weights (Design 40%):
+**File:** [`src/middleware/policy-view-filter.ts`](../src/middleware/policy-view-filter.ts) — start the file (filter helper added in W5; provenance helper here).
 
-1. **W3.1 — `walletAddress` per child (20 min):** Extend `blankChildRow()` at lines 618–629 with `walletAddress: ""`. Extend `renderChildren()` at lines 632–689 to add `<input type="text" data-field="walletAddress" placeholder="0x… (optional)">` immediately after the name input, with helper text `Leave blank to have AllowMe create a wallet for this child.` Wire to `child.walletAddress = e.target.value.trim()` in the input handler.
-2. **W3.2 — Goals section header + "+ Add learning goal" button (30 min):** Extend `blankChildRow()` with `learningGoals: []`. In `renderChildren()`, after the categories block, append a `<div data-goals>` container plus a `<button data-add-goal>` (disabled when `child.learningGoals.length >= 5`). Click handler pushes `{topic: "", category: "", subgoals: [], deadline: ""}` and re-renders.
-3. **W3.3 — Goal row template (30 min):** For each goal in `child.learningGoals`, render `<input type="text" data-goal-field="topic">`, `<select data-goal-field="category">` populated from `child.categories.map(c => c.name)`, `<input type="date" data-goal-field="deadline">`, "+ Add subgoal" button (capped at 5), "× Remove goal" button.
-4. **W3.4 — Subgoal sub-row template (15 min):** For each subgoal, render `<input type="text" data-subgoal-field="topic">` + "× Remove subgoal" button.
-5. **W3.5 — Cap enforcement (15 min):** Disable "+ Add goal" when `learningGoals.length >= 5`; disable "+ Add subgoal" when `subgoals.length >= 5`. Disabled buttons must include `aria-disabled="true"` and visually grey out.
+1. **Helper:** `hydrateDestinations(family: FamilyConfig, managers: Member[]): Array<{ address, label, source }>`.
+   ```ts
+   // Inputs: the full family config (carries authorizedDestinations + children).
+   //         the list of Member records with role === "manager".
+   // Output: provenance-tagged array, same order as input authorizedDestinations.
+   ```
+2. **Logic:**
+   - Build `forceAdded: Map<string, string>` (lowercased address → label).
+     - For each manager: `forceAdded.set(m.walletAddress.toLowerCase(), "manager-wallet")` (only if walletAddress is present).
+     - For each `child` in `family.children`: if `child.walletAddress` is set, `forceAdded.set(child.walletAddress.toLowerCase(), \`child:${child.name}\`)`.
+   - Map each entry of `family.authorizedDestinations` to either the matching force-added label (and `source: "force-added"`) or `{ label: "custom", source: "configured" }`.
+3. **Unit tests** ([`tests/policy-view-filter.test.ts`](../tests/policy-view-filter.test.ts) new):
+   - **PV-H1:** Manager wallet only (no children configured) → 1 entry tagged `manager-wallet`/`force-added`.
+   - **PV-H2:** Manager + 2 children, no custom → 3 entries, all `force-added`, labels match.
+   - **PV-H3:** Manager + 1 child + 1 custom configured address → 3 entries, 2 force-added, 1 `custom`/`configured`.
+   - **PV-H4:** Multiple managers (legacy promoted co-parent) → all matched as `manager-wallet`.
+   - **PV-H5:** Address case-insensitive matching (input: mixed-case; allowlist: lowercase) → still matched correctly.
 
-After W3, the form renders correctly; submission still posts the existing field set (W4 wires the new fields).
+### W4 — `view-policy` tool handler skeleton (2 h)
 
-**Exit:** Form renders without console errors on every recent Chrome / Safari / mobile Safari. HE5c still green. Run a manual smoke: open `public/verify.html` via `python3 -m http.server 0` and verify the new fields appear, add/remove buttons work, caps engage.
+**File:** [`src/tools/view-policy.ts`](../src/tools/view-policy.ts) (new).
 
-### W4 — Submit serializer (45 min)
-**File:** [`public/verify.html`](../public/verify.html) (`submitFamilyCreate()` at lines 691–751).
+1. **Input schema** (Zod):
+   ```ts
+   section: z.enum(["all", "summary", "children", "destinations", "learning-goals"]).default("all"),
+   childName: z.string().optional(),
+   includeWallets: z.boolean().default(true),
+   ...rbacFields,
+   ```
+2. **Handler structure** — mirrors `check-goals.ts`:
+   ```ts
+   withAccessControl("view-policy", async (args, caller) => {
+     if (!caller) return buildNoIdentityResponse("view-policy");
+     // 1. Load policy from cache or state.loadFamilyConfig(caller.familyId)
+     // 2. If null → return POLICY_NOT_INITIALIZED shell (success: true, empty values)
+     // 3. Load managers via state.loadMembers(familyId).filter(role==="manager")
+     // 4. Hydrate provenance via W3 helper
+     // 5. Apply filterPolicyForRole(policy, caller, args) — returns filtered shape or { error }
+     // 6. If filter returns error → forbidden response
+     // 7. Return jsonResponse({ success: true, ...filteredPolicy, message })
+   })
+   ```
+3. **Tests** ([`tests/view-policy-tool.test.ts`](../tests/view-policy-tool.test.ts) new) — happy-path only here; access-control matrix lives in W5:
+   - **VP-T1:** Manager + section="all" + no childName + includeWallets=true → all sections populated; provenance tagged.
+   - **VP-T2:** Manager + section="summary" → only `summary` section non-zero; other sections present but empty arrays.
+   - **VP-T3:** Manager + childName="Aiden" → `children[]` filtered to one entry; `learning-goals` scoped.
+   - **VP-T4:** Manager + includeWallets=false → `children[].walletAddress` undefined; `authorizedDestinations` UNCHANGED (per Windsurf design decision §"includeWallets stripping destinations too: rejected").
+   - **VP-T5:** Family with no policy (call `view-policy` before `configure-policy` ever ran) → returns `success: true` shell with `policyVersion: 0`, `children: []`, `summary: { childCount: 0, ... }`. (Note: requires bootstrapped Manager identity to call — see test setup.)
+   - **VP-T6:** Two consecutive `view-policy` calls return identical payloads (locks determinism).
 
-1. **W4.1 — `walletAddress` (15 min):** In the children-loop validation block, for each `c`: if `c.walletAddress` is a non-empty string, validate `/^0x[a-fA-F0-9]{40}$/`. If malformed, set `alertEl.textContent` to `Wallet for ${c.name} must start with 0x and have 40 hex characters.` and return. If empty string, omit the field entirely from the posted payload (not `walletAddress: ""` — that fails `tryNormalizeWallet`).
-2. **W4.2 — `learningGoals` (30 min):** Build a `cleanedChildren` array. For each `child`:
-   - Filter `learningGoals` to those with non-empty `topic.trim()`.
-   - For each kept goal: keep `topic.trim()`, `category` (already from dropdown so valid), filter `subgoals` to those with non-empty `topic.trim()` and pass through `[{topic}]` shape only (no `completed` — that's set in `normalizeChildren`), and if `deadline` is a non-empty string, append `T00:00:00.000Z`.
-   - If after filtering `learningGoals` is empty, omit the field entirely (don't post `learningGoals: []` since the backend treats `undefined` and `[]` identically but the simpler shape is cleaner).
-   - Same for `walletAddress`: omit if empty.
+### W5 — Role-based filter helper (`filterPolicyForRole`) (2 h)
 
-**Exit:** Submit POSTs the richer payload; HE5c still green; new HE5d (or its UI equivalent) passes when run against the form's submitted payload.
+**File:** [`src/middleware/policy-view-filter.ts`](../src/middleware/policy-view-filter.ts) (extends W3 file).
 
-### W5 — Inline validation feedback (30 min)
-**File:** [`public/verify.html`](../public/verify.html).
+1. **Signature:**
+   ```ts
+   export function filterPolicyForRole(
+     fullPolicy: FamilyConfig,
+     hydratedDestinations: Array<{ address, label, source }>,
+     managers: Member[],
+     caller: CallerContext,
+     args: { section: SectionEnum; childName?: string; includeWallets: boolean }
+   ): FilteredPolicy | { error: "INSUFFICIENT_ROLE" | "CHILD_NOT_FOUND"; ... }
+   ```
+2. **Matrix encoded as data, not nested switches** — one `const ACCESS_MATRIX` object keyed by `[role][section]` returning `"full" | "scoped" | "stripped" | "hidden"`. Easier to audit; easier for the matrix test to iterate.
+3. **`childName` validation:**
+   - If `childName` provided and caller's role can see that child → filter children + learning-goals to that name.
+   - If `childName` is provided but caller can't see ANY child by that name → `CHILD_NOT_FOUND`; include `validChildNames` ONLY when caller is `manager | co-parent | advisor | family` (NOT learner — prevents sibling enumeration; learner gets `CHILD_NOT_FOUND` with no validChildNames).
+4. **Tests** — the 5×4 matrix in `tests/policy-view-filter.test.ts`:
+   - **PV-M{role}-{section}** for every (role, section) pair = 20 happy-path matrix tests.
+     - Each asserts: forbidden cells return `{ error: "INSUFFICIENT_ROLE" }`; allowed cells return the expected shape (with role-specific stripping applied).
+   - **PV-CHILDNAME1:** Manager + childName="ghost" → `CHILD_NOT_FOUND` + `validChildNames: ["Aiden", "Sofia"]`.
+   - **PV-CHILDNAME2:** Learner + childName="ghost" → `CHILD_NOT_FOUND` + NO `validChildNames`.
+   - **PV-CHILDNAME3:** Learner + childName="<own child name>" → succeeds; learner sees own record only.
+   - **PV-CHILDNAME4:** Learner + childName="<sibling name>" → `CHILD_NOT_FOUND` (sibling enumeration blocked).
+   - **PV-WALLETS1:** Advisor + includeWallets=true → wallets STILL stripped (advisor's `(no wallets)` rule wins; client preference doesn't override role).
+   - **PV-WALLETS2:** Family + includeWallets=true → wallets stripped (per default matrix — contract may revise).
 
-1. **W5.1 — Wallet regex on blur (15 min):** Wire a `blur` listener on each `walletAddress` input that shows an inline error span (`<span class="alert alert-error">…</span>`) under the input when the value is non-empty and malformed. Clear the error on subsequent valid input. Use the same `escapeHtml`-safe rendering helpers already in `verify.html`.
-2. **W5.2 — Goal topic required-when-others-present (15 min):** On submit attempt, if any goal has `subgoals.length > 0` OR `deadline` OR a non-default `category`, the goal's `topic` must be non-empty. Inline error under that goal's topic input on submit failure; cleared on the next render.
+### W6 — Cache layer + invalidation (1 h)
 
-**Exit:** UX feedback is immediate and clear; W3 manual smoke shows red error states correctly.
+**File:** [`src/cache/policy-cache.ts`](../src/cache/policy-cache.ts) (new).
 
-### W6 — Post-submit allowlist transparency panel (D6) (30 min)
-**File:** [`public/verify.html`](../public/verify.html) (`renderSuccess()` at lines 805–845).
+1. **API:**
+   ```ts
+   export const policyCache = {
+     get(familyId: string): FamilyConfig | undefined;
+     set(familyId: string, value: FamilyConfig): void; // 60s TTL
+     invalidate(familyId: string): void;
+   };
+   ```
+2. **Implementation:** Map<string, { value: FamilyConfig; expiresAt: number }>. On `get`, check `expiresAt` against `Date.now()`; if expired, delete and return undefined.
+3. **Wire into `view-policy.ts`:** before `state.loadFamilyConfig(familyId)`, check cache. On miss, load + set.
+4. **Wire into `configure-policy` write path** — at [`src/tools/configure-policy.ts`](../src/tools/configure-policy.ts), after `configureFamilyCore` succeeds, call `policyCache.invalidate(result.familyId)`. Synchronous, same handler, before response returns. No await race.
+5. **Tests** ([`tests/policy-cache.test.ts`](../tests/policy-cache.test.ts) new):
+   - **PC1:** Get-miss → load → set → get-hit (within 60s window) → same instance returned.
+   - **PC2:** Set + advance time past 60s (`vi.useFakeTimers`) → get returns undefined.
+   - **PC3:** Set → invalidate → get returns undefined.
+   - **PC4:** Integration — `view-policy` → `configure-policy` → `view-policy` → second view returns the post-write state, not the cached pre-write state.
 
-1. **W6.1 — Panel render:** Extend `renderSuccess({kind, role, mcpUrl, familyName, childName, authorizedDestinations, children})` signature. For `kind === "create"`, render before the existing `<div>` that contains the magic-link URL:
+### W7 — RBAC tool registration + ROLE_TOOL_ACCESS expansion (30 min)
 
-```html
-<div class="alert" style="border-color: var(--brand); background: rgba(0,82,255,.04);">
-  <strong>Your family's allowlist</strong>
-  <p class="muted">USDC transfers from the treasury can only land at these addresses. You can change this list later by asking Claude to <code>configure-policy</code>.</p>
-  <dl class="kv">
-    <!-- one row per address -->
-  </dl>
-</div>
-```
+1. **[`src/constants.ts`](../src/constants.ts) `ROLE_TOOL_ACCESS`:** Add `"view-policy"` to **manager, co-parent, advisor** allowed lists per the user-confirmed tight_v1 profile (D-OQ4). **Family and Learner do NOT receive view-policy access in v1** — deferred to a follow-up sprint.
+2. **[`src/index.ts`](../src/index.ts):** Import + register:
+   ```ts
+   import { registerViewPolicyTool } from "./tools/view-policy.js";
+   // ...after registerConfigurePolicyTool(server):
+   registerViewPolicyTool(server);
+   ```
+3. **Tests** — `VP-T7a` and `VP-T7b` (in [`tests/view-policy-tool.test.ts`](../tests/view-policy-tool.test.ts)):
+   - **VP-T7a:** Family role calling `view-policy` returns `buildAccessDeniedResponse` payload (`{ success: false, error: "Access denied. The \"family\" role cannot use \"view-policy\".", role: "family", toolName: "view-policy" }`). NOT a stripped/filtered partial response.
+   - **VP-T7b:** Learner role calling `view-policy` returns identical access-denied shape. Locks "tight v1 is enforced at the gate, not by the filter helper".
 
-Each `<dt>/<dd>` row: `<dt>{label}</dt><dd>{checksummed-truncated-address}</dd>`, where label is "Admin (you)" for the manager wallet, "{childName}'s wallet" for each child, falling back to "Authorized address {n}" if unmatched. Render in order: admin first, then children matching by lowercased equality between `authorizedDestinations[]` and each `child.wallet` from the response, then any unmatched extras.
+### W8 — Full suite + README + changelog (30 min)
 
-2. **W6.2 — Wire submitFamilyCreate response into renderSuccess:** Update the call site at `public/verify.html:738–743` to pass `authorizedDestinations: body.authorizedDestinations, children: body.children`.
+1. `npx vitest run` clean. Target: **+30 to +40 net new tests** (W1 +3, W3 +5, W4 +6-7, W5 +24-26, W6 +4 = 42–45). Final tally ~411–414 passing + 1 skipped.
+2. `npx tsc --noEmit` clean.
+3. `README.md` — append Sprint 3.0.6 (Done) block under Sprint 3.0.5; update top-of-file test-count claim (369 → ~412).
+4. Confirm no new audit-log enum values were introduced (Sprint 3.0.5 contract precedent — view-policy is read-only and shouldn't produce audit entries).
 
-**Exit:** A bootstrap with a child holding a BYO wallet shows admin + child wallet in the panel; a bootstrap with no BYO wallet shows admin + AllowMe-managed child wallet (the response's `child.wallet` is the auto-created address). Manual smoke confirms.
+### W9 — Handoff (10 min)
 
-### W7 — Test updates + docs (30 min)
-**Files:** [`tests/verify-page.test.ts`](../tests/verify-page.test.ts), [`README.md`](../README.md).
-
-1. **W7.1 — Verify-page HTML smoke:** Audit `tests/verify-page.test.ts`. The current VP1 test (lines 64–88) asserts on `state-*` container IDs only — unaffected by new fields. No update required unless a new state container is added (none planned).
-2. **W7.2 — End-to-end persistence test (optional, ~20 min):** A test that drives a bootstrap with the new fields, then resolves the magic-link `?setup=` to a session and calls the `check-goals` MCP tool (via the existing test harness pattern from `tests/check-goals.test.ts`). Asserts `check-goals` returns the configured goals. This is the truest test of the round-trip but is non-trivial to wire — if it lands quickly, ship it; otherwise defer the MCP-side assertion to the manual W8 smoke.
-3. **W7.3 — README:** Append a Sprint 3.0.5 line under the existing Sprint 3.0.2 section noting "bootstrap form learns goals + BYO-wallet; allowlist transparency in success state." Keep to ~3 lines.
-
-**Exit:** All targeted tests green; README current.
-
-### W8 — Manual smoke (Railway + iOS) (30 min)
-1. Deploy to Railway preview environment.
-2. On real iOS Safari with Coinbase Wallet: complete a full bootstrap with 1 child, 2 goals, 3 subgoals on one goal, a date deadline, and a BYO wallet.
-3. Confirm magic-link copy works.
-4. In Claude on macOS, add the magic link and call `check-goals` — confirm goals come back with subgoals and `daysUntilDeadline`.
-5. Inspect `data/families/{familyId}/family-config.json` — confirm `learningGoals[0].subgoals.length === 3`, `learningGoals[0].deadline` is a valid ISO datetime, and `authorizedDestinations` contains both manager and child addresses lowercased.
-
-**Exit:** End-to-end mobile flow passes; backup verified.
+1. Update `implementation/progress.md` with the W0–W8 state.
+2. No mobile/device smoke required — pure backend tool. Optional Claude.ai integration smoke: have a Manager session call `view-policy` from Claude Desktop and confirm the response renders sensibly. **Delegated to user, OR run by generator if MCP test harness is available.**
+3. Hand off to evaluator. **No self-grading.**
 
 ---
 
 ## Risks
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| HTTP body schema change breaks an unobserved test path | Low | Medium | W2 runs full suite before declaring complete; spike already verified `configureFamilyBodySchema` is the only producer/consumer chain |
-| Form state desync (e.g., goal removed but DOM still shows it) | Medium | Low | Use the existing pattern from `renderChildren()` — full re-render on each state mutation (no surgical DOM patches). Vanilla-JS array-of-objects pattern proven in Sprint 3.0 v4 W2.2 |
-| iOS Safari native date input edge cases | Low | Low | Spike already noted iOS Safari 14+ support; D4 fallback locked but not pre-built. W8 smoke catches |
-| Allowlist panel reveals address even when manager declined to set one for a child | Low | Low | The response's `authorizedDestinations` is exactly what the backend enforces; if a child's address is missing it's because no wallet was set — the panel correctly shows "AllowMe-managed wallet (created automatically)" for that case |
-| Backward-compat regression test (HE5c) writes against an evolving response shape | Low | Medium | W1 explicitly locks the *additive* nature: HE5c asserts ON known fields only, doesn't assert response keys are exhaustive. Anything new is non-breaking |
-| Sprint 3.0.5 expands beyond UI + HTTP boundary into core logic | Medium | High | Scope guard: any change to `src/core/configure-family.ts` beyond the ~5 lines in D9 spike diff stops the sprint. If a deeper change becomes necessary, declare scope creep and re-negotiate the contract |
-| Generator self-evaluates and grades the work | N/A | Critical | Hard rule per [`AllowMeOWS/AGENTS.md`](../AGENTS.md) Rule 1 + hook enforcement. Generator must stop after W8 and hand off to evaluator |
+| Risk | Severity | Mitigation |
+|---|---|---|
+| `policyVersion` increment site missed in one of the two configure-family paths (bootstrap vs update) | High | W2 tests cover both paths separately (CP-VER1 = bootstrap, CP-VER2 = update). |
+| Role-stripping bug exposes destinations to learner | High | W5 matrix test asserts EVERY (role, section) cell, not a representative sample. |
+| Cache stale read after `configure-policy` write | High | W6 wires invalidation into the write handler SYNCHRONOUSLY before response (no `await` between save and invalidate). PC4 integration test locks this end-to-end. |
+| Family / learner role scope mismatch from existing tools (OQ5) | Medium | Default matrix tracks existing-tool behavior (family sees full children, no wallets); contract negotiation may revise. |
+| `policyVersion` collision with future Sprint 3.0.2 hypothetical migration | Low | Field is additive with default — older code paths ignore it. |
+| Manager wallet lookup at read time misses legacy promoted-co-parent case (multi-manager family) | Low | W3 PV-H4 covers it; helper iterates ALL managers, not just first. |
+| New tests trip the data-leakage trap (Sprint 3.0.5 W0 finding) | Low | Plan inherits the `rm -rf data/families` cleanup pattern between full-suite runs. |
 
 ---
 
 ## Fallback approaches
 
-- **iOS date input fails:** swap to `<input type="text" pattern="\d{4}-\d{2}-\d{2}">` with helper text. Cosmetic regression only.
-- **Subgoal UI feels too dense on mobile:** ship goals without subgoals, defer subgoals UI to Sprint 3.5. `check-goals` handles goals-without-subgoals gracefully (covered by `tests/check-goals.test.ts`).
-- **Transparency panel feels intrusive:** turn into a collapsible `<details>/<summary>` block — same content, less visual weight. Decision deferred until W8 smoke feedback.
-- **Backward-compat regression reveals an actual incompatibility:** stop, root-cause, do not work around. If HE5c ever fails post-W2, the sprint is on hold until the regression is fixed at the upstream cause (per Sprint 3.0.2 progress.md "Failed Approaches" discipline).
+- **If W5 access-control matrix proves too complex to land in one workstream:** ship Manager-only first (matrix collapses to 1×4), defer co-parent/advisor/family/learner to W5.5. The tool surface stays the same; only `ROLE_TOOL_ACCESS` and the matrix data table change. Manager-only happy-path is enough for the first Claude-integration smoke.
+- **If `policyVersion` increment site is too tangled in `configureFamilyCore`'s control flow:** ship the schema field (D4) without the increment in W2; have W2 only test the lazy-migration default. CP-VER1/CP-VER2 deferred to a follow-up. The view-policy tool can still return `policyVersion` (always `0` for now). This degrades the optimistic-concurrency foothold but doesn't block the read path.
+- **If the cache layer (W6) introduces flakiness in tests:** drop the cache for v1. Every `view-policy` hits `state.loadFamilyConfig`. Performance is acceptable on Railway single-instance. PC1–PC4 deferred.
 
 ---
 
 ## How to use this plan
 
-Execution order, with each W-step a checkpoint that re-runs the regression test:
+Generator (`@generator`) opens this file at every workstream checkpoint:
 
-1. W0 — backstop (locks baseline)
-2. W1 — write HE5c FIRST (regression bar before any code change)
-3. W2 — HTTP boundary additions; HE5c green, HE5d green
-4. W3 — form fields; HE5c green
-5. W4 — submit serializer; HE5c green; HE5d green
-6. W5 — validation feedback
-7. W6 — transparency panel
-8. W7 — test/docs cleanup
-9. W8 — Railway + iOS smoke
-10. Hand off to evaluator. Do NOT self-grade.
-
-Total: ~5 hours. The generator follows this plan AND [`planning/contract.md`](contract.md) (negotiated next).
+1. **Before any code change:** verify the latest test outcome (regression bar must be green from W2 onward).
+2. **After each workstream:** run `npx vitest run` AND `npx tsc --noEmit`. Update `implementation/progress.md`.
+3. **If a workstream's tests go red unexpectedly:** stop, document the failure in `implementation/progress.md`'s "Failed Approaches" section (≤10 lines), then either fix forward or revert + replan.
+4. **Do NOT skip W1.** The regression bar must be written FIRST per the Sprint 3.0.5 precedent. CP-VER1/2/3 lock the central correctness gate of W2 before any code change.
+5. **Stop after W8.** No self-evaluation; evaluator runs Phase 3 from the contract + deployed build.

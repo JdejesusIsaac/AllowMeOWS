@@ -66,7 +66,8 @@ describe("H2: MCP tool registration", () => {
 
     // Manager: 12 in expectedTools + convert-savings (Sprint 2.5) = 13.
     // Sprint 3.0.3 added check-goals to the Manager allowlist.
-    expect(managerTools.length).toBe(13);
+    // Sprint 3.0.6 added view-policy to the Manager allowlist → 14.
+    expect(managerTools.length).toBe(14);
   });
 });
 

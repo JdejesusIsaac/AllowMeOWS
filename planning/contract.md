@@ -1,27 +1,31 @@
-# Sprint 3.0.5 — Sprint Contract (Phase 1.5, Negotiated)
+# Sprint 3.0.6 — Sprint Contract (Phase 1.5, Negotiated)
 
 **Status:** Aligned between planner draft and evaluator Mode A pushback. Ready for user confirmation.
-**Inputs:** [`research/research.md`](../research/research.md) (spike-resolved), [`planning/plan.md`](plan.md).
-**Sprint type:** Frontend/UX + thin HTTP-boundary surfacing.
+**Inputs:** [`research/research.md`](../research/research.md) (spike-resolved S1–S5; ⚠️ OQ1/OQ2/OQ4/OQ5 deferred here), [`planning/plan.md`](plan.md).
+**Sprint type:** Backend MCP tool — RBAC-sensitive read counterpart to `configure-policy`.
+**Sprint class:** Security-critical (rubric Func 30 / Auth 50 / Design 10 / Orig 10 per [`planning/AGENTS.md:18`](AGENTS.md)).
 
 ---
 
 ## Scope
 
-**In scope.** Three deliverables, locked:
+**In scope.** Five deliverables, locked:
 
-1. Extend [`public/verify.html`](../public/verify.html)'s bootstrap form (`state-family-create`) to collect per-child `walletAddress` and `learningGoals` (with optional `subgoals` and `deadline`), capped at 5 goals per child and 5 subgoals per goal as UX guardrails.
-2. Extend the verify-page HTTP boundary at [`app/verify-routes.ts`](../app/verify-routes.ts) by ~13 lines additive:
-   - `configureFamilyBodySchema.learningGoals` mirrors the persistence schema's `subgoals` + `deadline` shape.
-   - `/api/configure-family` JSON response carries `authorizedDestinations: string[]` (sourced from the resolved `buildAuthorizedDestinations` result in `bootstrapFamily()`).
-3. Render a post-submit allowlist transparency panel in `renderSuccess({kind: "create"})` listing the admin + each child's authorized wallet, with a one-line pointer to `configure-policy` for future edits.
+1. **`policyVersion` monotonic counter** on `FamilyConfigSchema` ([`src/schemas.ts`](../src/schemas.ts)) with lazy migration via Zod default and synchronous `++1` increment inside `configureFamilyCore` (both bootstrap and update paths).
+2. **New MCP tool `view-policy`** ([`src/tools/view-policy.ts`](../src/tools/view-policy.ts)) registered in [`src/index.ts`](../src/index.ts), with `withAccessControl` wrapping per existing convention.
+3. **Role-based filter helper** ([`src/middleware/policy-view-filter.ts`](../src/middleware/policy-view-filter.ts)) encoding the 5×4 access-control matrix as inspectable data (D7), plus a `hydrateDestinations` helper for provenance tagging (D6).
+4. **In-process cache** ([`src/cache/policy-cache.ts`](../src/cache/policy-cache.ts)) with 60s TTL and synchronous write-invalidation in `configure-policy`.
+5. **`ROLE_TOOL_ACCESS` expansion** ([`src/constants.ts`](../src/constants.ts)) adding `"view-policy"` to allowed roles per the access-control matrix.
 
-**Out of scope.** Anything that requires:
-- Touching [`src/schemas.ts`](../src/schemas.ts) (persistence schema unchanged).
-- New MCP tools or HTTP endpoints.
-- Core domain changes beyond extending `ConfigureFamilyBootstrapResult` and its return statement in `bootstrapFamily()`.
-- Dashboard, goal-recommendation engine, wallet picker, React migration, multi-language form, deadline-notification infrastructure, subgoal auto-matching on `verify-achievement`.
-- The full Windsurf "scope guard" exclusion list in [`sprint-3.0.5/plan-3.0.5.md`](../sprint-3.0.5/plan-3.0.5.md) §"Scope guard" items 1–20.
+**Out of scope.**
+- Mutation of any policy field (`view-policy` is read-only by construction).
+- Pending achievement queue (lives on `check-progress`).
+- Optimistic-concurrency enforcement on `configure-policy` (`policyVersion` shipped but unenforced — future sprint).
+- Multi-instance cache coordination (Railway is single-instance; in-process Map is enough).
+- Encrypted-blob inspection or debug endpoints.
+- New audit-log enum values (read tool produces no audit entries).
+- New `CallerContext.childName` plumbing for non-learner roles (locks family's child-scope behavior at "all-or-stripped", not "own-child" — see ⚠️ OQ5 default).
+- Touching the verify-page form or any Sprint 3.0.5 artifact.
 
 ---
 
@@ -29,149 +33,167 @@
 
 | ID | Deliverable | File(s) | Phase |
 |----|-------------|---------|-------|
-| DEL1 | `walletAddress` input per child with inline regex feedback | `public/verify.html` | W3, W5 |
-| DEL2 | Per-child `learningGoals` section with topic, category dropdown, subgoals, deadline | `public/verify.html` | W3 |
-| DEL3 | Submit serializer that posts the richer payload (omitting empty optionals) | `public/verify.html` | W4 |
-| DEL4 | HTTP body schema accepts `subgoals` and `deadline` | `app/verify-routes.ts` | W2 |
-| DEL5 | `ConfigureFamilyBootstrapResult.authorizedDestinations` + populate in core | `src/core/configure-family.ts` | W2 |
-| DEL6 | `/api/configure-family` response includes `authorizedDestinations` | `app/verify-routes.ts` | W2 |
-| DEL7 | Allowlist transparency panel in `renderSuccess()` | `public/verify.html` | W6 |
-| DEL8 | Backward-compat regression test `HE5c` | `tests/verify-routes.test.ts` | W1 |
-| DEL9 | Rich-payload persistence test `HE5d` | `tests/verify-routes.test.ts` | W2 |
-| DEL10 | README append line for Sprint 3.0.5 | `README.md` | W7 |
+| DEL1 | `policyVersion` Zod field + lazy-migration default | [`src/schemas.ts`](../src/schemas.ts) | W2 |
+| DEL2 | `policyVersion` increment in `configureFamilyCore` (both paths) | [`src/core/configure-family.ts`](../src/core/configure-family.ts) | W2 |
+| DEL3 | Provenance hydration helper | [`src/middleware/policy-view-filter.ts`](../src/middleware/policy-view-filter.ts) | W3 |
+| DEL4 | `view-policy` tool handler | [`src/tools/view-policy.ts`](../src/tools/view-policy.ts) | W4 |
+| DEL5 | `filterPolicyForRole` (5×4 matrix encoded as data) | [`src/middleware/policy-view-filter.ts`](../src/middleware/policy-view-filter.ts) | W5 |
+| DEL6 | In-process cache + write-invalidation | [`src/cache/policy-cache.ts`](../src/cache/policy-cache.ts), [`src/tools/configure-policy.ts`](../src/tools/configure-policy.ts) | W6 |
+| DEL7 | `ROLE_TOOL_ACCESS` expansion + tool registration | [`src/constants.ts`](../src/constants.ts), [`src/index.ts`](../src/index.ts) | W7 |
+| DEL8 | Regression-bar tests `CP-VER1`/`CP-VER2`/`CP-VER3` | [`tests/configure-policy-version.test.ts`](../tests/configure-policy-version.test.ts) | W1 |
+| DEL9 | Provenance + matrix + cache test suites | [`tests/policy-view-filter.test.ts`](../tests/policy-view-filter.test.ts), [`tests/view-policy-tool.test.ts`](../tests/view-policy-tool.test.ts), [`tests/policy-cache.test.ts`](../tests/policy-cache.test.ts) | W3–W6 |
+| DEL10 | README append for Sprint 3.0.6 | [`README.md`](../README.md) | W8 |
 
 ---
 
 ## Verification Criteria
 
-Each criterion is independently testable and the evaluator must verify it without reading `implementation/progress.md`. Twelve criteria, ordered by failure-mode severity.
+Twelve criteria, ordered by failure-mode severity. Evaluator verifies each from the deployed build without reading `implementation/progress.md`.
 
 ### Functionality (must all pass for Pass)
 
-**C1 — Backward-compat bootstrap.** A POST to `/api/configure-family` with the *old* payload shape (no `walletAddress`, no `learningGoals` on any child) returns 200 with `body.ok === true`, persists `FamilyConfig` with `children[0].walletAddress === undefined` and `children[0].learningGoals === undefined`, and includes `body.authorizedDestinations` containing the lowercased SIWE-verified manager wallet. *Locked by test `HE5c` in `tests/verify-routes.test.ts`.*
+**C1 — Backward-compat lazy migration.** Pre-3.0.6 family configs (no `policyVersion` field on disk) hydrate via `state.loadFamilyConfig` with `policyVersion: 0`. *Locked by test `CP-VER3` in [`tests/configure-policy-version.test.ts`](../tests/configure-policy-version.test.ts).* Writes a pre-3.0.6-shaped `family-config.json` to disk directly, then reads via StateManager and asserts the default applied.
 
-**C2 — Rich-payload bootstrap, subgoals persist.** A POST including a child with `walletAddress: "0x..."`, one goal with `{topic, category, subgoals: [{topic}, {topic}], deadline: "2026-08-15T00:00:00.000Z"}` returns 200, persists `FamilyConfig.children[0].learningGoals[0].subgoals.length === 2` (each `subgoal.completed === false` after `normalizeChildren`), `learningGoals[0].deadline === "2026-08-15T00:00:00.000Z"`, `children[0].walletAddress === <lowercased input>`, and `body.authorizedDestinations` contains both the manager and child wallets. *Locked by test `HE5d` in `tests/verify-routes.test.ts`.*
+**C2 — `policyVersion` monotonic, increments by exactly 1.** Bootstrap call persists `policyVersion: 1`; the immediate next `configure-policy` update persists `policyVersion: 2`. Both assertions load the disk shape via `StateManager.loadFamilyConfig` per the Sprint 3.0.5 E-PB1 disk-shape-is-the-truth pattern. *Locked by tests `CP-VER1` (bootstrap) and `CP-VER2` (update).*
 
-**C3 — BYO-wallet auto-feeds the allowlist (Sprint 3.0.2 integration).** Posting `walletAddress` per child results in the address appearing in `FamilyConfig.authorizedDestinations` after bootstrap, lowercased. Evaluator verifies by loading the persisted file directly with `StateManager.loadFamilyConfig`. *Subsumed by `HE5d` but called out as the strongest Sprint 3.0.2 integration assertion.*
+**C3 — `POLICY_NOT_INITIALIZED` returns success shell, not error.** A `view-policy` call on a family that has never been through `configure-policy` returns `{ success: true, policyVersion: 0, children: [], authorizedDestinations: [], summary: { childCount: 0, totalWeeklyBudgetUsd: 0, destinationCount: 0, learningGoalCount: 0, activeGoalCount: 0 }, message: <non-empty> }`. **Critical: the shape is structurally identical to a populated response, just zero-valued.** *Locked by `VP-T5`.*
 
-**C4 — AllowMe-managed wallet path still works.** Posting with `walletAddress` omitted leaves `ChildConfig.walletAddress` undefined, `buildChildrenSummary` returns `wallet: "OWS-managed"` for that child, and the response's `authorizedDestinations` still contains the manager wallet. *Verified by `HE5c`.*
+**C4 — Populated read returns full provenance-tagged response.** Manager + `section="all"` + populated family returns: every section non-empty, every entry in `authorizedDestinations` carries `{ address, label, source }`, `policyVersion >= 1`, `updatedAt` is an ISO datetime string, `network` matches the configured chain. *Locked by `VP-T1` and the W4 happy-path suite.*
 
-**C5 — Date serialization is correct.** A form-side `YYYY-MM-DD` deadline (e.g. `"2026-08-15"`) is serialized to `${date}T00:00:00.000Z` before posting; the persisted `LearningGoal.deadline` exactly equals that string. *Verified by `HE5d`'s deadline assertion.*
+**C5 — Provenance derivation correctness.** Manager's wallet is tagged `label: "manager-wallet", source: "force-added"`. Each child's wallet (when present) is tagged `label: "child:<exact-name>", source: "force-added"`. Any wallet in `authorizedDestinations` matching neither is tagged `label: "custom", source: "configured"`. **Match is case-insensitive.** *Locked by `PV-H1` through `PV-H5` in [`tests/policy-view-filter.test.ts`](../tests/policy-view-filter.test.ts).*
 
-### Backward compatibility (must pass — central correctness bar)
+### Auth / Security (the rubric's heaviest weight — 50%)
 
-**C6 — Zero regressions in pre-existing tests.** `npx vitest run` returns 363 passing + 1 skipped (Sprint 3.0.2 baseline) + the new tests from W1/W2. No previously-passing test starts failing. Required exit state: `369 passing + 1 skipped` (363 baseline + HE5c + HE5d + W7.2 if implemented + at most 3 internal regression hooks). *If 363 baseline regresses, sprint fails regardless of every other criterion.*
+**C6 — Access-control matrix, every cell.** Per user-confirmed tight_v1 profile (D-OQ4):
+- **Tool-level gate (`ROLE_TOOL_ACCESS`):** Manager, Co-parent, Advisor have `view-policy` access. Family and Learner are EXCLUDED at the `withAccessControl` layer — they receive the standard "Access denied" payload from `buildAccessDeniedResponse`, NOT a partial response.
+- **Filter helper matrix (`filterPolicyForRole`):** still encodes all 5 rows × 4 sections = 20 cells as inspectable data (so when Family/Learner are added in a follow-up sprint, the matrix is ready). For each allowed (role, section) pair: forbidden cells return `{ error: "INSUFFICIENT_ROLE", role, requestedSection }`; allowed cells return the expected shape with role-specific stripping applied (e.g., advisor receives `children[]` with `walletAddress: undefined` on every entry per D-OQ1 tight).
+- **Effective v1 happy-path coverage:** Manager/Co-parent/Advisor × 4 sections = 12 positive cells; Family/Learner × any section = 2 tool-level "Access denied" tests.
+*Locked by `PV-M{role}-{section}` tests in `tests/policy-view-filter.test.ts` (folded via `test.each` for matrix discipline) plus `VP-T7a` (family denied) and `VP-T7b` (learner denied) in `tests/view-policy-tool.test.ts`. **Evaluator iterates every cell and asserts on each — no representative-sample testing.***
 
-**C7 — `npx tsc --noEmit` clean.** No new TypeScript errors introduced by D8 / D9 type extensions. *Build gate.*
+**C7 — Sibling-enumeration block for learner.** Learner calling `view-policy` with `childName="<sibling-name>"` (a real but unauthorized child) returns `{ success: false, error: "CHILD_NOT_FOUND" }` with NO `validChildNames` field. Same response shape as a non-existent child name. *Locked by `PV-CHILDNAME2` (learner with ghost name) and `PV-CHILDNAME4` (learner with real sibling) — must return identical error shape.*
 
-### Frontend / UX (Design 40% — the rubric's heaviest weight)
+**C8 — Wallet redaction respects role precedence.** Advisor calling `view-policy` with `includeWallets: true` STILL receives `children[].walletAddress: undefined` (role-level stripping wins over client preference). Family role same behavior per default matrix. `includeWallets: false` does NOT strip `authorizedDestinations` for any role — only `children[].walletAddress`. *Locked by `PV-WALLETS1`/`PV-WALLETS2` plus `VP-T4`.*
 
-**C8 — Form renders with caps enforced.** The DOM, after `renderChildren()` runs with 5 goals on one child, must contain a "+ Add learning goal" button with `disabled` attribute set. Same for subgoals at 5. *Evaluator verifies via JSDOM smoke or by loading the form in a headless browser; the disabled state must be set programmatically (not CSS-only), so reading `button.disabled === true` works.*
+### Backward compatibility (central correctness gate)
 
-**C9 — Inline wallet validation fires.** Typing `0xnotanaddress` into a wallet field and triggering `blur` shows an inline error element below the input containing a message about valid Ethereum address shape. Clearing or typing a valid 40-hex-char address removes the error. *Manual smoke + a JSDOM test if W7.2 lands.*
+**C9 — Cache write-invalidation, no stale reads.** A sequence `view-policy → configure-policy (update) → view-policy` returns DIFFERENT payloads for the two `view-policy` calls. The second reflects the post-write state, NOT the cached pre-write state. Invalidation must be synchronous within the `configure-policy` handler. *Locked by `PC4` in [`tests/policy-cache.test.ts`](../tests/policy-cache.test.ts) as an integration test against the live tool registry.*
 
-**C10 — Allowlist transparency panel renders.** Post-submit success state contains a DOM block (above the `success-url` block) listing at least one entry per address in `body.authorizedDestinations`. Each entry has a human-readable label identifying it as the admin or a specific child. Each entry shows a truncated/checksummed address. *Manual smoke; the panel must exist before W8 begins.*
+**C10 — Zero regressions in pre-existing tests.** `npx vitest run` clean. Sprint 3.0.5 baseline = 369 passing + 1 skipped. Final tally lower bound = 369 + 30 (W1 +3, W3 +5, W4 +6, W5 +12 with the tight_v1 matrix folded via `test.each`, W6 +4) = **at minimum 399 passing + 1 skipped**. **If 369 baseline regresses, sprint fails regardless of every other criterion.** Test count target band: **+30 to +45 net new tests** (user-confirmed).
 
-**C11 — Per-child nesting preserved.** Learning goals MUST render inside their child's `.child-row` block, not in a flat top-level section. The category `<select>` for each goal MUST populate from that child's `categories[].name`. *Reviewed visually in W8; structural assertion possible via JSDOM if time permits.*
+**C11 — `npx tsc --noEmit` clean.** No new TypeScript errors introduced by DEL1 (schema field) or DEL3/DEL4/DEL5/DEL6 (new modules). *Build gate.*
 
-### Mobile
+### Determinism
 
-**C12 — iOS Safari bootstrap end-to-end.** A real-device test on iOS Safari + Coinbase Wallet completes a bootstrap with one child, two goals (one with 3 subgoals + deadline), one BYO wallet. Magic-link works in Claude Desktop on macOS. `check-goals` MCP call returns the configured goals with subgoals and `daysUntilDeadline`. Inspecting `data/families/{id}/family-config.json` shows `learningGoals[0].subgoals.length === 3` and `learningGoals[0].deadline` is the expected ISO datetime. *Reported in the evaluator's smoke notes; cannot be CI-tested.*
+**C12 — Read determinism.** Two consecutive `view-policy` calls on the same family with no intervening `configure-policy` write return byte-identical payloads (JSON-serialized). Locks "view-policy is a pure read" — no clock drift in the response, no random IDs, no per-call mutation. *Locked by `VP-T6`.*
 
 ---
 
 ## Rubric
 
-Frontend/UX class per [`planning/AGENTS.md`](AGENTS.md). Each category scored 0–100; thresholds in the Grading section.
+Security-critical class per [`planning/AGENTS.md:18`](AGENTS.md). Each category scored 0–100; thresholds in the Grading section.
 
 | Category | Weight | Definition | Locked criteria |
 |----------|--------|------------|-----------------|
-| Functionality | 35% | Bootstrap-to-check-goals round-trip works for both old and new payload shapes; subgoals and deadlines persist correctly; allowlist auto-feeds | C1, C2, C3, C4, C5, C6 |
-| Auth / Security | 15% | Server-side wallet normalization remains authoritative (client regex is supplemental); HTTP boundary additions don't leak data outside the family's session; no schema relaxation | C1, C3 partial; reviewed against `src/auth/wallet.ts` and `app/verify-routes.ts` diff |
-| Design / UX | 40% | Per-child nesting reads naturally, cap enforcement engages, allowlist panel makes the security model legible to non-crypto parents, inline error states are clear, mobile flow respects existing single-file design | C8, C9, C10, C11, C12 |
-| Originality | 10% | Vanilla JS array-of-objects state pattern reused cleanly; no over-engineered abstractions; allowlist panel framing communicates the model rather than just dumping addresses | reviewed in evaluation |
+| Functionality | 30% | Read path returns the persisted state correctly across populated + empty families; `policyVersion` monotonicity holds; provenance derivation matches the force-added set inversion | C1, C2, C3, C4, C5, C12 |
+| Auth / Security | 50% | Every cell of the access-control matrix gates correctly; sibling enumeration is blocked for learner; wallet redaction respects role precedence over client preference | C6, C7, C8 |
+| Design / UX | 10% | API shape is consistent across populated/empty/error cases (shell-not-throw discipline); cache invalidation is synchronous (no stale-read race); helper module boundaries are clean | C3, C9 |
+| Originality | 10% | Provenance derivation as read-side hydration (no storage change); matrix encoded as inspectable data, not nested switches; in-process Map cache with same-handler invalidation rather than coordinating-process overhead | reviewed in evaluation |
 
 ---
 
 ## Grading thresholds
 
-- **Pass:** all of C1–C12 verified. Each rubric category at ≥ 75%. Backward-compat regression test green. Total test count meets C6's target (≥ 363 baseline + at least HE5c + HE5d).
-- **Fail:** any of C1–C7 fails. OR `npx tsc --noEmit` errors. OR pre-existing test suite regresses. OR mobile smoke (C12) blocks before merge.
-- **Soft fail (Pass-with-followup):** C8–C11 fail individually only on cosmetic grounds (e.g., button is disabled visually but `disabled` attribute not set) — evaluator may issue a Pass with a Sprint 3.5 polish ticket if Functionality + Backward-compat are both clean.
+- **Pass:** all of C1–C12 verified. Each rubric category at ≥ 75%. Backward-compat regression tests `CP-VER1`/`CP-VER2`/`CP-VER3` green. Test count meets C10's lower bound (≥ 411 passing + 1 skipped).
+- **Fail:** any of C1–C11 fails. OR `tsc --noEmit` errors. OR pre-existing test suite regresses. OR the access-control matrix has even ONE incorrect cell (learner seeing destinations is the canonical fail).
+- **Soft fail (Pass-with-followup):** C12 determinism issue traceable to ISO-timestamp serialization order ONLY (cosmetic — `JSON.stringify` key order is deterministic in V8 but other engines may differ). Evaluator may issue Pass with a Sprint 3.5 ticket if Auth/Security and Functionality are both clean.
 
 ---
 
 ## Audit trail
 
-The implementation MUST NOT introduce new audit-log action enum values. The existing `family-created-via-verify-page` and Sprint 3.0.2's `authorized-destinations-updated` already cover the events produced by this sprint's flow. If the implementation finds a missing audit case, the contract must be re-negotiated before adding a new enum value.
+The implementation MUST NOT introduce new audit-log action enum values. `view-policy` is a read tool and should produce no audit entries (consistent with `check-progress`, `check-goals`, `check-savings`). If the implementation finds a missing audit case (e.g., audit destination-list reads), the contract must be re-negotiated before adding a new enum value.
 
 ---
 
 ## Hand-off rules
 
 1. Generator implements per [`planning/plan.md`](plan.md) AND this contract. Generator must update `implementation/progress.md` at every workstream checkpoint.
-2. Generator MUST run the backward-compat regression test (`HE5c`) between every workstream. If it fails, stop and document in "Failed Approaches" in `implementation/progress.md` before continuing.
-3. Generator MUST NOT self-evaluate. The evaluator (Phase 3, Mode B) reads only this contract and the deployed build — never `implementation/progress.md`, enforced by [`.cursor/hooks/evaluator-isolation.py`](../.cursor/hooks/evaluator-isolation.py).
-4. Mobile smoke (C12) is a real-device manual test. The generator stops and writes the smoke results into `evaluation/test.md` before handing off, OR delegates the smoke to the user and waits.
+2. Generator MUST run the regression bar (`CP-VER1`/`CP-VER2`/`CP-VER3`) between every workstream from W2 onward. If any goes red, stop and document in "Failed Approaches" before continuing.
+3. Generator MUST NOT self-evaluate. The evaluator (Phase 3, Mode B) reads only this contract and the deployed build — never `implementation/progress.md`.
+4. No real-device smoke required. Optional Claude.ai integration smoke (Manager session calls `view-policy` in Claude Desktop, confirms response renders sensibly) — delegated to user if requested.
 
 ---
 
 ## Negotiation Log
 
-The contract emerged from the planner draft and evaluator Mode A pushback. Each exchange below was internalized into the criteria above; the log is the audit trail of why each criterion exists.
-
 ### Round 1 — Planner draft (initial)
-Planner adapted the 12 success criteria from [`sprint-3.0.5/plan-3.0.5.md`](../sprint-3.0.5/plan-3.0.5.md) §"Sprint Contract" (Windsurf), mapping each to a numbered C-criterion and choosing the Frontend/UX rubric weights from [`planning/AGENTS.md`](AGENTS.md).
+
+Planner produced the 12 criteria above from [`view-policy-sprint/plan.md`](../view-policy-sprint/plan.md) §"Acceptance criteria" (10 items) plus the Sprint 3.0.5 backward-compat pair (C10 zero-regressions, C11 tsc-clean) and a determinism gate (C12).
+
+Rubric weights selected as Security-critical per [`planning/AGENTS.md:18`](AGENTS.md) — the access-control matrix is the central failure mode (learner-sees-destinations is a custody-adjacent data exposure).
 
 ### Round 2 — Evaluator pushback (Mode A)
 
-The evaluator raised five concerns; each is reflected in the final criteria above.
+The evaluator raised five concerns; each is reflected in the final criteria.
 
-**E-PB1 (functionality):** "Bootstrap with goals works end-to-end" is too vague. Generator could ship a form that compiles a payload that posts successfully (200 OK) but where the persisted JSON is missing fields and no one notices. Demand a *file-on-disk assertion*, not a *response code assertion*.
+**E-PB1 (`policyVersion` monotonicity is too weak as "increases"):** A buggy implementation could increment by 2 on bootstrap or skip on update; the contract must demand `++1` per write, asserted on the disk shape.
+→ **Resolution:** C2 now requires exact values (bootstrap → 1, first update → 2). Asserted via `StateManager.loadFamilyConfig`.
 
-→ **Resolution:** C1, C2, C3, C5 now require the evaluator to load the persisted `FamilyConfig` via `StateManager.loadFamilyConfig` and assert on shape directly. The HTTP 200 is necessary but not sufficient.
+**E-PB2 (`POLICY_NOT_INITIALIZED` shell must be structurally identical to populated):** If the empty-state response has different keys than the populated state, every caller becomes a switch statement. Demand the SHAPE is identical, just zero-valued.
+→ **Resolution:** C3 enumerates the shell fields and requires zero-valued sections, not absent ones.
 
-**E-PB2 (backward-compat):** the regression bar must lock against the *old* payload shape AT LEAST. The Windsurf plan called for one. Generator must write it first, before any other change, and re-run it every workstream.
+**E-PB3 (5×4 matrix needs PER-CELL assertion, not representative sample):** "Tested some cells" is the canonical learner-sees-destinations failure mode. The contract must FORCE every cell to be asserted.
+→ **Resolution:** C6 requires every (role, section) cell tested. `PV-M{role}-{section}` test names follow a deterministic pattern so the evaluator can enumerate them.
 
-→ **Resolution:** DEL8 (HE5c) is the regression test. W1 in [`planning/plan.md`](plan.md) makes writing it the first action AFTER baseline confirmation. Plan's "How to use this plan" section enforces the re-run cadence.
+**E-PB4 (sibling enumeration block must produce identical shape to non-existent child):** If the learner gets `CHILD_NOT_FOUND` with `validChildNames: []` for a sibling but `CHILD_NOT_FOUND` with no field for a ghost name, the empty array IS information leakage (signals "there's a sibling but you can't see them"). The shapes must be byte-identical.
+→ **Resolution:** C7 requires identical response shape, asserted by structural-equality compare in the test.
 
-**E-PB3 (caps enforcement):** "Caps prevent UI overload" is a UX claim, not a test. The disabled state of the button matters because a screen reader / a-11y user must know they're at the limit.
-
-→ **Resolution:** C8 requires the `disabled` attribute (not just CSS) and `aria-disabled` per [`planning/plan.md`](plan.md) W3.5. The evaluator can verify via DOM inspection of the rendered page.
-
-**E-PB4 (inline wallet validation):** what's "valid Ethereum address" feedback? Need a concrete pattern test — typing a known-bad input must produce a known-shape error.
-
-→ **Resolution:** C9 specifies the trigger (`blur`), the bad input shape, the error-element existence assertion, and the clear-on-fix behavior. Implementation lives in W5.1 of [`planning/plan.md`](plan.md).
-
-**E-PB5 (the silent-data-loss failure mode the spike found):** if the generator implements the form fields but forgets the HTTP body schema extension (D8) OR the response extension (D9), the form will look like it works but persist nothing of the new fields, and the panel will be empty. This is exactly the "looks polished but core feature broken" failure mode that bias-toward-failure (`@evaluator` Mode B) targets.
-
-→ **Resolution:** C2 forces a file-on-disk assertion on the persisted subgoals/deadline (D8 failure → C2 fails). C3 forces an `authorizedDestinations` assertion on the response (D9 failure → C3 fails). HE5d locks both. The evaluator's grading procedure must explicitly check the persisted JSON, not just the API response.
+**E-PB5 (cache invalidation race — async invalidation is a stale-read bomb):** The contract must REQUIRE synchronous invalidation in the same handler, no `await` between save and invalidate, and the integration test must hit the live tool registry, not a mock.
+→ **Resolution:** C9 specifies synchronous within the handler. `PC4` is an integration test against `registerConfigurePolicyTool` and `registerViewPolicyTool`-loaded server, not the cache module in isolation.
 
 ### Round 3 — Planner counter
 
-The planner pushed back on E-PB5's framing only — D8 and D9 are not "fields the generator might forget" but explicit deliverables (DEL4, DEL5, DEL6) with diffs locked in the spike. Forgetting them isn't a risk of inattention but of scope-creep elsewhere distracting the generator. The mitigation is the workstream sequencing in [`planning/plan.md`](plan.md) which makes W2 (HTTP boundary) come BEFORE W3 (form fields) — by the time the form is built, the backend is already accepting the new shape.
+Planner accepted all five pushback points without revision. One small clarification:
 
-Evaluator accepted the sequencing as sufficient mitigation. Counter resolved.
+**Counter on E-PB3 matrix size:** the matrix has 5 roles × 4 sections = 20 cells, but the evaluator implied "20+ tests". For some cells the assertion is "this combination is forbidden" (one negative test); for others it's "this combination returns the expected stripped shape" (one positive test). Total = 20 tests for the matrix proper. Additional tests cover edge cases (childName scoping, includeWallets precedence, CHILD_NOT_FOUND shape parity) — those add ~5–7 more. **Total in `tests/policy-view-filter.test.ts`: ~25–28 tests.** Evaluator accepted.
 
 ### Round 4 — Sign-off
 
 Both stances aligned on:
 - Twelve criteria (C1–C12)
-- Rubric: Func 35 / Auth 15 / Design 40 / Orig 10
+- Rubric: Security-critical class — Func 30 / Auth 50 / Design 10 / Orig 10
 - Pass / Fail / Soft-fail thresholds
 - Hand-off rules
 
-Contract is final pending user confirmation.
+Contract is final pending user confirmation of the four outstanding decisions below.
 
 ---
 
-## Outstanding decisions for user confirmation
+## Resolved decisions (user-confirmed)
 
-Before implementation begins, the user should confirm:
+All six outstanding decisions confirmed via Phase 1.5 batch:
 
-1. **Scope reframe accepted?** The Windsurf plan said "UI-only, no backend changes." The spike found that ~13 lines of additive HTTP-boundary code are required for the form's new fields to actually persist and for the transparency panel to have data. The reframe doesn't change the spirit (still 95% UI work, no schema/persistence/core-domain changes) but the framing differs from the Windsurf plan. **Acceptable?**
-2. **Test count target.** Plan targets +6 to +9 new tests. The Windsurf plan called for +1 backward-compat test only. Evaluator's E-PB1/E-PB5 pushback pushed the test count up (HE5d for rich-payload persistence). **Acceptable?**
-3. **Mobile smoke (C12) ownership.** Real-device iOS Safari smoke can be run by the generator (if iOS hardware available) or delegated to the user. **Who runs it?**
-4. **Soft-fail threshold.** Cosmetic C8–C11 failures that don't break Functionality may earn Pass-with-followup. **Acceptable, or strict Pass/Fail only?**
+| ID | Decision | Resolution | Effect on implementation |
+|----|----------|-----------|--------------------------|
+| D-Sprint | Sprint identifier | **3.0.6 (patch — additive)** | README append uses Sprint 3.0.6 (Done) heading; no semver bump beyond patch |
+| D-OQ1 | Advisor wallet visibility | **Tight** — `walletAddress` always stripped | `filterPolicyForRole` for advisor role redacts `children[i].walletAddress` regardless of `includeWallets: true`. Asserted by `PV-WALLETS1` |
+| D-OQ2 | Family destination visibility | **Tight** — destinations hidden | Moot for v1 because of D-OQ4 (Family doesn't get the tool at all). Matrix data still encodes `destinations: "hidden"` for Family row so the future sprint inherits the decision |
+| D-OQ4 | Tool-level access scope | **Tight v1** — Manager + Co-parent + Advisor only | `ROLE_TOOL_ACCESS` gets `view-policy` added for these three roles ONLY. Family and Learner receive `buildAccessDeniedResponse` at the `withAccessControl` gate. Their RBAC access deferred to a follow-up sprint |
+| D-OQ5 | Family role child scope | **Consistent** — family would see all children's policy slice if granted access (matches check-goals/check-progress) | Moot for v1 (D-OQ4). Encoded in matrix data for the future sprint |
+| D-Test-count | Test count target band | **Accept** — +30 to +45 net new | C10 lower bound = 399 passing + 1 skipped; upper bound ~414. Matrix tests parameterized via `test.each` to stay in band |
 
-Once these are confirmed, the generator begins W0 → W8 per [`planning/plan.md`](plan.md).
+**Effective v1 access-control matrix (the actual code shipped):**
+
+| Role | Tool access (`ROLE_TOOL_ACCESS`) | If allowed → children | destinations | learning-goals | summary |
+|------|----------------------------------|------------------------|--------------|----------------|---------|
+| manager | ✅ | full | full | full | full |
+| co-parent | ✅ | full | full | full | full |
+| advisor | ✅ | full (no wallets per D-OQ1) | full | full | full |
+| family | ❌ denied at tool gate | (deferred — matrix data: full, no wallets per D-OQ5 consistent) | (matrix data: hidden per D-OQ2) | (matrix data: full) | (matrix data: full) |
+| learner | ❌ denied at tool gate | (deferred — matrix data: own-record only) | (matrix data: hidden) | (matrix data: own only) | (matrix data: scoped) |
+
+Family / Learner rows remain in the filter helper's data table so the follow-up sprint that grants them tool access doesn't have to re-derive the policy. The tests cover all 20 cells of the matrix data; the integration tests confirm Family / Learner are denied at the `withAccessControl` gate before the filter even runs.
+
+---
+
+**Contract is locked. Generator proceeds with W0 → W9 per [`planning/plan.md`](plan.md) on `/implement`.**

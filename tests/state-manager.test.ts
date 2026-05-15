@@ -55,9 +55,15 @@ describe("StateManager", () => {
       const loaded = await state.loadFamilyConfig(FAMILY_ID);
       // Sprint 3.0.2 — `loadFamilyConfig` now applies Zod schema defaults
       // so pre-3.0.2 configs missing `authorizedDestinations` load with
-      // `[]`. The save→load round-trip is still identity-preserving on
-      // every field that was actually written.
-      expect(loaded).toEqual({ ...config, authorizedDestinations: [] });
+      // `[]`. Sprint 3.0.6 — same lazy-migration pattern fills
+      // `policyVersion: 0` for pre-3.0.6 configs. The save→load round-trip
+      // is still identity-preserving on every field that was actually
+      // written.
+      expect(loaded).toEqual({
+        ...config,
+        authorizedDestinations: [],
+        policyVersion: 0,
+      });
     });
   });
 

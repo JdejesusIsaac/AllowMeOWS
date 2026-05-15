@@ -81,6 +81,13 @@ export const FamilyConfigSchema = z.object({
   // release-savings on the child-wallet leg only. Internal vaults
   // (savings-vault, gift-fund) are exempt. Addresses stored lowercased.
   authorizedDestinations: z.array(z.string()).default([]),
+  // Sprint 3.0.6 — monotonic write counter incremented on every
+  // configureFamilyCore save (bootstrap → 1, each subsequent update → +1).
+  // Default 0 means "predates the counter": pre-3.0.6 family configs hydrate
+  // here via lazy Zod migration. Used by view-policy as a cache-correctness
+  // discriminator and a foothold for a future optimistic-concurrency guard
+  // on configure-policy.
+  policyVersion: z.number().int().nonnegative().default(0),
 });
 export type FamilyConfig = z.infer<typeof FamilyConfigSchema>;
 

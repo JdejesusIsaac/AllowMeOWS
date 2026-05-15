@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { resolveMasterKey } from "./keys/master-key.js";
 import { migrateToMultiTenant } from "./migrations/2.9-multi-tenant.js";
 import { registerConfigurePolicyTool } from "./tools/configure-policy.js";
+import { registerViewPolicyTool } from "./tools/view-policy.js";
 import { registerVerifyAchievementTool } from "./tools/verify-achievement.js";
 import { registerDistributeAllowanceTool } from "./tools/distribute-allowance.js";
 import { registerCheckProgressTool } from "./tools/check-progress.js";
@@ -42,6 +43,7 @@ const server = new McpServer({
 
 // Register all MCP tools (each tool enforces RBAC internally via withAccessControl)
 registerConfigurePolicyTool(server);
+registerViewPolicyTool(server);
 registerVerifyAchievementTool(server);
 registerDistributeAllowanceTool(server);
 registerCheckProgressTool(server);

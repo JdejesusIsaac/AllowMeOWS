@@ -59,6 +59,7 @@ export const ROLE_POLICY_MAP: Record<Role, string> = {
 export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
   [ROLES.MANAGER]: [
     "configure-policy",
+    "view-policy",
     "verify-achievement",
     "distribute-allowance",
     "check-progress",
@@ -73,6 +74,7 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     "convert-savings",
   ],
   [ROLES.CO_PARENT]: [
+    "view-policy",
     "verify-achievement",
     "check-progress",
     "check-savings",
@@ -88,6 +90,7 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     "accept-invite",
   ],
   [ROLES.ADVISOR]: [
+    "view-policy",
     "query-audit-log",
     "accept-invite",
   ],

@@ -1,200 +1,183 @@
-# Sprint 3.0.5 — Research (Phase 0b)
+# Research — `view-policy` MCP tool (Sprint 3.0.6 / 3.1.0 candidate)
+
+**Sprint type:** Backend MCP tool — adds read counterpart to Sprint 3.0.2's `configure-policy` allowlist write path.
+**Depends on:** Sprint 3.0.2 (`authorizedDestinations`), Sprint 3.0.5 (verify-page bootstrap form — for the live data this tool will return).
+**Source material:** [`view-policy-sprint/research.md`](../view-policy-sprint/research.md), [`view-policy-sprint/plan.md`](../view-policy-sprint/plan.md) — Windsurf-era, read-only.
+
+---
 
 ## Relevance Summary
 
-Sprint 3.0.5 closes a UX gap between the verify-page bootstrap form (`public/verify.html`) and the backend features shipped by Sprints 3.0.2 (destination allowlist), 3.0.3 (`learningGoals` + `check-goals`), and 3.0.4 (`subgoals` + `deadline`). Three problems frame the work:
+Sprint 3.0.2 shipped `authorizedDestinations` on `configure-policy` (the write path) plus enforcement in `distribute-allowance` and `release-savings`. The allowlist is now load-bearing for every USDC outflow on the child-wallet leg. **No read path exists.** A caller (Claude human, A2A agent, dashboard) cannot answer "what is currently configured?" without one of:
 
-1. **Form doesn't surface `learningGoals`** — `LearningGoalSchema` is in `src/schemas.ts:36–49` with `subgoals.max(20)` + `deadline.datetime()`, but the form's child template (`public/verify.html:638–653`) collects only `name / weeklyBudget / savingsPercent / categories`. New families ship with empty goals; `check-goals` returns the empty-state for everyone.
-2. **Form doesn't surface per-child `walletAddress`** — `ChildConfigSchema.walletAddress` is optional (`src/schemas.ts:55`) and `buildAuthorizedDestinations` (`src/core/configure-family.ts:120–190`) auto-adds each child wallet to the allowlist. The form has no input, so parents must context-switch to Claude to bind external kid wallets.
-3. **Allowlist is invisible** — `FamilyConfig.authorizedDestinations` is enforced on the child-wallet leg of `distribute-allowance` and `release-savings` (Sprint 3.0.2), but the verify-page success state shows only the magic-link URL. Parents cannot see what addresses the treasury is authorized to send to.
+1. Replaying the last `configure-policy` call from memory (lossy, stale)
+2. Risking a clobbering write to "look at it" (defeats the point of read-only inspection)
+3. Reading the encrypted blob directly out of Railway (not exposed)
 
-The Windsurf doc [`sprint-3.0.5/research-3.0.5.md`](../sprint-3.0.5/research-3.0.5.md) frames this work as "UI-only, no backend changes." Grounding that framing against current code reveals a gap (see Open Questions Q1, Q2) — the HTTP boundary layer is stricter than the persistence schema. The spike resolves whether the gap is closed with a 10-line additive backend change or worked around in the form.
+The data is materialized and decrypted per request server-side via `StateManager.loadFamilyConfig`. What's missing is a typed read endpoint with role-aware filtering, section scoping, and child scoping. This sprint adds the read path, ships `policyVersion` as a foothold for a future optimistic-concurrency guard on `configure-policy`, and surfaces destination provenance (force-added vs configured) — the single discriminator UI needs to render "Remove" affordances safely.
+
+This is purely additive surface area: one new tool, one new optional schema field, one read-side hydration helper. No mutation, no breaking change to existing tools.
+
+---
 
 ## Actionable Insights
 
-Distilled from [`sprint-3.0.5/research-3.0.5.md`](../sprint-3.0.5/research-3.0.5.md) "Locked decisions" and validated against current code:
+### D1 — Tool home: `src/tools/view-policy.ts`
 
-**D1 — Per-child nesting (Option A).** Learning goals render inside each child block, after `categories`, before the per-child remove button. The child template already loops `child.categories` (`public/verify.html:655–669`); add a parallel `child.learningGoals` loop with the same DOM pattern. Mirrors `ChildConfigSchema.learningGoals` (per-child) and lets the category dropdown read directly from `child.categories[].name` without cross-referencing.
+The codebase has a flat one-file-per-tool tree at [`src/tools/`](../src/tools/) (13 existing tools). The Windsurf plan's proposed `src/mcp/tools/viewPolicy.ts` is wrong; the canonical path is `src/tools/view-policy.ts` (kebab-case per existing convention).
 
-**D2 — Form caps: 5 goals/child, 5 subgoals/goal.** The schema cap is 20 for both (`src/schemas.ts:44, 68`); the form cap is a UX guardrail. Parents exceeding 5 can configure post-bootstrap via Claude `configure-policy`. Disable the "+ Add" buttons at the cap.
+### D2 — Registration site: [`src/index.ts:44–51`](../src/index.ts)
 
-**D3 — Optional fields, no required additions.** All new inputs (`walletAddress`, goals, subgoals, deadlines) are optional. Old form payload (no new fields) must still succeed — this is the backward-compat regression bar.
+MCP tools are registered via `registerXxxTool(server)` calls in `src/index.ts` after the `McpServer` is constructed. Adding `view-policy` means: new `registerViewPolicyTool` export from the new file, plus one `registerViewPolicyTool(server)` line in `src/index.ts`. No tool registry; flat imports. The Windsurf plan's Step 7 ("tool discovery wiring") is essentially trivial.
 
-**D4 — Native `<input type="date">` for deadlines, serialized via `${date}T00:00:00.000Z`.** `LearningGoalSchema.deadline` is `z.string().datetime()`. Submit handler converts `YYYY-MM-DD → YYYY-MM-DDT00:00:00.000Z` before posting. Mobile-native date picker on iOS/Android; no JS date-library dependency.
+### D3 — RBAC plumbing: [`src/middleware/access-control.ts`](../src/middleware/access-control.ts)
 
-**D5 — Client-side wallet regex on blur, server-side `tryNormalizeWallet` authoritative.** Regex `/^0x[a-fA-F0-9]{40}$/` for immediate feedback; `src/auth/wallet.ts:35` validates with viem's `isAddress` at the persistence boundary. Defense-in-depth, not replacement.
+Every existing tool uses `withAccessControl(toolName, handler)` to enforce role gating before the handler runs. The pattern is:
 
-**D6 — Post-submit allowlist transparency panel.** Renders after `renderSuccess({kind: "create"})` (`public/verify.html:805–845`), before the `success-url` block. Lists admin wallet + each child's wallet + one-line explainer. Q3 below confirms data source.
+```ts
+withAccessControl("view-policy", async (args, caller) => {
+  if (!caller) return buildNoIdentityResponse("view-policy");
+  // ...role-aware filtering inside handler...
+})
+```
 
-**D7 — Single-file vanilla JS, zero new deps.** `public/verify.html` is a single static file (Sprint 3.0 v4 Decision 2). Add fields by extending `renderChildren()` (`public/verify.html:632–689`), the submit serializer (`submitFamilyCreate()` lines 691–751), and `renderSuccess()`. No React, no Tailwind addition, no bundler.
+Tool-level access is encoded in [`src/constants.ts:59`](../src/constants.ts) `ROLE_TOOL_ACCESS`. Section-level filtering (which slices of the response a role sees) lives inside the handler — there's no existing helper for it; we'll add one (D7).
 
-**D8 — Backend allowlist auto-populate already handles BYO-wallet correctly.** `buildAuthorizedDestinations` (`src/core/configure-family.ts:120–190`) force-adds caller + every `child.walletAddress`. If the form posts `walletAddress`, the bootstrap audit entry `authorized-destinations-updated` (`src/core/configure-family.ts:317–329`) records the resolved list — no new core logic needed.
+### D4 — Role plumbing: `caller.role` + `caller.childName` (learner-only)
 
-**D9 — `normalizeChildren` already passes subgoals + deadline through.** `src/core/configure-family.ts:591–599` reads `g.subgoals` and `g.deadline` from input and writes them into `ChildConfig.learningGoals`. The pipeline from `/api/configure-family` body → `normalizeChildren` → `configureFamilyCore` → persistence is already wired for the richer payload IF the HTTP body schema accepts it (see Q1).
+`CallerContext` carries `role`, `memberId`, `familyId`, and `childName?`. The `childName` is **populated only for learners** today (see `getChildScope` at [`src/middleware/access-control.ts:253–260`](../src/middleware/access-control.ts)). The Windsurf plan's "family role sees own child only" proposal **does not have a precedent** — see ⚠️ OQ5 below.
 
-**D10 — `validateChildren` accepts the richer goal shape.** `src/core/configure-family.ts:526–555` signature already takes `subgoals?` and `deadline?`. No change.
+### D5 — `policyVersion` home: [`src/schemas.ts:72–84`](../src/schemas.ts) `FamilyConfigSchema`
+
+Add `policyVersion: z.number().int().nonnegative().default(0)` to `FamilyConfigSchema`. Zod default applies on load (Sprint 3.0.2 lazy-migration pattern at [`src/engine/state.ts:148–159`](../src/engine/state.ts)) — pre-3.0.6 family configs hydrate with `policyVersion: 0`. First `configure-policy` write after deploy increments to `1`. No migration script needed.
+
+**Rationale for `default(0)`** (not `default(1)` as the Windsurf plan proposed): a freshly-loaded pre-existing family that has NEVER been through a 3.0.6+ write should be distinguishable from a family that's been through exactly one write. `0` means "predates the version counter"; `1+` means "has been through the new write path". The bootstrap (W2) increments to `1` on its first call.
+
+### D6 — Destination provenance: derivable on read, no storage change
+
+The Windsurf plan's `source: "force-added" | "configured"` is correct. Derivation:
+
+- Force-added set = `{ managerWalletAddressLower } ∪ { c.walletAddress.toLowerCase() for c in family.children if c.walletAddress }`
+- For each `addr` in `family.authorizedDestinations`:
+  - If `addr ∈ force-added set` → `source: "force-added"`, `label: "manager-wallet"` or `"child:<name>"`
+  - Else → `source: "configured"`, `label: "custom"`
+
+Manager wallet is found via `state.loadMembers(familyId)` filtered to `role === "manager"` and reading the member's wallet address. (Members carry walletAddress per Sprint 3.0 v4 SIWE work.)
+
+**Drop the Windsurf plan's `savings-vault` / `gift-fund` labels.** Internal vaults are exempt from `authorizedDestinations` by construction (Sprint 3.0.2 enforcement applies only to the child-wallet leg, not internal transfers). These addresses never appear in the array, so a label for them is dead code. The label union is `"manager-wallet" | "child:<name>" | "custom"` only.
+
+### D7 — Role-based filter helper: new file [`src/middleware/policy-view-filter.ts`](../src/middleware/policy-view-filter.ts)
+
+Self-contained pure function: `filterPolicyForRole(fullPolicy, caller, args) → filteredPolicy | { error: "INSUFFICIENT_ROLE" | "CHILD_NOT_FOUND" }`. Tested independently from the tool handler. Keeps the 5×4 access-control matrix in one place where the test matrix can iterate over every (role × section) cell.
+
+### D8 — Cache layer: simple Map, 60s TTL, in-process
+
+The Windsurf plan's `src/cache/policyCache.ts` is fine as-named. Stores decrypted, pre-filter `FamilyConfig` keyed by `familyId`. Invalidation: `configure-policy`'s write path (post `state.saveFamilyConfig`) calls `policyCache.invalidate(familyId)` synchronously. Cache is single-process — Railway is single-instance per [`view-policy-sprint/plan.md:30`](../view-policy-sprint/plan.md). When/if Railway becomes multi-instance, swap the Map for Redis; the invalidation API stays the same.
+
+### D9 — `POLICY_NOT_INITIALIZED` returns a shell, not an error
+
+Following the Windsurf research §"Design decision 4": a family with no policy yet returns `{ success: true, policyVersion: 0, familyName: "", children: [], authorizedDestinations: [], summary: {...zero-valued...}, message: "No policy configured yet." }`. Same response shape as a populated read, just zero-valued. Reserved error states: `FAMILY_NOT_FOUND` (caller is authenticated but `state.loadFamilyConfig` returns null — a structural state-store break), `INSUFFICIENT_ROLE` (forbidden role × section cell), `CHILD_NOT_FOUND` (`childName` arg doesn't match any child the caller can see).
+
+### D10 — Test infra precedent: [`tests/verify-routes.test.ts`](../tests/verify-routes.test.ts) pattern
+
+Sprint 3.0.5 used `siweExchange → /api/auth/verify → bootstrap via /api/configure-family → load persisted FamilyConfig via StateManager` as the E2E pattern. For view-policy tests, the lighter precedent is [`tests/policy-engine.test.ts`](../tests/policy-engine.test.ts) — calls tools directly with `{ _callerRole, _callerId, _familyId }` test-mode args. The 5×4 access-control matrix tests will use this pattern (20 cells × 1-2 assertions each = ~25-30 new tests just for the matrix).
+
+---
 
 ## Open Questions
 
-### ⚠️ Q1 — HTTP body schema strips `subgoals` and `deadline`
+The following ⚠️ items resolve in either the spike phase or contract negotiation:
 
-`configureFamilyBodySchema` at [`app/verify-routes.ts:94–102`](../app/verify-routes.ts):
+### ⚠️ OQ1 — Advisor role: sees wallet addresses?
 
-```ts
-learningGoals: z
-  .array(z.object({
-    topic: z.string().min(1).max(200),
-    category: z.string().min(1),
-  }))
-  .max(20)
-  .optional(),
-```
+Today advisor's `ROLE_TOOL_ACCESS` is `[query-audit-log, accept-invite]` only — advisor cannot call any other tool. The Windsurf research §"Open questions Q1" proposes: advisor sees full destinations but NO wallet addresses on children. But if advisor is a CPA reconciling on-chain flows, they NEED wallet addresses to map destinations back to children. **User decision** — contract negotiation. Spike-resolvable: NO (policy decision, not code-derivable).
 
-Zod's default `.strict()` mode is off here, so unknown keys are silently stripped, not rejected. The form would post `{topic, category, subgoals, deadline}` and the HTTP layer would drop `subgoals` + `deadline` before `normalizeChildren` runs. Net effect: the form looks like it works, but the persisted `ChildConfig.learningGoals` never gets the new fields.
+### ⚠️ OQ2 — Family role: sees destinations?
 
-This contradicts the Windsurf plan's "no backend changes" framing. Either:
-- **Option A (spike-recommended):** Extend `configureFamilyBodySchema` to mirror `LearningGoalSchema`'s `subgoals` + `deadline` shape. ~5-line additive change. Backward-compat preserved (both fields stay optional).
-- **Option B:** Ship the form fields without `subgoals`/`deadline`, defer those UI pieces to a follow-on sprint. Sacrifices D2/D4 above.
+Today family's `ROLE_TOOL_ACCESS` is `[check-progress, check-goals, accept-invite]` — they see all children's goals + progress. Windsurf proposes: family sees full `summary` but `destinations: hidden`. **Likely correct** — family role is the grandparent/gift-contributor pattern; they shouldn't care about custody plumbing. **User decision** — contract negotiation. Spike-resolvable: NO.
 
-Spike must confirm Option A's diff is genuinely additive (no test breakage in 363 existing tests) and that the response chain (D9) carries the new fields end-to-end.
+### ⚠️ OQ3 — `updatedAt` granularity: top-level only? — RESOLVED INLINE
 
-### ⚠️ Q2 — `/api/configure-family` response omits `authorizedDestinations`
+`FamilyConfigSchema.updatedAt` already exists ([`src/schemas.ts:77`](../src/schemas.ts)) — top-level ISO datetime updated on every `state.saveFamilyConfig`. Per-section requires storage changes (out of scope per the source plan). **Accept Windsurf proposal: top-level only.** No ⚠️.
 
-The response (verify-routes.ts:329–339) returns `{ok, familyId, memberId, familyName, children, mcpUrl, setupCode, sessionToken, network}`. `children` is the `ChildConfigSummary[]` from `buildChildrenSummary` (`src/core/configure-family.ts:504–519`), which exposes per-child `wallet` (string, "OWS-managed" if not BYO) but NOT the resolved allowlist.
+### ⚠️ OQ4 — Tool-level access expansion: who can call `view-policy` at all?
 
-D6's transparency panel needs the canonical allowlist source. Two options:
-- **Option A (spike-recommended):** Add `authorizedDestinations: string[]` to the response, sourced from `FamilyConfig.authorizedDestinations` after `configureFamilyCore` resolves. ~3-line additive change. Lets the panel render the actual enforced list.
-- **Option B:** Derive the panel client-side from `managerWalletAddress` (already in session claims) + the per-child `wallet` field in the response. Drift risk if backend logic changes; no audit-trail equivalence.
+**Critical observation not raised in Windsurf research:** `configure-policy` itself is Manager-only in `ROLE_TOOL_ACCESS` today. Adding `view-policy` to a role's list grants that role brand-new config-visibility. The Windsurf matrix proposes adding `view-policy` to ALL 5 roles (with section-level stripping). **A tighter v1** would be: Manager + Co-parent + Advisor only, with Family + Learner deferred to a follow-up sprint after their RBAC needs are validated by usage. **User decision** — contract negotiation. Spike-resolvable: NO.
 
-Spike confirms Option A is the correct surface and that it doesn't leak data inappropriately (allowlist is family-scoped, caller is the family's manager).
+### ⚠️ OQ5 — Family role: "own child only" — diverges from existing tools
 
-### Q3 — Cursor-harness research path coexistence with Windsurf docs
+Windsurf matrix proposes: family sees `children[]` filtered to "own child only (if associated)". But today, `check-goals` and `check-progress` let family see ALL children's data ([`src/tools/check-goals.ts:45`](../src/tools/check-goals.ts) docstring: "Managers, co-parents, and family see all children's goals"). The "own child" binding requires extending `CallerContext.childName` plumbing OR adding a Member→Child binding for the family role. **This is a behavior CHANGE, not a re-use.** Three resolutions:
 
-Resolved inline (no `⚠️`): the Cursor v3 path `research/research.md` is canonical going forward. [`sprint-3.0.5/research-3.0.5.md`](../sprint-3.0.5/research-3.0.5.md), [`plan-3.0.5.md`](../sprint-3.0.5/plan-3.0.5.md), [`test-3.0.5.md`](../sprint-3.0.5/test-3.0.5.md), [`progress-3.0.5.md`](../sprint-3.0.5/progress-3.0.5.md) are read-only source material the planner can cite; they do not get edited.
+- (a) Family sees ALL children's policy (consistent with check-goals/check-progress)
+- (b) Family sees NO children's policy (only `summary`, treating family as a "what's the shape" reader, not a "who are the kids" reader)
+- (c) Add Member→Child binding for family role (new infrastructure — defer to follow-up sprint)
 
-### Q4 — Mobile date input on iOS Safari
+**User decision** — contract negotiation. Spike-resolvable: confirms the divergence is real but cannot pick the resolution.
 
-Resolved inline (no `⚠️`): native `<input type="date">` is well-supported on iOS Safari 14+; Sprint 3.0 v4 already ships number/text inputs with `font-size: 16px` to avoid auto-zoom (`public/verify.html:110`). If the smoke test in W6 surfaces a real issue, fallback is `<input type="text" pattern>` — captured as a fallback decision, not a blocker.
+### ⚠️ OQ6 — Internal vault labels: drop the Windsurf proposal?
+
+The Windsurf plan §Step 2 proposes tagging `savings-vault` and `gift-fund` addresses as `source: "force-added"`. But these vaults are **exempt** from `authorizedDestinations` by Sprint 3.0.2's construction — they don't appear in the array. Labelling addresses that never appear is dead code. **Recommendation: drop the labels. Provenance label union becomes `"manager-wallet" | "child:<name>" | "custom"`.** Spike-resolvable: YES — verified by reading [`src/core/configure-family.ts:120–190`](../src/core/configure-family.ts) `buildAuthorizedDestinations` (caller + children only; no vault force-add). **Resolution: dropped.**
+
+---
 
 ## Key Code References
 
-- **Form structure:** [`public/verify.html:291–310`](../public/verify.html) (`state-family-create` section), [`public/verify.html:618–629`](../public/verify.html) (`blankChildRow()`), [`public/verify.html:632–689`](../public/verify.html) (`renderChildren()`), [`public/verify.html:691–751`](../public/verify.html) (`submitFamilyCreate()`), [`public/verify.html:805–845`](../public/verify.html) (`renderSuccess()`).
-- **HTTP body schema (Q1):** [`app/verify-routes.ts:76–107`](../app/verify-routes.ts) (`configureFamilyBodySchema`).
-- **HTTP response shape (Q2):** [`app/verify-routes.ts:329–339`](../app/verify-routes.ts).
-- **Endpoint handler:** [`app/verify-routes.ts:264–340`](../app/verify-routes.ts) (`POST /api/configure-family`).
-- **Persistence schema:** [`src/schemas.ts:30–34`](../src/schemas.ts) (`SubgoalSchema`), [`src/schemas.ts:36–49`](../src/schemas.ts) (`LearningGoalSchema`), [`src/schemas.ts:52–69`](../src/schemas.ts) (`ChildConfigSchema`), [`src/schemas.ts:72–84`](../src/schemas.ts) (`FamilyConfigSchema`).
-- **Core domain:** [`src/core/configure-family.ts:120–190`](../src/core/configure-family.ts) (`buildAuthorizedDestinations`), [`src/core/configure-family.ts:243–345`](../src/core/configure-family.ts) (`bootstrapFamily`), [`src/core/configure-family.ts:526–555`](../src/core/configure-family.ts) (`validateChildren`), [`src/core/configure-family.ts:562–602`](../src/core/configure-family.ts) (`normalizeChildren`).
-- **Wallet normalization:** [`src/auth/wallet.ts:35`](../src/auth/wallet.ts) (`tryNormalizeWallet`).
-- **Tests to extend or leave intact:** [`tests/verify-page.test.ts`](../tests/verify-page.test.ts) (HTML smoke — VP0/VP1/VP2/VP3, asserts state container IDs only), [`tests/verify-routes.test.ts:125–168`](../tests/verify-routes.test.ts) (HE5 bootstrap happy path — the regression baseline).
-- **Source material (Windsurf):** [`sprint-3.0.5/plan-3.0.5.md`](../sprint-3.0.5/plan-3.0.5.md), [`sprint-3.0.5/research-3.0.5.md`](../sprint-3.0.5/research-3.0.5.md), [`sprint-3.0.5/test-3.0.5.md`](../sprint-3.0.5/test-3.0.5.md), [`sprint-3.0.5/progress-3.0.5.md`](../sprint-3.0.5/progress-3.0.5.md).
-- **Checkpoint:** [`sprint-3.0.2/progress-3.0.2.md`](../sprint-3.0.2/progress-3.0.2.md) (Sprint 3.0.2 complete, 363 passing + 1 skipped).
+| Concern | Path | Lines |
+|---|---|---|
+| `configure-policy` tool implementation | [`src/tools/configure-policy.ts`](../src/tools/configure-policy.ts) | 17–176 |
+| `withAccessControl` wrapper | [`src/middleware/access-control.ts`](../src/middleware/access-control.ts) | 279–310 |
+| `CallerContext` + `getChildScope` | [`src/middleware/access-control.ts`](../src/middleware/access-control.ts) | 23–28, 253–260 |
+| `ROLE_TOOL_ACCESS` matrix | [`src/constants.ts`](../src/constants.ts) | 59–101 |
+| `FamilyConfigSchema` (where `policyVersion` lands) | [`src/schemas.ts`](../src/schemas.ts) | 72–84 |
+| Lazy-migration via Zod default (Sprint 3.0.2 precedent) | [`src/engine/state.ts`](../src/engine/state.ts) | 148–159 |
+| `buildAuthorizedDestinations` (provenance source-of-truth) | [`src/core/configure-family.ts`](../src/core/configure-family.ts) | 120–190 |
+| Tool registration (where the new line goes) | [`src/index.ts`](../src/index.ts) | 44–51 |
+| Read-tool precedent (filtering + child scoping) | [`src/tools/check-goals.ts`](../src/tools/check-goals.ts) | 41–182 |
+| Test-mode RBAC entry point | [`src/middleware/access-control.ts`](../src/middleware/access-control.ts) | 134–160 |
+
+---
 
 ## Spike Results
 
-Time-boxed at 30 minutes per [`AGENTS.md`](../AGENTS.md) rule 5. Spike was scoped strictly to resolving Q1 and Q2 by reading existing code paths, not by writing any implementation. No files were modified.
+Spike conducted inline during research (read-only code inspection, no code changes). Resolves module-layout assumptions from the Windsurf plan and OQ6.
 
-### Q1 resolution — extend `configureFamilyBodySchema` to accept `subgoals` + `deadline`
+### S1 — Module paths confirmed
 
-**Decision: Option A (additive HTTP schema extension).**
+The Windsurf plan referenced these paths; actual paths verified by glob + read:
 
-**Confirmed facts from current code:**
+| Windsurf plan said | Actual codebase | Verdict |
+|---|---|---|
+| `src/storage/familyPolicy.ts` | [`src/engine/state.ts`](../src/engine/state.ts) | Plan path wrong; use `state.ts` |
+| `src/mcp/tools/viewPolicy.ts` | `src/tools/view-policy.ts` (new) | Plan path wrong; use kebab-case |
+| `src/mcp/server.ts` | [`src/index.ts`](../src/index.ts) | Plan path wrong; tools register here |
+| `src/cache/policyCache.ts` | New file at same path | Plan path acceptable |
+| `src/auth/roleFilter.ts` | `src/middleware/policy-view-filter.ts` (new) | Better to live with other middleware |
 
-- Zod's default `z.object()` behavior strips unknown keys silently; the current schema at [`app/verify-routes.ts:94–102`](../app/verify-routes.ts) does not use `.strict()`, so a form payload containing `subgoals`/`deadline` is accepted by the endpoint but the extra fields are dropped before [`normalizeChildren`](../src/core/configure-family.ts) runs (lines 562–602). Net effect today: form data flows in, persistence drops it — silent data loss.
-- `normalizeChildren` (src/core/configure-family.ts:591–599) already reads `g.subgoals` and `g.deadline` from input and writes them into the persisted `ChildConfig.learningGoals` shape. The persistence half of the pipeline is already correct.
-- `validateChildren` (src/core/configure-family.ts:526–555) already declares `subgoals?: Array<{topic: string}>` and `deadline?: string` in its input shape. No signature change required.
+### S2 — `policyVersion` lazy-migration works as-proposed
 
-**Minimal diff** (locked for the planner — generator will land this in implementation):
+Verified the Sprint 3.0.2 lazy-migration pattern at [`src/engine/state.ts:148–159`](../src/engine/state.ts): `loadFamilyConfig` runs `FamilyConfigSchema.parse(config)` on load, which applies Zod defaults to missing fields. Adding `policyVersion: z.number().int().nonnegative().default(0)` to `FamilyConfigSchema` will make every pre-3.0.6 family hydrate with `policyVersion: 0`. The W1 backward-compat test will lock this behavior.
 
-```ts
-learningGoals: z
-  .array(z.object({
-    topic: z.string().min(1).max(200),
-    category: z.string().min(1),
-    subgoals: z
-      .array(z.object({ topic: z.string().min(1).max(200) }))
-      .max(20)
-      .optional(),
-    deadline: z.string().datetime().optional(),
-  }))
-  .max(20)
-  .optional(),
-```
+### S3 — Provenance derivation: read-side, zero storage change
 
-Additive change (~8 lines). Backward-compat preserved by `.optional()`: old payloads without `subgoals`/`deadline` still validate as before. No existing test references these fields on the HTTP layer (greps in `tests/verify-routes.test.ts`, `tests/magic-link-persistence.test.ts` confirm).
+Confirmed by reading [`src/core/configure-family.ts:120–190`](../src/core/configure-family.ts). `buildAuthorizedDestinations` only force-adds caller's wallet (line 178–184) and each child's wallet (line 168–175). Nothing else. Read-side hydration is the inverse of this: lookup manager from members, compare each `authorizedDestinations` entry against that set. **No storage migration; no schema change for provenance.**
 
-**Risk assessment:** Zero compatibility risk. The pre-existing `LearningGoalSchema` already mandates `subgoals.max(20)` and `deadline.datetime()`; the HTTP boundary just needs to mirror it.
+### S4 — Manager wallet lookup at read time
 
-### Q2 resolution — expose `authorizedDestinations` in `/api/configure-family` response
+Confirmed via [`src/engine/state.ts`](../src/engine/state.ts) `loadMembers(familyId)` and the Member record shape ([`src/schemas.ts`](../src/schemas.ts) Member section). Manager wallet = `members.find(m => m.role === "manager").walletAddress`. Some legacy families may have multiple managers (if a co-parent was promoted) — D6's force-added set should union ALL manager wallets, not just the first. Will encode this in W3 provenance helper.
 
-**Decision: Option A (additive response field, sourced from the resolved `allowlist.destinations` returned by `buildAuthorizedDestinations`).**
+### S5 — OQ6 dropped
 
-**Confirmed facts from current code:**
+Internal vault addresses (savings-vault, gift-fund) are confirmed exempt from `authorizedDestinations`. Provenance label union locked at `"manager-wallet" | "child:<name>" | "custom"`. The Windsurf vault-label proposal is dead code and excluded from this sprint's scope.
 
-- [`bootstrapFamily`](../src/core/configure-family.ts) (lines 243–345) already computes `allowlist.destinations` at line 257 and persists it into `familyConfig.authorizedDestinations` at line 272. The value is available locally; it just isn't included in the returned `ConfigureFamilyBootstrapResult` (lines 192–201).
-- The HTTP response shape at [`app/verify-routes.ts:329–339`](../app/verify-routes.ts) returns `{ok, familyId, memberId, familyName, children, mcpUrl, setupCode, sessionToken, network}`. Adding a new key is additive — Zod runs on the request body only, not the response.
-- No existing test asserts on the response's strict shape (no `toEqual`, no `toMatchObject` against a closed object). HE5 (`tests/verify-routes.test.ts:125–168`) asserts each known key individually; `tests/magic-link-persistence.test.ts:144–155` reads only `cfg.familyId | memberId | setupCode | mcpUrl`. Adding a new field cannot break them.
+---
 
-**Minimal diff** across two files (locked for the planner):
+## Remaining ⚠️ open questions (must resolve before planning lock)
 
-`src/core/configure-family.ts` — extend the result interface and populate from the resolved allowlist:
+| ID | Question | Resolution path |
+|---|---|---|
+| OQ1 | Advisor sees children's wallet addresses? | Contract negotiation, user decision |
+| OQ2 | Family sees `destinations`? | Contract negotiation, user decision |
+| OQ4 | View-policy ROLE_TOOL_ACCESS scope — all 5 roles, or tighter v1 (Manager + Co-parent + Advisor)? | Contract negotiation, user decision |
+| OQ5 | Family role child-scope behavior — all / none / new binding? | Contract negotiation, user decision |
 
-```ts
-export interface ConfigureFamilyBootstrapResult {
-  ok: true;
-  bootstrap: true;
-  familyId: string;
-  memberId: string;
-  setupCode: string;
-  mcpUrl: string;
-  familyName: string;
-  children: ChildConfigSummary[];
-  authorizedDestinations: string[];
-}
-```
-
-And inside `bootstrapFamily()`'s return statement at lines 335–344:
-
-```ts
-return {
-  ok: true,
-  bootstrap: true,
-  familyId,
-  memberId,
-  setupCode,
-  mcpUrl,
-  familyName: input.familyName,
-  children: buildChildrenSummary(input.children),
-  authorizedDestinations: allowlist.destinations,
-};
-```
-
-`app/verify-routes.ts` — pass through in the JSON response at lines 329–339:
-
-```ts
-return res.json({
-  ok: true,
-  familyId: result.familyId,
-  memberId: result.memberId,
-  familyName: result.familyName,
-  children: result.children,
-  authorizedDestinations: result.authorizedDestinations,
-  mcpUrl: result.mcpUrl,
-  setupCode: result.setupCode,
-  sessionToken: newSession,
-  network: useTestnet ? "Base Sepolia (testnet)" : "Base (mainnet)",
-});
-```
-
-Total Q2 diff: ~5 lines added across two files. Additive; no test breakage; no leak — the response is already gated behind the SIWE-verified session token for the family's manager (`claims.walletAddress`), and the allowlist is family-scoped.
-
-**Symmetry note (out of Sprint 3.0.5 scope):** `ConfigureFamilyUpdateResult` could carry the same field for consistency when the existing `configure-policy` MCP tool runs an update; that's a Sprint 3.5 polish item, not blocking here.
-
-### Spike summary — scope reframe
-
-Sprint 3.0.5 is **not** pure UI-only as the Windsurf plan framed it. It is "verify-page form extension + ~13 lines of additive HTTP boundary changes to surface what the persistence schema already accepts." The reframe matters for:
-
-- **Contract scope:** the negotiated contract must include the two backend additions as explicit deliverables, not hide them behind "no backend changes."
-- **Rubric weighting:** still Frontend/UX-dominant (Func 35 / Auth 15 / Design 40 / Orig 10) per [`planning/AGENTS.md`](../planning/AGENTS.md). The backend additions are HTTP-boundary plumbing, not auth/security work.
-- **Failure modes:** if the planner forgot the HTTP body schema extension, the form would silently lose `subgoals` + `deadline` on submit — a "looks like it works" failure mode of the kind the evaluator's bias-toward-failure rule (`@evaluator` Mode B) is meant to catch. The spike removes this risk by surfacing it pre-implementation.
-
-Both `⚠️` markers above are resolved; the planning phase is unblocked.
+All four are policy decisions, not code-derivable. They map directly to the contract's access-control criterion (the central correctness gate of the sprint). Planning proceeds with **placeholder defaults from the Windsurf research**; the contract negotiation surfaces them for explicit user sign-off.

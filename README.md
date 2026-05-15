@@ -24,9 +24,9 @@ AllowanceAgent implements four of the nine Track 02 building opportunities in a 
 
 ### What's Built and Working
 
-- **12 MCP tools** — configure-policy, verify-achievement, distribute-allowance, check-progress, check-savings, invite-member, accept-invite, manage-members, get-funding-address, release-savings, connect-fitbit, convert-savings
+- **14 MCP tools** — configure-policy, view-policy, verify-achievement, distribute-allowance, check-progress, check-savings, check-goals, invite-member, accept-invite, manage-members, get-funding-address, release-savings, connect-fitbit, convert-savings
 - **Sign-in-with-Base onboarding** *(Sprint 3.0 v4)* — one-tap verify page at `/verify` using `@base-org/account` SIWE. New families bootstrap without ever pasting JSON into Claude; returning users get fresh 30-day magic-link URLs auto-rotated from their wallet signature.
-- **369 passing tests** (1 skipped counterfactual-wallet fixture) — unit + integration + E2E covering policy engine, invite system, RBAC matrix, SIWE verification, session tokens, rate-limited invite preview, cross-family Manager flows, destination allowlist enforcement, the verify-page bootstrap form, and full on-chain distribution.
+- **416 passing tests** (1 skipped counterfactual-wallet fixture) — unit + integration + E2E covering policy engine, invite system, RBAC matrix, SIWE verification, session tokens, rate-limited invite preview, cross-family Manager flows, destination allowlist enforcement, the verify-page bootstrap form, the read-side `view-policy` filter matrix + cache, and full on-chain distribution.
 - **Live on-chain USDC transfers** — Confirmed on Base Sepolia (April 2, 2026). EIP-1559 transactions with viem. Partial success handling.
 - **Claude Desktop integration** — Live-tested with Sonnet 4.6. Full conversational flow. No OWS internals ever exposed to the user.
 - **Custom OWS policy executable** — `allowance-policy.py` handles all roles with ERC-20 calldata decoding, spend cap enforcement, and recipient allowlists
@@ -142,7 +142,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 > Replace paths with your actual `npx` binary and project location.
 > Find your npx path with: `which npx`
 
-Restart Claude Desktop. You'll see 12 tools available.
+Restart Claude Desktop. You'll see 14 tools available.
 
 ### First conversation
 
@@ -475,7 +475,7 @@ Endpoints:
 
 ```
 src/                         Core business logic (stdio transport)
-  index.ts                   MCP server entry point (12 tools registered)
+  index.ts                   MCP server entry point (14 tools registered)
   constants.ts               Chain IDs, USDC addresses, roles, RBAC matrix
   schemas.ts                 Zod schemas for all data types
   middleware/
@@ -496,7 +496,7 @@ src/                         Core business logic (stdio transport)
   fitbit/
     client.ts                Fitbit OAuth + Activity API client
     token-store.ts           AES-256-GCM encrypted token storage (uses MASTER_KEY)
-  tools/                     12 MCP tool handlers
+  tools/                     14 MCP tool handlers
 app/                         HTTP transport layer (aixyz adapter)
   server.ts                  AixyzServer + MCP + A2A + Fitbit OAuth endpoints
   agent.ts                   ToolLoopAgent for A2A interactions
@@ -574,6 +574,13 @@ Successfully tested on Base Sepolia testnet (Apr 2, 2026):
 - [x] **Allowlist transparency panel** — parents see (and can talk through with their kids) the addresses their family's treasury is allowed to send USDC to, immediately after bootstrap. Admin wallet labelled "Admin (you)", per-child wallets labelled by name, with a one-line note about `configure-policy` for later changes.
 - [x] **Inline validation** — wallet shape regex checked on blur, goal-topic conditionally required when subgoals/deadline/category are populated. Defence-in-depth only — `tryNormalizeWallet` is still authoritative server-side.
 - [x] **+6 net new tests** — `HE5c` (backward-compat regression bar), `HE5d` (rich payload: walletAddress + subgoals + deadline persist + allowlist auto-feeds child wallet), `HE5e` (multi-child mixed BYO/managed coexist), `HE5f` (deadline-only goal), `HE5g` (subgoals-only goal), `VP4` (verify-page DOM markers locked). 369 passing + 1 skipped.
+
+### Sprint 3.0.6 (Done)
+- [x] **`view-policy` MCP tool** — read counterpart to `configure-policy`. Returns the persisted family policy with destination provenance tagging (`manager-wallet | child:<name> | custom`), role-aware filtering, section slicing (`all | summary | children | destinations | learning-goals`), and per-child scoping. Read-only by construction — no state mutation, no audit-log entries.
+- [x] **`policyVersion` write counter** — monotonic, single-counter-per-family. Bootstrap writes `1`; every subsequent `configure-policy` increments by exactly `1`. Pre-3.0.6 family configs lazy-migrate to `policyVersion: 0` via Zod default (same pattern as Sprint 3.0.2's `authorizedDestinations`). Foothold for a future optimistic-concurrency guard on `configure-policy` and a cache-correctness discriminator today.
+- [x] **5×4 role × section access matrix** — encoded as data in `src/middleware/policy-view-filter.ts` so the matrix is auditable in one place. Manager / Co-parent see everything. Advisor sees everything except `children[].walletAddress`. Family + Learner rows are matrix data only — the tool itself is denied at the `withAccessControl` gate for those roles in v1 (`tight_v1` profile). Sibling enumeration blocked: a Learner asking for a sibling's name gets the same `CHILD_NOT_FOUND` shape as a fictional name (no `validChildNames` field leaks).
+- [x] **In-process FamilyConfig cache** — 60s TTL keyed by `familyId`. Synchronous write-invalidation inside `configureFamilyCore` (both bootstrap and update paths), so HTTP + MCP write paths both flush the cache without coupling to the read-side layer. Single-process Railway deployment ⇒ no cross-instance coherence problem to solve in this sprint.
+- [x] **+47 net new tests** — `CP-VER1/2/3` (policyVersion regression bar), `PV-H1..H5` (provenance tagging), `VP-T1..T6` (Manager happy path), `VP-T7a/T7b` (tool-level access denial — locks the v1 tight profile), `PV-M-*` (20-cell role × section matrix, parameterized via `it.each`), `PV-CHILDNAME1..4` (childName scoping + sibling-enumeration block), `PV-WALLETS1..3` (role-precedence over client `includeWallets`), `PC1..PC4` (cache TTL + invalidation + no-stale-read integration). 416 passing + 1 skipped.
 
 ### Sprint 4.0 (Next)
 - [ ] **Postgres migration** — replace JSON file store; `listMembershipsByWallet` becomes O(1) on `wallet_address` index.
