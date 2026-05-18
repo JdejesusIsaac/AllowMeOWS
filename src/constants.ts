@@ -72,6 +72,11 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     "release-savings",
     "connect-fitbit",
     "convert-savings",
+    // Sprint 3.6 — resend-invite is Manager-only (C11).
+    "resend-invite",
+    // Sprint 3.6 — diagnostics + magic-link retrieval (every role incl. Manager).
+    "test-connection",
+    "view-my-link",
   ],
   [ROLES.CO_PARENT]: [
     "view-policy",
@@ -80,6 +85,8 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     "check-savings",
     "check-goals",
     "accept-invite",
+    "test-connection",
+    "view-my-link",
   ],
   [ROLES.FAMILY]: [
     "check-progress",
@@ -88,11 +95,15 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     // in this codebase (deferred per Decision 5). Leaving the stale RBAC
     // entry confused security review.
     "accept-invite",
+    "test-connection",
+    "view-my-link",
   ],
   [ROLES.ADVISOR]: [
     "view-policy",
     "query-audit-log",
     "accept-invite",
+    "test-connection",
+    "view-my-link",
   ],
   [ROLES.LEARNER]: [
     "check-progress",
@@ -100,6 +111,8 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     "check-goals",
     "verify-achievement",
     "accept-invite",
+    "test-connection",
+    "view-my-link",
   ],
 };
 

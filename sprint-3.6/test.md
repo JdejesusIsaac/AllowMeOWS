@@ -8,10 +8,9 @@
 | RC1-RC8 | 8 | `tests/recovery-tools.test.ts` (NEW) | `resend-invite`, `test-connection`, `view-my-link` correctness + RBAC + audit |
 | CARD1-CARD4 | 4 | `tests/rich-cards.test.ts` (NEW) | Rich-card markdown responses for the four kid-facing tools |
 | MODAL1 | 1 | `tests/brand-modals.test.ts` (NEW) | Both brand modals render markdown content with load-bearing phrases |
-| UA1 | 1 | `tests/client-detection.test.ts` (NEW) | UA parser returns the correct default install tab across 4 detection cases (C8 auto-verification per contract Verification ownership table) |
 | (manual) Mobile smoke | — | Section at bottom | Real iOS device + Android QR scan + cross-client rich-card rendering |
 
-**Total automated tests added: 15.** Test count goes from 416 (post-Sprint 3.0.6 baseline) → 431.
+**Total automated tests added: 14.** Test count goes from 363 → 377.
 
 The mobile smoke checklist is non-automated. It's the Definition of Done gate per progress-3.6.md.
 
@@ -395,57 +394,6 @@ describe("MODAL: brand narrative modals", () => {
 
 ---
 
-## UA1 — Client-detection parser unit test (C8 auto-verification)
-
-The UA-detection logic that picks the default install tab MUST be extracted into a testable module — recommended path: `public/verify-ua.js` exporting a `defaultInstallTab(userAgent: string): "claude" | "chatgpt" | "other"` function and a companion `detectInAppClient(userAgent: string): "claude" | "chatgpt" | null` for the WebView inline-note case. `public/verify.html` includes the module via `<script src="verify-ua.js">` and calls both functions on page load.
-
-```typescript
-import { describe, it, expect } from "vitest";
-// Adjust import path to wherever the planner extracts the parser.
-import { defaultInstallTab, detectInAppClient } from "../public/verify-ua.js";
-
-describe("UA: client detection for verify-page install tabs", () => {
-  it("UA1: parser returns the correct default tab across the 4 detection cases", () => {
-    // Case 1: iOS Safari → Claude tab (the spec's primary install path on iOS)
-    const iosSafari =
-      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) " +
-      "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
-    expect(defaultInstallTab(iosSafari)).toBe("claude");
-    expect(detectInAppClient(iosSafari)).toBeNull();
-
-    // Case 2: Android Chrome → Claude tab
-    const androidChrome =
-      "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
-    expect(defaultInstallTab(androidChrome)).toBe("claude");
-    expect(detectInAppClient(androidChrome)).toBeNull();
-
-    // Case 3: Desktop Chrome → Claude tab (still defaults to Claude per research.md)
-    const desktopChrome =
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-    expect(defaultInstallTab(desktopChrome)).toBe("claude");
-    expect(detectInAppClient(desktopChrome)).toBeNull();
-
-    // Case 4: ChatGPT WebView → in-app client detected, inline "you're already in ChatGPT" note
-    // The exact UA token ChatGPT WebView ships with may vary; the parser must recognize
-    // at least one well-known marker. Update this fixture if/when the planner pins the token.
-    const chatgptWebView =
-      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) " +
-      "AppleWebKit/605.1.15 ChatGPT/1.2024.0";
-    expect(detectInAppClient(chatgptWebView)).toBe("chatgpt");
-    // Default tab still falls back to Claude (the inline note tells the user they're already in ChatGPT)
-    expect(defaultInstallTab(chatgptWebView)).toBe("claude");
-  });
-});
-```
-
-**Minimum required assertions:** 4 (one per detection case). Additional assertions per case (e.g., separating `defaultInstallTab` from `detectInAppClient` as shown above) are encouraged but not required for C8 to pass.
-
-**Implementation note for the planner:** if the parser stays inline in `public/verify.html` rather than extracted, UA1 needs to load and exercise the parser via a different mechanism (e.g., JSDOM + `eval` of the inline `<script>`). Extraction is simpler and recommended.
-
----
-
 ## Test fixture helpers
 
 Several helpers may need adding to the test harness:
@@ -478,7 +426,6 @@ Several helpers may need adding to the test harness:
 | `check-goals` rich card with subgoals | CARD3 |
 | `verify-achievement` delta card | CARD4 |
 | Brand modal content accuracy | MODAL1 |
-| Client-detection default tab across 4 UA cases | UA1 (C8 auto-verification) |
 
 ---
 
@@ -508,7 +455,6 @@ Recommended:
 4. **RC6, RC7, RC8** (~40 min) — after Step 4 (`view-my-link`). RC8 is critical-path; do not skip.
 5. **CARD1-CARD4** (~60 min) — after Step 5 (rich cards). CARD1 is critical-path.
 6. **MODAL1** (~15 min) — after Step 7 (brand modals). Critical-path.
-7. **UA1** (~10 min) — after Step 8 (client detection). Verifies C8 across the 4 UA cases without requiring physical devices.
 
 Total automated test time: ~3.5 hours. Plus mobile smoke (below) which is non-automated.
 

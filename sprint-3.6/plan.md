@@ -149,7 +149,41 @@ The diff touches `public/verify.html` (UI), `src/tools/invite-member.ts` (QR cod
 
 ## Sprint Contract — Sprint 3.6
 
-> The negotiated Sprint Contract — success criteria 1–12, dynamic rubric, grading thresholds, and success conditions beyond the rubric — lives in [`contract.md`](contract.md). It was carried over from this plan's original embedded section during the sprint-3.6 → live-harness promotion; Phase 1.5 evaluator review is pending.
+### Success criteria
+
+1. **Install walkthrough renders on verify success state.** All three tabs (Claude, ChatGPT, Other) visible and tappable. Each includes either an animated GIF/video or numbered illustrated steps. Mobile responsiveness confirmed on iOS Safari + Android Chrome.
+2. **QR code present in `invite-member` response.** Manager's Claude session displays the QR inline. Scanning the QR with iPhone camera opens the verify URL in Safari without manual URL entry.
+3. **Rich response cards render correctly.** Each of the four kid-facing tools returns a card with at least one progress bar (streak or budget), at least one status indicator, at least one next-action callout. Cards render in both Claude and ChatGPT mobile.
+4. **`resend-invite` works end-to-end.** Manager calls it for a child with an existing unredeemed invite; old invite is revoked; new invite issued; audit log shows both events; verify URL with the new code redeems correctly.
+5. **`test-connection` returns expected health-check fields.** Caller name, role, family name, family ID, last action timestamp, no errors thrown when reading caller's state.
+6. **`view-my-link` returns the caller's existing magic-link URL.** Audit entry `magic-link-viewed` recorded. No other member's link leaked.
+7. **Brand modals render on verify success page.** "How AllowMe protects your kid's money" and "Why we built this" both open as modals (not new tabs), display markdown-rendered content correctly, dismissible.
+8. **Client detection selects appropriate default tab.** iOS Safari opens Claude tab by default. Android Chrome opens Claude tab. Desktop opens Claude tab. ChatGPT WebView surfaces a "you're already in ChatGPT" inline note.
+9. **All 363+ existing tests still pass.** Snapshot tests updated where necessary to reflect the rich-card format.
+10. **No schema changes shipped.** `src/schemas.ts` is untouched. Sprint 3.6 is purely additive at every layer except response formatting.
+11. **`resend-invite` does NOT inadvertently allow non-Manager roles to revoke invites.** RBAC enforced and tested.
+12. **Mobile smoke on real iOS device:** install walkthrough video plays, QR code scan works, rich cards render readably on 380px viewport.
+
+### Dynamic Rubric
+
+| Category | Weight | Justification |
+|----------|--------|---------------|
+| UX completeness | 35% | The point of the sprint — install walkthrough quality, QR code utility, card readability are the central deliverables |
+| Engineering correctness | 25% | New tools (resend, test, view) work without bugs; existing tools' rich-card formatting doesn't regress structured data fields |
+| Mobile usability | 15% | Per the kid-focused user population, mobile-first is non-negotiable |
+| RBAC + audit log integrity | 15% | `resend-invite` revoke-then-reissue is the security-sensitive operation; must enforce Manager-only AND audit correctly |
+| Brand-narrative quality | 10% | The two modals are the trust artifact at the moment of bootstrap — copy must read as honest and contextual, not as marketing |
+
+### Grading thresholds
+
+- **Pass:** All success criteria 1–12 verified. No category below 75%. Mobile smoke passes on real device.
+- **Fail:** Any of (1)–(12) fails. OR snapshot tests broken by the rich-card refactor and not updated. OR `resend-invite` allows non-Manager invocation. OR brand-narrative copy makes overclaims about the current architecture (e.g., calls it "non-custodial" today).
+
+### Success conditions beyond the rubric
+
+- A pilot family completing the full flow (bootstrap → invite kid → kid scans QR → kid taps verify URL → kid completes redemption via install walkthrough → kid asks "what are my goals?" and sees a markdown card) does it in under 10 minutes total, without external help.
+- The kid feels something visibly different after Sprint 3.6 lands. Whether they articulate it or not, the rich response cards should feel meaningfully more like a "real product" than the prior plain-text responses.
+- A reader of the brand-narrative modals walks away with two accurate beliefs: (1) AllowMe's current security model is encrypted-vault-with-allowlist-and-audit, (2) Sprint 4.0 will migrate to non-custodial Coinbase Smart Wallets owned by the parent.
 
 ---
 

@@ -22,7 +22,10 @@ import { registerCheckProgressTool } from "../src/tools/check-progress.js";
 import { registerCheckSavingsTool } from "../src/tools/check-savings.js";
 import { registerCheckGoalsTool } from "../src/tools/check-goals.js";
 import { registerInviteMemberTool } from "../src/tools/invite-member.js";
+import { registerResendInviteTool } from "../src/tools/resend-invite.js";
 import { registerAcceptInviteTool } from "../src/tools/accept-invite.js";
+import { registerTestConnectionTool } from "../src/tools/test-connection.js";
+import { registerViewMyLinkTool } from "../src/tools/view-my-link.js";
 import { registerManageMembersTool } from "../src/tools/manage-members.js";
 import { registerGetFundingAddressTool } from "../src/tools/get-funding-address.js";
 import { registerReleaseSavingsTool } from "../src/tools/release-savings.js";
@@ -68,7 +71,7 @@ function createMcpServer(): McpServer {
     version: "0.3.0",
   });
 
-  // Register all 14 tools — same registrations as src/index.ts
+  // Register all 17 tools — same registrations as src/index.ts
   registerConfigurePolicyTool(server);
   registerViewPolicyTool(server);
   registerVerifyAchievementTool(server);
@@ -77,6 +80,9 @@ function createMcpServer(): McpServer {
   registerCheckGoalsTool(server);
   registerCheckSavingsTool(server);
   registerInviteMemberTool(server);
+  registerResendInviteTool(server);
+  registerTestConnectionTool(server);
+  registerViewMyLinkTool(server);
   registerAcceptInviteTool(server);
   registerManageMembersTool(server);
   registerGetFundingAddressTool(server);
@@ -308,6 +314,9 @@ if (existsSync(verifyPath)) {
     res.type("html").send(verifyHtml);
   });
 }
+
+// Sprint 3.6 — static markdown + verify-ua.js (`/copy/*.md`, `/verify-ua.js`, favicon…)
+app.use(express.static(publicDir, { etag: true, index: false }));
 
 // ===== Start server =====
 const PORT = parseInt(process.env.PORT || "3001", 10);

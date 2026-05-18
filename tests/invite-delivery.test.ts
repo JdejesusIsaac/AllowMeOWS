@@ -88,11 +88,26 @@ describe("D3b: Invite Delivery Response", () => {
       responsePayload.joinMessage = joinMessage;
     }
 
+    const verifyBase = serverUrl || "https://allowme.dev";
+    const verifyUrl = `${verifyBase}/verify?invite=${invite.code}&role=${args.role}`;
+    responsePayload.verifyUrl = verifyUrl;
+
+    const argChildName = args.childName;
+    const expiryHours = 48;
     const messageText =
-      `Invite code for ${args.name}: ${invite.code}\n\n` +
-      `Role: ${args.role} (${roleDescription[args.role]})\n` +
-      `Valid for 48 hours. They can tell their Claude: "I have a code: ${invite.code}"` +
-      (serverUrl && args.role === "learner" ? `\n\nWant me to text this to ${args.childName || "them"}?` : "");
+      `${argChildName ? argChildName : "They"} are invited as a **${args.role}** ` +
+      `(${roleDescription[args.role]}).\n\n` +
+      `**Send them this link.** They should tap it on their phone in a browser ` +
+      `(Safari, Chrome, etc.), then follow the steps on the page.\n\n` +
+      `🔗 ${verifyUrl}\n\n` +
+      `The page will set them up and give them a personal AllowMe link to paste ` +
+      `into Claude or ChatGPT. **They do NOT paste THIS link into Claude/ChatGPT directly** ` +
+      `— this link is for their browser only.\n\n` +
+      `*Invite expires in ${expiryHours} hours.*\n\n` +
+      `_If the link doesn't work, the fallback is: connect them to ` +
+      `https://allowme.dev/mcp first, then have them say "I have a code: ${invite.code}". ` +
+      `This requires reinstalling the connector after, so the link above is much smoother._\n\n` +
+      `Want me to draft a text message to send them?`;
 
     responsePayload.message = messageText;
     return responsePayload;
@@ -158,7 +173,7 @@ describe("D3b: Invite Delivery Response", () => {
     );
 
     const message = response.message as string;
-    expect(message).toContain("Want me to text this to Maya?");
+    expect(message).toContain("Want me to draft a text message to send them?");
   });
 
   it("ID5: Learner invite requires childName — error when missing", async () => {

@@ -24,9 +24,9 @@ AllowanceAgent implements four of the nine Track 02 building opportunities in a 
 
 ### What's Built and Working
 
-- **14 MCP tools** — configure-policy, view-policy, verify-achievement, distribute-allowance, check-progress, check-savings, check-goals, invite-member, accept-invite, manage-members, get-funding-address, release-savings, connect-fitbit, convert-savings
-- **Sign-in-with-Base onboarding** *(Sprint 3.0 v4)* — one-tap verify page at `/verify` using `@base-org/account` SIWE. New families bootstrap without ever pasting JSON into Claude; returning users get fresh 30-day magic-link URLs auto-rotated from their wallet signature.
-- **416 passing tests** (1 skipped counterfactual-wallet fixture) — unit + integration + E2E covering policy engine, invite system, RBAC matrix, SIWE verification, session tokens, rate-limited invite preview, cross-family Manager flows, destination allowlist enforcement, the verify-page bootstrap form, the read-side `view-policy` filter matrix + cache, and full on-chain distribution.
+- **17 MCP tools** — configure-policy, view-policy, verify-achievement, distribute-allowance, check-progress, check-savings, check-goals, invite-member, **resend-invite**, accept-invite, **test-connection**, **view-my-link**, manage-members, get-funding-address, release-savings, connect-fitbit, convert-savings
+- **Sign-in-with-Base onboarding** *(Sprint 3.0 v4)* — one-tap verify page at `/verify` using `@base-org/account` SIWE. New families bootstrap without ever pasting JSON into Claude; returning users get fresh 30-day magic-link URLs auto-rotated from their wallet signature. *(Sprint 3.6 extends `/verify` with connector install tabs, optional walkthrough GIFs, Markdown brand modals, and UA-aware defaults.)*
+- **432 passing tests** (1 skipped counterfactual-wallet fixture) — unit + integration + E2E covering policy engine, invite system, RBAC matrix, SIWE verification, session tokens, rate-limited invite preview, cross-family Manager flows, destination allowlist enforcement, verify-page bootstrap + SIWE/API suite, **`view-policy`** read matrix + cache, recovery tools (resend / test-connection / view-my-link), QR code field on invites, kid-facing MCP **rich markdown cards**, brand copy assertions for `public/copy/*.md`, UA parser for `/verify`, and full on-chain distribution.
 - **Live on-chain USDC transfers** — Confirmed on Base Sepolia (April 2, 2026). EIP-1559 transactions with viem. Partial success handling.
 - **Claude Desktop integration** — Live-tested with Sonnet 4.6. Full conversational flow. No OWS internals ever exposed to the user.
 - **Custom OWS policy executable** — `allowance-policy.py` handles all roles with ERC-20 calldata decoding, spend cap enforcement, and recipient allowlists
@@ -95,11 +95,16 @@ Other Agents   ←a2a→  │ (MCP)    │ server.ts│ wallets │
 | Tool | Description | Roles | x402 |
 |------|-------------|-------|:----:|
 | `configure-policy` | Set up allowance rules per child | Manager | Free |
+| `view-policy` | Read persisted policy (role-aware sections + filtering) *(Sprint 3.0.6)* | Manager, Co-parent, Advisor | Free |
 | `verify-achievement` | Log and evaluate a child's achievement (source tracking) | Manager, Co-parent, Learner | Free |
 | `distribute-allowance` | Send earned USDC to child + savings wallets | Manager | $0.01 |
-| `check-progress` | Weekly status, streaks, category breakdown with source | All | Free |
+| `check-progress` | Weekly status, streaks, category breakdown with source | Manager, Co-parent, Family, Learner | Free |
 | `check-savings` | Savings vault balances, lock dates, projections | Manager, Co-parent, Learner | Free |
+| `check-goals` | Learning goals + subgoal status/deadlines | Manager, Co-parent, Family, Learner | Free |
 | `invite-member` | Generate a human-readable invite code | Manager | $0.003 |
+| `resend-invite` | Manager-only revoke + re-issue learner/co-parent/etc. invites *(Sprint 3.6)* | Manager | Free |
+| `test-connection` | Identity + heartbeat / health ping *(Sprint 3.6)* | All | Free |
+| `view-my-link` | Show your MCP URL + audited magic-link fingerprint *(Sprint 3.6)* | All | Free |
 | `accept-invite` | Join the family with an invite code | All | Free |
 | `manage-members` | List, change roles, or remove members | Manager | $0.005 |
 | `get-funding-address` | Show the treasury wallet address for funding | Manager | $0.001 |
@@ -142,7 +147,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 > Replace paths with your actual `npx` binary and project location.
 > Find your npx path with: `which npx`
 
-Restart Claude Desktop. You'll see 14 tools available.
+Restart Claude Desktop. You'll see 17 tools available.
 
 ### First conversation
 
@@ -447,7 +452,8 @@ Endpoints:
 - `GET /.well-known/agent-card.json` — Agent discovery card
 - `GET /fitbit/connect?child=maya` — Fitbit OAuth redirect
 - `GET /fitbit/callback` — Fitbit OAuth callback
-- `GET /verify` *(Sprint 3.0 v4)* — Sign-in-with-Base onboarding SPA
+- `GET /verify` *(Sprint 3.0 v4 + Sprint 3.6 polish)* — Sign-in-with-Base onboarding SPA (+ install tabs, Markdown modals, UA helper)
+- `GET /walkthroughs/*`, `GET /copy/*.md`, `GET /verify-ua.js` *(Sprint 3.6)* — static assets for verify UX (GIF placeholders + brand stories + UA parser bundle)
 - `GET /api/auth/nonce` *(Sprint 3.0 v4)* — issue a SIWE nonce (5-min TTL)
 - `POST /api/auth/verify` *(Sprint 3.0 v4)* — verify SIWE signature, return session token + memberships
 - `POST /api/configure-family` *(Sprint 3.0 v4)* — bootstrap a family from a SIWE-verified wallet
@@ -475,7 +481,7 @@ Endpoints:
 
 ```
 src/                         Core business logic (stdio transport)
-  index.ts                   MCP server entry point (14 tools registered)
+  index.ts                   MCP server entry point (17 tools registered)
   constants.ts               Chain IDs, USDC addresses, roles, RBAC matrix
   schemas.ts                 Zod schemas for all data types
   middleware/
@@ -580,7 +586,20 @@ Successfully tested on Base Sepolia testnet (Apr 2, 2026):
 - [x] **`policyVersion` write counter** — monotonic, single-counter-per-family. Bootstrap writes `1`; every subsequent `configure-policy` increments by exactly `1`. Pre-3.0.6 family configs lazy-migrate to `policyVersion: 0` via Zod default (same pattern as Sprint 3.0.2's `authorizedDestinations`). Foothold for a future optimistic-concurrency guard on `configure-policy` and a cache-correctness discriminator today.
 - [x] **5×4 role × section access matrix** — encoded as data in `src/middleware/policy-view-filter.ts` so the matrix is auditable in one place. Manager / Co-parent see everything. Advisor sees everything except `children[].walletAddress`. Family + Learner rows are matrix data only — the tool itself is denied at the `withAccessControl` gate for those roles in v1 (`tight_v1` profile). Sibling enumeration blocked: a Learner asking for a sibling's name gets the same `CHILD_NOT_FOUND` shape as a fictional name (no `validChildNames` field leaks).
 - [x] **In-process FamilyConfig cache** — 60s TTL keyed by `familyId`. Synchronous write-invalidation inside `configureFamilyCore` (both bootstrap and update paths), so HTTP + MCP write paths both flush the cache without coupling to the read-side layer. Single-process Railway deployment ⇒ no cross-instance coherence problem to solve in this sprint.
-- [x] **+47 net new tests** — `CP-VER1/2/3` (policyVersion regression bar), `PV-H1..H5` (provenance tagging), `VP-T1..T6` (Manager happy path), `VP-T7a/T7b` (tool-level access denial — locks the v1 tight profile), `PV-M-*` (20-cell role × section matrix, parameterized via `it.each`), `PV-CHILDNAME1..4` (childName scoping + sibling-enumeration block), `PV-WALLETS1..3` (role-precedence over client `includeWallets`), `PC1..PC4` (cache TTL + invalidation + no-stale-read integration). 416 passing + 1 skipped.
+- [x] **+47 net new tests** — `CP-VER1/2/3` (policyVersion regression bar), `PV-H1..H5` (provenance tagging), `VP-T1..T6` (Manager happy path), `VP-T7a/T7b` (tool-level access denial — locks the v1 tight profile), `PV-M-*` (20-cell role × section matrix, parameterized via `it.each`), `PV-CHILDNAME1..4` (childName scoping + sibling-enumeration block), `PV-WALLETS1..3` (role-precedence over client `includeWallets`), `PC1..PC4` (cache TTL + invalidation + no-stale-read integration). 416 passing + 1 skipped *(snapshot at Sprint 3.0.6 ship; see Sprint 3.6 for today's totals).*
+
+### Sprint 3.6 (Done — design completeness pass)
+
+Design + recovery + kid UX polish layered on Sprint 3.0.x without breaking JSON tool contracts (`summary` fields are additive; structured fields retained per C3a).
+
+- [x] **Connector install walkthrough** — `/verify` success state exposes Claude / ChatGPT / Other tabs, numbered steps, optional `public/walkthroughs/*.gif` with SVG fallback, UA-selected default tab + ChatGPT inline banner (`public/verify-ua.js`).
+- [x] **QR-enhanced invites** — `invite-member` can surface a supplemental QR (`inviteQrCode`) plus existing verify URL/message copy (**QR1** guarded in CI).
+- [x] **Rich MCP cards** — Kid-facing tools (`check-progress`, `check-savings`, `check-goals`, `verify-achievement`) emit Markdown `summary` cards alongside unchanged machine fields (**CARD1–CARD4** guarded in CI).
+- [x] **Failure recovery tools** — `resend-invite` + `test-connection` + `view-my-link`, Manager-first RBAC, audit breadcrumbs without leaking plaintext setup codes (**RC1–RC8** guarded in CI).
+- [x] **Brand narratives** — `public/copy/security.md` + `public/copy/why.md` served statically; `/verify` renders them through lazy-loaded [`marked`](https://github.com/markedjs/marked) (**MODAL1** content assertions in CI).
+- [x] **Client detection helpers** — `defaultInstallTab` / `detectInAppClient` extracted for **`UA1`** deterministic coverage.
+
+Automated sprint bar: **432 passing + 1 skipped**. Remaining gates: Railway smoke + recorded GIFs (+ real-device walkthrough QA).
 
 ### Sprint 4.0 (Next)
 - [ ] **Postgres migration** — replace JSON file store; `listMembershipsByWallet` becomes O(1) on `wallet_address` index.

@@ -1,199 +1,125 @@
-# Sprint 3.0.6 — Sprint Contract (Phase 1.5, Negotiated)
+# Sprint 3.6 — Sprint Contract (Phase 1.5, Carry-Over)
 
-**Status:** Aligned between planner draft and evaluator Mode A pushback. Ready for user confirmation.
-**Inputs:** [`research/research.md`](../research/research.md) (spike-resolved S1–S5; ⚠️ OQ1/OQ2/OQ4/OQ5 deferred here), [`planning/plan.md`](plan.md).
-**Sprint type:** Backend MCP tool — RBAC-sensitive read counterpart to `configure-policy`.
-**Sprint class:** Security-critical (rubric Func 30 / Auth 50 / Design 10 / Orig 10 per [`planning/AGENTS.md:18`](AGENTS.md)).
-
----
-
-## Scope
-
-**In scope.** Five deliverables, locked:
-
-1. **`policyVersion` monotonic counter** on `FamilyConfigSchema` ([`src/schemas.ts`](../src/schemas.ts)) with lazy migration via Zod default and synchronous `++1` increment inside `configureFamilyCore` (both bootstrap and update paths).
-2. **New MCP tool `view-policy`** ([`src/tools/view-policy.ts`](../src/tools/view-policy.ts)) registered in [`src/index.ts`](../src/index.ts), with `withAccessControl` wrapping per existing convention.
-3. **Role-based filter helper** ([`src/middleware/policy-view-filter.ts`](../src/middleware/policy-view-filter.ts)) encoding the 5×4 access-control matrix as inspectable data (D7), plus a `hydrateDestinations` helper for provenance tagging (D6).
-4. **In-process cache** ([`src/cache/policy-cache.ts`](../src/cache/policy-cache.ts)) with 60s TTL and synchronous write-invalidation in `configure-policy`.
-5. **`ROLE_TOOL_ACCESS` expansion** ([`src/constants.ts`](../src/constants.ts)) adding `"view-policy"` to allowed roles per the access-control matrix.
-
-**Out of scope.**
-- Mutation of any policy field (`view-policy` is read-only by construction).
-- Pending achievement queue (lives on `check-progress`).
-- Optimistic-concurrency enforcement on `configure-policy` (`policyVersion` shipped but unenforced — future sprint).
-- Multi-instance cache coordination (Railway is single-instance; in-process Map is enough).
-- Encrypted-blob inspection or debug endpoints.
-- New audit-log enum values (read tool produces no audit entries).
-- New `CallerContext.childName` plumbing for non-learner roles (locks family's child-scope behavior at "all-or-stripped", not "own-child" — see ⚠️ OQ5 default).
-- Touching the verify-page form or any Sprint 3.0.5 artifact.
+**Status:** Phase 1.5 closed, Phase 2 in progress. Mode A pushback applied (P1–P7 + A1+A2 of the 2026-05-18 review). Round-3 amendment (2026-05-18, Step 0 of Phase 2): **C10 relaxed to allow scoped additive enum entries on `AuditEntrySchema.action` only** — see Decision D2 in [`implementation/progress.md`](../implementation/progress.md). P8 (rubric-convention divergence from `planning/AGENTS.md`) acknowledged and intentionally deferred — Sprint 3.6 is a completion sprint with no novel architecture warranting an Originality category.
+**Inputs:** [`research/research.md`](../research/research.md), [`planning/plan.md`](plan.md), [`evaluation/test.md`](../evaluation/test.md) (test specs referenced by the verification-ownership table).
+**Sprint type:** UX completeness pass — additive only. No schema changes, no new core services.
+**Sprint class:** Design / UX with one security-adjacent component (`resend-invite` rotation) — rubric splits Auth into "RBAC + audit log integrity" at 15% to surface that hybrid weight.
 
 ---
 
-## Deliverables
+## Success criteria
 
-| ID | Deliverable | File(s) | Phase |
-|----|-------------|---------|-------|
-| DEL1 | `policyVersion` Zod field + lazy-migration default | [`src/schemas.ts`](../src/schemas.ts) | W2 |
-| DEL2 | `policyVersion` increment in `configureFamilyCore` (both paths) | [`src/core/configure-family.ts`](../src/core/configure-family.ts) | W2 |
-| DEL3 | Provenance hydration helper | [`src/middleware/policy-view-filter.ts`](../src/middleware/policy-view-filter.ts) | W3 |
-| DEL4 | `view-policy` tool handler | [`src/tools/view-policy.ts`](../src/tools/view-policy.ts) | W4 |
-| DEL5 | `filterPolicyForRole` (5×4 matrix encoded as data) | [`src/middleware/policy-view-filter.ts`](../src/middleware/policy-view-filter.ts) | W5 |
-| DEL6 | In-process cache + write-invalidation | [`src/cache/policy-cache.ts`](../src/cache/policy-cache.ts), [`src/tools/configure-policy.ts`](../src/tools/configure-policy.ts) | W6 |
-| DEL7 | `ROLE_TOOL_ACCESS` expansion + tool registration | [`src/constants.ts`](../src/constants.ts), [`src/index.ts`](../src/index.ts) | W7 |
-| DEL8 | Regression-bar tests `CP-VER1`/`CP-VER2`/`CP-VER3` | [`tests/configure-policy-version.test.ts`](../tests/configure-policy-version.test.ts) | W1 |
-| DEL9 | Provenance + matrix + cache test suites | [`tests/policy-view-filter.test.ts`](../tests/policy-view-filter.test.ts), [`tests/view-policy-tool.test.ts`](../tests/view-policy-tool.test.ts), [`tests/policy-cache.test.ts`](../tests/policy-cache.test.ts) | W3–W6 |
-| DEL10 | README append for Sprint 3.0.6 | [`README.md`](../README.md) | W8 |
-
----
-
-## Verification Criteria
-
-Twelve criteria, ordered by failure-mode severity. Evaluator verifies each from the deployed build without reading `implementation/progress.md`.
-
-### Functionality (must all pass for Pass)
-
-**C1 — Backward-compat lazy migration.** Pre-3.0.6 family configs (no `policyVersion` field on disk) hydrate via `state.loadFamilyConfig` with `policyVersion: 0`. *Locked by test `CP-VER3` in [`tests/configure-policy-version.test.ts`](../tests/configure-policy-version.test.ts).* Writes a pre-3.0.6-shaped `family-config.json` to disk directly, then reads via StateManager and asserts the default applied.
-
-**C2 — `policyVersion` monotonic, increments by exactly 1.** Bootstrap call persists `policyVersion: 1`; the immediate next `configure-policy` update persists `policyVersion: 2`. Both assertions load the disk shape via `StateManager.loadFamilyConfig` per the Sprint 3.0.5 E-PB1 disk-shape-is-the-truth pattern. *Locked by tests `CP-VER1` (bootstrap) and `CP-VER2` (update).*
-
-**C3 — `POLICY_NOT_INITIALIZED` returns success shell, not error.** A `view-policy` call on a family that has never been through `configure-policy` returns `{ success: true, policyVersion: 0, children: [], authorizedDestinations: [], summary: { childCount: 0, totalWeeklyBudgetUsd: 0, destinationCount: 0, learningGoalCount: 0, activeGoalCount: 0 }, message: <non-empty> }`. **Critical: the shape is structurally identical to a populated response, just zero-valued.** *Locked by `VP-T5`.*
-
-**C4 — Populated read returns full provenance-tagged response.** Manager + `section="all"` + populated family returns: every section non-empty, every entry in `authorizedDestinations` carries `{ address, label, source }`, `policyVersion >= 1`, `updatedAt` is an ISO datetime string, `network` matches the configured chain. *Locked by `VP-T1` and the W4 happy-path suite.*
-
-**C5 — Provenance derivation correctness.** Manager's wallet is tagged `label: "manager-wallet", source: "force-added"`. Each child's wallet (when present) is tagged `label: "child:<exact-name>", source: "force-added"`. Any wallet in `authorizedDestinations` matching neither is tagged `label: "custom", source: "configured"`. **Match is case-insensitive.** *Locked by `PV-H1` through `PV-H5` in [`tests/policy-view-filter.test.ts`](../tests/policy-view-filter.test.ts).*
-
-### Auth / Security (the rubric's heaviest weight — 50%)
-
-**C6 — Access-control matrix, every cell.** Per user-confirmed tight_v1 profile (D-OQ4):
-- **Tool-level gate (`ROLE_TOOL_ACCESS`):** Manager, Co-parent, Advisor have `view-policy` access. Family and Learner are EXCLUDED at the `withAccessControl` layer — they receive the standard "Access denied" payload from `buildAccessDeniedResponse`, NOT a partial response.
-- **Filter helper matrix (`filterPolicyForRole`):** still encodes all 5 rows × 4 sections = 20 cells as inspectable data (so when Family/Learner are added in a follow-up sprint, the matrix is ready). For each allowed (role, section) pair: forbidden cells return `{ error: "INSUFFICIENT_ROLE", role, requestedSection }`; allowed cells return the expected shape with role-specific stripping applied (e.g., advisor receives `children[]` with `walletAddress: undefined` on every entry per D-OQ1 tight).
-- **Effective v1 happy-path coverage:** Manager/Co-parent/Advisor × 4 sections = 12 positive cells; Family/Learner × any section = 2 tool-level "Access denied" tests.
-*Locked by `PV-M{role}-{section}` tests in `tests/policy-view-filter.test.ts` (folded via `test.each` for matrix discipline) plus `VP-T7a` (family denied) and `VP-T7b` (learner denied) in `tests/view-policy-tool.test.ts`. **Evaluator iterates every cell and asserts on each — no representative-sample testing.***
-
-**C7 — Sibling-enumeration block for learner.** Learner calling `view-policy` with `childName="<sibling-name>"` (a real but unauthorized child) returns `{ success: false, error: "CHILD_NOT_FOUND" }` with NO `validChildNames` field. Same response shape as a non-existent child name. *Locked by `PV-CHILDNAME2` (learner with ghost name) and `PV-CHILDNAME4` (learner with real sibling) — must return identical error shape.*
-
-**C8 — Wallet redaction respects role precedence.** Advisor calling `view-policy` with `includeWallets: true` STILL receives `children[].walletAddress: undefined` (role-level stripping wins over client preference). Family role same behavior per default matrix. `includeWallets: false` does NOT strip `authorizedDestinations` for any role — only `children[].walletAddress`. *Locked by `PV-WALLETS1`/`PV-WALLETS2` plus `VP-T4`.*
-
-### Backward compatibility (central correctness gate)
-
-**C9 — Cache write-invalidation, no stale reads.** A sequence `view-policy → configure-policy (update) → view-policy` returns DIFFERENT payloads for the two `view-policy` calls. The second reflects the post-write state, NOT the cached pre-write state. Invalidation must be synchronous within the `configure-policy` handler. *Locked by `PC4` in [`tests/policy-cache.test.ts`](../tests/policy-cache.test.ts) as an integration test against the live tool registry.*
-
-**C10 — Zero regressions in pre-existing tests.** `npx vitest run` clean. Sprint 3.0.5 baseline = 369 passing + 1 skipped. Final tally lower bound = 369 + 30 (W1 +3, W3 +5, W4 +6, W5 +12 with the tight_v1 matrix folded via `test.each`, W6 +4) = **at minimum 399 passing + 1 skipped**. **If 369 baseline regresses, sprint fails regardless of every other criterion.** Test count target band: **+30 to +45 net new tests** (user-confirmed).
-
-**C11 — `npx tsc --noEmit` clean.** No new TypeScript errors introduced by DEL1 (schema field) or DEL3/DEL4/DEL5/DEL6 (new modules). *Build gate.*
-
-### Determinism
-
-**C12 — Read determinism.** Two consecutive `view-policy` calls on the same family with no intervening `configure-policy` write return byte-identical payloads (JSON-serialized). Locks "view-policy is a pure read" — no clock drift in the response, no random IDs, no per-call mutation. *Locked by `VP-T6`.*
+1. **Install walkthrough renders on verify success state.** All three tabs (Claude, ChatGPT, Other) visible and tappable. Each includes either an animated GIF/video or numbered illustrated steps. Mobile responsiveness confirmed on iOS Safari + Android Chrome.
+2. **QR code present in `invite-member` response** as either an inline base64 PNG (preferred) or a hosted-PNG URL (fallback if Claude's renderer doesn't display base64 reliably). Scanning the QR with iPhone camera opens the verify URL in Safari without manual URL entry.
+3. **Rich response cards render correctly with category-appropriate visual elements.** Each of the four kid-facing tools returns a `summary` markdown card containing the visual elements specific to that tool's data shape:
+   - `check-progress`: progress bar (`▓░` Unicode), dollar amount, streak/emoji indicator (`🔥`/`⏳`), next-action callout (`👉`).
+   - `check-savings`: locked-vs-released breakdown OR — for new learners with zero savings — friendly empty-state markdown that names the child and avoids raw `$0.00` framing.
+   - `check-goals`: goal status indicators (`✓`/`○`/`⏳`) with subgoal nesting where applicable (completed subgoals shown with `✓`).
+   - `verify-achievement`: "what changed" delta card with earned delta (`+$X.XX`), streak update, and category completion indicator.
+   Cards render in both Claude mobile and ChatGPT mobile (user-attested per V3, V4).
+3a. **Structured response fields preserved across all four kid-facing tools.** `check-progress` retains `earned`/`streak`/`categories`/`goals`. `check-savings` retains `lockedAmount`/`releasedAmount`/`multiplier`. `check-goals` retains the `goals[]` array. `verify-achievement` retains `delta`/`newStreak`/`newEarned`. The rich `summary` markdown is additive — it never replaces structured data for downstream tool consumers.
+4. **`resend-invite` works end-to-end.** Manager calls it for a child with an existing unredeemed invite; old invite is revoked; new invite issued; audit log shows both events; verify URL with the new code redeems correctly.
+5. **`test-connection` returns expected health-check fields.** Caller name, role, family name, family ID, last action timestamp, no errors thrown when reading caller's state.
+6. **`view-my-link` returns the caller's existing magic-link URL.** Audit entry `magic-link-viewed` recorded with `actor = caller`. Audit metadata MUST NOT contain the setup code itself (the `SETUP-XXXX` value appears in the response only, never in the persisted audit log). No other member's link leaked.
+7. **Brand modals render on verify success page.** "How AllowMe protects your kid's money" and "Why we built this" both open as modals (not new tabs), display markdown-rendered content correctly, dismissible.
+8. **Client detection selects appropriate default tab.** iOS Safari opens Claude tab by default. Android Chrome opens Claude tab. Desktop opens Claude tab. ChatGPT WebView surfaces a "you're already in ChatGPT" inline note.
+9. **Existing test baseline preserved.** All 416 passing + 1 skipped tests (post-Sprint 3.0.6 baseline, verified via `npx vitest run` on the merge-base) remain green. Target final count: **431 passing + 1 skipped** (416 + 15 new: QR1, RC1-8, CARD1-4, MODAL1, UA1). Snapshot tests updated where the rich-card refactor changes response copy.
+10. **No schema changes shipped beyond additive audit-action enum entries.** The only permitted `src/schemas.ts` edit is appending the two new string literals `"invite-revoked"` (C4) and `"magic-link-viewed"` (C6) to the `AuditEntrySchema.action` `z.enum([...])` array. All other schemas — `FamilyConfigSchema`, `ChildConfigSchema`, `MemberSchema`, `InviteSchema`, `AchievementRecordSchema`, `SavingsEntrySchema`, `PolicyConfigSchema`, the audit `details`/`actor`/`txHash`/`amount` shape — are untouched. `InviteSchema.revoked` is NOT added; revocation = remove from the active invites array. Sprint 3.6 is otherwise purely additive at every layer except response formatting. Matches the precedent of every prior sprint that introduced audit-bearing actions (Sprint 3.0 v4 added 5; Sprint 3.0.2 added 4).
+11. **`resend-invite` does NOT inadvertently allow non-Manager roles to revoke invites.** RBAC enforced and tested.
+12. **Mobile smoke on real iOS device:** install walkthrough video plays, QR code scan works, rich cards render readably on 380px viewport.
 
 ---
 
-## Rubric
+## Verification ownership
 
-Security-critical class per [`planning/AGENTS.md:18`](AGENTS.md). Each category scored 0–100; thresholds in the Grading section.
+Mode B evaluator reads `planning/contract.md` + deployed build only. The following table maps each criterion to what the evaluator verifies vs what the user attests after merge — closing the auto-vs-manual gap that would otherwise force Mode B to either over-Pass or over-Fail on manual checks.
 
-| Category | Weight | Definition | Locked criteria |
-|----------|--------|------------|-----------------|
-| Functionality | 30% | Read path returns the persisted state correctly across populated + empty families; `policyVersion` monotonicity holds; provenance derivation matches the force-added set inversion | C1, C2, C3, C4, C5, C12 |
-| Auth / Security | 50% | Every cell of the access-control matrix gates correctly; sibling enumeration is blocked for learner; wallet redaction respects role precedence over client preference | C6, C7, C8 |
-| Design / UX | 10% | API shape is consistent across populated/empty/error cases (shell-not-throw discipline); cache invalidation is synchronous (no stale-read race); helper module boundaries are clean | C3, C9 |
-| Originality | 10% | Provenance derivation as read-side hydration (no storage change); matrix encoded as inspectable data, not nested switches; in-process Map cache with same-handler invalidation rather than coordinating-process overhead | reviewed in evaluation |
+| Criterion | Evaluator (Mode B) verifies | User attests after merge |
+|---|---|---|
+| C1 | Tab component + each platform panel (Claude/ChatGPT/Other) present in `public/verify.html` (DOM grep) | iOS Safari + Android Chrome physical render of GIFs/videos, accordion collapse on 380px |
+| C2 | `QR1` passes; `inviteQrCode` field present in `invite-member` response | Real-device camera scan opens verify URL in Safari/Chrome |
+| C3 | Per-tool elements asserted: `CARD1` (`▓░` + emoji + `$`), `CARD2` (empty-state friendly markdown — names child, no raw `$0.00`), `CARD3` (`✓`/`○`/`⏳` + subgoal nesting), `CARD4` (`+$X.XX` delta + streak + category indicator) | Claude mobile + ChatGPT mobile rendered output |
+| C3a | `CARD1`–`CARD4` assert structured fields survive alongside `summary` | — |
+| C4 | `RC1` (revoke + reissue + dual audit entries) | — |
+| C5 | `RC4`, `RC5` | — |
+| C6 | `RC6`, `RC7` (audit-no-leak), `RC8` (cross-member isolation) | — |
+| C7 | `MODAL1` (content + forbidden phrases) + DOM grep for modal trigger links in `public/verify.html` | Modal open/dismiss UX on real device |
+| C8 | UA-detection JS block present in `public/verify.html` **AND** `UA1` unit test exercising the parser function across the 4 cases (iOS, Android, desktop, in-app WebView) — minimum 4 assertions, one per detection case | Physical-device default-tab confirmation per V7 |
+| C9 | `npx vitest run` exit code 0, count = 431 passing + 1 skipped; `npx tsc --noEmit` clean | — |
+| C10 | `git diff src/schemas.ts` adds EXACTLY two new enum string literals — `"invite-revoked"` and `"magic-link-viewed"` — to `AuditEntrySchema.action`'s `z.enum([...])`, plus up to 3 explanatory comment lines next to them (mirroring the file's own per-sprint comment convention). Zero edits elsewhere in the file (verified: `git diff --numstat src/schemas.ts` shows `5 0` with all 5 insertions inside the audit-action enum block) | — |
+| C11 | `RC2` (non-Manager denied) | — |
+| C12 | — | Full V1–V7 mobile smoke per [`evaluation/test.md`](../evaluation/test.md) |
+
+**Pass requires:** every evaluator-verified criterion green AND user attests C1, C2-scan, C3-cross-client, C7-dismiss, C8-defaults, C12-full-smoke before merge. The user-attestation gate is the merge gate, not a Mode B Pass blocker — Mode B reports Pass-pending-attestation when its half is clean.
+
+---
+
+## Dynamic Rubric
+
+| Category | Weight | Justification |
+|----------|--------|---------------|
+| UX completeness | 35% | The point of the sprint — install walkthrough quality, QR code utility, card readability are the central deliverables |
+| Engineering correctness | 25% | New tools (resend, test, view) work without bugs; existing tools' rich-card formatting doesn't regress structured data fields |
+| Mobile usability | 15% | Per the kid-focused user population, mobile-first is non-negotiable |
+| RBAC + audit log integrity | 15% | `resend-invite` revoke-then-reissue is the security-sensitive operation; must enforce Manager-only AND audit correctly |
+| Brand-narrative quality | 10% | The two modals are the trust artifact at the moment of bootstrap — copy must read as honest and contextual, not as marketing |
+
+### Per-category scoring guidance (Mode B anchor)
+
+Without these, the "no category below 75%" Pass threshold below is unenforceable — Mode B would collapse to evaluator judgment. Each category anchors to concrete, observable outcomes.
+
+**UX completeness (35%)**
+- **100%:** All 6 deliverables visibly shipped — walkthroughs play, QR scannable, cards readable, modals open, client detection works.
+- **75%:** 5 of 6 deliverables ship cleanly; one has a documented fallback (e.g., GIF → static screenshots, base64 → hosted PNG).
+- **<75%:** A deliverable is missing or unusably broken on the primary surface.
+
+**Engineering correctness (25%)**
+- **100%:** 431 passing + 1 skipped, `npx tsc --noEmit` clean, no new warnings in new code, structured response fields preserved (C3a).
+- **75%:** 426+ passing, tsc clean, ≤1 documented flaky test.
+- **<75%:** Test regression vs the 416 baseline OR tsc errors OR a new tool throws on a covered input OR a structured response field disappears.
+
+**Mobile usability (15%)**
+- **100%:** All 6 deliverables render on 380px without horizontal scroll; manual V1–V7 pass on real iOS.
+- **75%:** 5 of 6 render cleanly; documented mobile-specific fallback for the sixth.
+- **<75%:** A deliverable is unusable on 380px viewport.
+
+**RBAC + audit log integrity (15%)**
+- **100%:** RC2, RC7, RC8 all green; `resend-invite` Manager-only enforced; audit entries match schema for both `invite-revoked` and `invite-issued`; no `SETUP-` codes in audit metadata.
+- **75%:** All passing but with one documented edge case (e.g., race-condition note for concurrent resend).
+- **<75%:** ANY of: non-Manager can invoke `resend-invite`, audit log misses an entry, audit metadata leaks a `SETUP-` code.
+
+**Brand-narrative quality (10%)**
+- **100%:** MODAL1 green; both modals open and dismiss; copy passes the 3 load-bearing-phrases assertion AND the 2 forbidden-phrases assertion (`non-custodial`, `trustless`).
+- **75%:** Content passes but copy is rough — Sprint 3.7 polish acceptable.
+- **<75%:** Overclaim found OR Sprint 4.0 path not named.
 
 ---
 
 ## Grading thresholds
 
-- **Pass:** all of C1–C12 verified. Each rubric category at ≥ 75%. Backward-compat regression tests `CP-VER1`/`CP-VER2`/`CP-VER3` green. Test count meets C10's lower bound (≥ 411 passing + 1 skipped).
-- **Fail:** any of C1–C11 fails. OR `tsc --noEmit` errors. OR pre-existing test suite regresses. OR the access-control matrix has even ONE incorrect cell (learner seeing destinations is the canonical fail).
-- **Soft fail (Pass-with-followup):** C12 determinism issue traceable to ISO-timestamp serialization order ONLY (cosmetic — `JSON.stringify` key order is deterministic in V8 but other engines may differ). Evaluator may issue Pass with a Sprint 3.5 ticket if Auth/Security and Functionality are both clean.
+- **Pass:** All 13 success criteria (1–12 plus 3a) verified per the Verification ownership table. No rubric category below 75% per the Per-category scoring guidance. Mobile smoke passes on real device (user-attested C12).
+- **Fail:** Any of (1)–(12) or 3a fails. OR snapshot tests broken by the rich-card refactor and not updated. OR `resend-invite` allows non-Manager invocation. OR audit metadata contains a `SETUP-` code (C6 leak guardrail). OR brand-narrative copy makes overclaims about the current architecture (e.g., calls it "non-custodial" today).
 
 ---
 
-## Audit trail
+## Success conditions beyond the rubric
 
-The implementation MUST NOT introduce new audit-log action enum values. `view-policy` is a read tool and should produce no audit entries (consistent with `check-progress`, `check-goals`, `check-savings`). If the implementation finds a missing audit case (e.g., audit destination-list reads), the contract must be re-negotiated before adding a new enum value.
-
----
-
-## Hand-off rules
-
-1. Generator implements per [`planning/plan.md`](plan.md) AND this contract. Generator must update `implementation/progress.md` at every workstream checkpoint.
-2. Generator MUST run the regression bar (`CP-VER1`/`CP-VER2`/`CP-VER3`) between every workstream from W2 onward. If any goes red, stop and document in "Failed Approaches" before continuing.
-3. Generator MUST NOT self-evaluate. The evaluator (Phase 3, Mode B) reads only this contract and the deployed build — never `implementation/progress.md`.
-4. No real-device smoke required. Optional Claude.ai integration smoke (Manager session calls `view-policy` in Claude Desktop, confirms response renders sensibly) — delegated to user if requested.
+- A pilot family completing the full flow (bootstrap → invite kid → kid scans QR → kid taps verify URL → kid completes redemption via install walkthrough → kid asks "what are my goals?" and sees a markdown card) does it in under 10 minutes total, without external help.
+- The kid feels something visibly different after Sprint 3.6 lands. Whether they articulate it or not, the rich response cards should feel meaningfully more like a "real product" than the prior plain-text responses.
+- A reader of the brand-narrative modals walks away with two accurate beliefs: (1) AllowMe's current security model is encrypted-vault-with-allowlist-and-audit, (2) Sprint 4.0 will migrate to non-custodial Coinbase Smart Wallets owned by the parent.
 
 ---
 
-## Negotiation Log
+## Phase 1.5 pending items
 
-### Round 1 — Planner draft (initial)
-
-Planner produced the 12 criteria above from [`view-policy-sprint/plan.md`](../view-policy-sprint/plan.md) §"Acceptance criteria" (10 items) plus the Sprint 3.0.5 backward-compat pair (C10 zero-regressions, C11 tsc-clean) and a determinism gate (C12).
-
-Rubric weights selected as Security-critical per [`planning/AGENTS.md:18`](AGENTS.md) — the access-control matrix is the central failure mode (learner-sees-destinations is a custody-adjacent data exposure).
-
-### Round 2 — Evaluator pushback (Mode A)
-
-The evaluator raised five concerns; each is reflected in the final criteria.
-
-**E-PB1 (`policyVersion` monotonicity is too weak as "increases"):** A buggy implementation could increment by 2 on bootstrap or skip on update; the contract must demand `++1` per write, asserted on the disk shape.
-→ **Resolution:** C2 now requires exact values (bootstrap → 1, first update → 2). Asserted via `StateManager.loadFamilyConfig`.
-
-**E-PB2 (`POLICY_NOT_INITIALIZED` shell must be structurally identical to populated):** If the empty-state response has different keys than the populated state, every caller becomes a switch statement. Demand the SHAPE is identical, just zero-valued.
-→ **Resolution:** C3 enumerates the shell fields and requires zero-valued sections, not absent ones.
-
-**E-PB3 (5×4 matrix needs PER-CELL assertion, not representative sample):** "Tested some cells" is the canonical learner-sees-destinations failure mode. The contract must FORCE every cell to be asserted.
-→ **Resolution:** C6 requires every (role, section) cell tested. `PV-M{role}-{section}` test names follow a deterministic pattern so the evaluator can enumerate them.
-
-**E-PB4 (sibling enumeration block must produce identical shape to non-existent child):** If the learner gets `CHILD_NOT_FOUND` with `validChildNames: []` for a sibling but `CHILD_NOT_FOUND` with no field for a ghost name, the empty array IS information leakage (signals "there's a sibling but you can't see them"). The shapes must be byte-identical.
-→ **Resolution:** C7 requires identical response shape, asserted by structural-equality compare in the test.
-
-**E-PB5 (cache invalidation race — async invalidation is a stale-read bomb):** The contract must REQUIRE synchronous invalidation in the same handler, no `await` between save and invalidate, and the integration test must hit the live tool registry, not a mock.
-→ **Resolution:** C9 specifies synchronous within the handler. `PC4` is an integration test against `registerConfigurePolicyTool` and `registerViewPolicyTool`-loaded server, not the cache module in isolation.
-
-### Round 3 — Planner counter
-
-Planner accepted all five pushback points without revision. One small clarification:
-
-**Counter on E-PB3 matrix size:** the matrix has 5 roles × 4 sections = 20 cells, but the evaluator implied "20+ tests". For some cells the assertion is "this combination is forbidden" (one negative test); for others it's "this combination returns the expected stripped shape" (one positive test). Total = 20 tests for the matrix proper. Additional tests cover edge cases (childName scoping, includeWallets precedence, CHILD_NOT_FOUND shape parity) — those add ~5–7 more. **Total in `tests/policy-view-filter.test.ts`: ~25–28 tests.** Evaluator accepted.
-
-### Round 4 — Sign-off
-
-Both stances aligned on:
-- Twelve criteria (C1–C12)
-- Rubric: Security-critical class — Func 30 / Auth 50 / Design 10 / Orig 10
-- Pass / Fail / Soft-fail thresholds
-- Hand-off rules
-
-Contract is final pending user confirmation of the four outstanding decisions below.
-
----
-
-## Resolved decisions (user-confirmed)
-
-All six outstanding decisions confirmed via Phase 1.5 batch:
-
-| ID | Decision | Resolution | Effect on implementation |
-|----|----------|-----------|--------------------------|
-| D-Sprint | Sprint identifier | **3.0.6 (patch — additive)** | README append uses Sprint 3.0.6 (Done) heading; no semver bump beyond patch |
-| D-OQ1 | Advisor wallet visibility | **Tight** — `walletAddress` always stripped | `filterPolicyForRole` for advisor role redacts `children[i].walletAddress` regardless of `includeWallets: true`. Asserted by `PV-WALLETS1` |
-| D-OQ2 | Family destination visibility | **Tight** — destinations hidden | Moot for v1 because of D-OQ4 (Family doesn't get the tool at all). Matrix data still encodes `destinations: "hidden"` for Family row so the future sprint inherits the decision |
-| D-OQ4 | Tool-level access scope | **Tight v1** — Manager + Co-parent + Advisor only | `ROLE_TOOL_ACCESS` gets `view-policy` added for these three roles ONLY. Family and Learner receive `buildAccessDeniedResponse` at the `withAccessControl` gate. Their RBAC access deferred to a follow-up sprint |
-| D-OQ5 | Family role child scope | **Consistent** — family would see all children's policy slice if granted access (matches check-goals/check-progress) | Moot for v1 (D-OQ4). Encoded in matrix data for the future sprint |
-| D-Test-count | Test count target band | **Accept** — +30 to +45 net new | C10 lower bound = 399 passing + 1 skipped; upper bound ~414. Matrix tests parameterized via `test.each` to stay in band |
-
-**Effective v1 access-control matrix (the actual code shipped):**
-
-| Role | Tool access (`ROLE_TOOL_ACCESS`) | If allowed → children | destinations | learning-goals | summary |
-|------|----------------------------------|------------------------|--------------|----------------|---------|
-| manager | ✅ | full | full | full | full |
-| co-parent | ✅ | full | full | full | full |
-| advisor | ✅ | full (no wallets per D-OQ1) | full | full | full |
-| family | ❌ denied at tool gate | (deferred — matrix data: full, no wallets per D-OQ5 consistent) | (matrix data: hidden per D-OQ2) | (matrix data: full) | (matrix data: full) |
-| learner | ❌ denied at tool gate | (deferred — matrix data: own-record only) | (matrix data: hidden) | (matrix data: own only) | (matrix data: scoped) |
-
-Family / Learner rows remain in the filter helper's data table so the follow-up sprint that grants them tool access doesn't have to re-derive the policy. The tests cover all 20 cells of the matrix data; the integration tests confirm Family / Learner are denied at the `withAccessControl` gate before the filter even runs.
-
----
-
-**Contract is locked. Generator proceeds with W0 → W9 per [`planning/plan.md`](plan.md) on `/implement`.**
+- [x] `@evaluator` Mode A review (2026-05-18) — 8 issues surfaced (P1–P8). Critical: stale 363 baseline (P1), unverifiable manual criteria (P2), unenforceable 75% threshold (P3), missing criterion↔test mapping (P4). Important: missing structured-fields-preserved criterion (P5), missing audit-metadata-no-leak clause (P6), C2 vs hosted-PNG fallback (P7). Nit: rubric-convention divergence (P8).
+- [x] Planner iteration on P1–P7 applied 2026-05-18:
+  - P1 → C9 updated to 416 baseline / 430 target.
+  - P2 → Verification ownership table added between criteria and rubric.
+  - P3 → Per-category scoring guidance added under Dynamic Rubric.
+  - P4 → resolved by P2's table (each criterion now references its evaluating test IDs).
+  - P5 → C3a inserted (structured response fields preserved).
+  - P6 → C6 extended with no-`SETUP-`-in-audit-metadata clause.
+  - P7 → C2 broadened to accept inline base64 OR hosted-URL fallback.
+- [ ] `@evaluator` re-review for sign-off (expected: 5-minute pass).
+- [ ] User confirmation of final contract before Phase 2 implementation begins.

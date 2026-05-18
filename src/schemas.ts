@@ -232,6 +232,11 @@ export const AuditEntrySchema = z.object({
     "transfer-rejected-by-policy-enforcer",
     "authorized-destinations-updated",
     "authorized-destinations-removal-blocked",
+    // Sprint 3.6 — recovery tools. C4: `resend-invite` revokes the prior
+    // invite before issuing a fresh one. C6: `view-my-link` records each
+    // read (audit `details` MUST NOT contain the setup code itself).
+    "invite-revoked",
+    "magic-link-viewed",
   ]),
   actor: z.string(), // member ID or "system"
   details: z.record(z.unknown()),

@@ -290,6 +290,181 @@
       display: block;
     }
     .field-error[hidden] { display: none; }
+
+    /* Sprint 3.6 — install walkthrough (W1.2–W1.4, contract V1). */
+    .s36-walkthrough {
+      margin-top: 20px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+    }
+    .s36-wtk-hint {
+      margin: 0 0 12px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    #wt-inapp-banner {
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+    .s36-wt-tabs {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .s36-wt-tab {
+      flex: 1;
+      min-width: 0;
+      padding: 12px 8px;
+      font-size: 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--muted);
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color .15s, background .15s, color .15s;
+    }
+    .s36-wt-ol {
+      margin: 0 0 14px;
+      padding-left: 22px;
+      color: var(--fg);
+      font-size: 15px;
+      line-height: 1.45;
+    }
+    .s36-wt-ol li + li { margin-top: 6px; }
+    .s36-wt-visual {
+      margin: 10px 0 14px;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .s36-wt-visual img {
+      display: block;
+      width: 100%;
+      height: auto;
+      vertical-align: middle;
+    }
+    .s36-wt-foot {
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .s36-wt-deeplink {
+      font-size: 14px;
+      color: var(--muted);
+      margin: 8px 0 0;
+      line-height: 1.4;
+    }
+    @media (max-width: 380px) {
+      .s36-wt-tabs {
+        flex-direction: column;
+      }
+      .s36-wt-tab {
+        width: 100%;
+        text-align: left;
+      }
+    }
+
+    /* Sprint 3.6 Step 7 — brand copy modals (security / why narratives). */
+    .s36-modal-triggers {
+      font-size: 14px;
+      line-height: 1.45;
+      text-align: center;
+      margin-top: 4px !important;
+    }
+    .s36-modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(0, 0, 0, 0.42);
+      display: grid;
+      place-items: end center;
+      padding: env(safe-area-inset-top) 12px calc(14px + env(safe-area-inset-bottom));
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .s36-modal-overlay.hidden { display: none !important; }
+    @media (min-width: 481px) {
+      .s36-modal-overlay {
+        place-items: center center;
+        padding: calc(28px + env(safe-area-inset-top)) 24px calc(28px + env(safe-area-inset-bottom));
+      }
+    }
+    .s36-modal-sheet {
+      width: min(520px, 100%);
+      max-height: min(86svh, 720px);
+      border-radius: 14px;
+      background: var(--card);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .s36-modal-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .s36-modal-title {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.3;
+      padding-right: 4px;
+    }
+    .s36-modal-close {
+      flex-shrink: 0;
+      width: auto;
+      min-width: 40px;
+      padding: 4px 8px;
+      margin: -4px -6px -4px 0;
+      font-size: 24px;
+      line-height: 1;
+      background: transparent;
+      color: var(--muted);
+      border-radius: 8px;
+    }
+    .s36-modal-close:hover { color: var(--fg); }
+    .s36-modal-body {
+      overflow-y: auto;
+      flex: 1;
+      padding: 16px 18px;
+      font-size: 15px;
+      color: var(--fg);
+      line-height: 1.55;
+    }
+    .s36-modal-body h1,
+    .s36-modal-body h2 {
+      margin: 0 0 10px;
+      font-size: 1.2rem;
+      letter-spacing: -0.02em;
+      color: var(--fg);
+    }
+    .s36-modal-body p { margin: 0 0 12px; color: var(--fg); }
+    .s36-modal-body p:last-child { margin-bottom: 0; }
+    .s36-modal-body ul,
+    .s36-modal-body ol { padding-left: 1.35rem; margin: 8px 0 12px; }
+    .s36-modal-body li + li { margin-top: 4px; }
+    .s36-modal-body a { color: var(--brand); }
+    .s36-modal-body code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.86em;
+      background: var(--bg);
+      padding: 2px 6px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      word-break: break-word;
+    }
   </style>
 </head>
 <body>
@@ -406,6 +581,102 @@
         </div>
       </div>
 
+      <!-- Sprint 3.6 — MCP install walkthrough (Claude / ChatGPT / Other). -->
+      <section id="install-walkthrough" class="s36-walkthrough" aria-label="Add AllowMe MCP connector">
+        <h2>Add this connector</h2>
+        <p class="s36-wtk-hint">
+          Pick where you're installing AllowMe below. Animated clips (<code>/walkthroughs/*.gif</code>) load automatically once recorded; numbered steps ship today.
+        </p>
+        <div id="wt-inapp-banner" class="alert alert-warn hidden" role="status" aria-live="polite"></div>
+
+        <div class="s36-wt-tabs" role="tablist" aria-label="Connector platform">
+          <button type="button" id="wt-tab-claude" class="s36-wt-tab" role="tab" aria-selected="true" aria-controls="wt-panel-claude" data-wt-tab="claude">Claude</button>
+          <button type="button" id="wt-tab-chatgpt" class="s36-wt-tab" role="tab" aria-selected="false" aria-controls="wt-panel-chatgpt" data-wt-tab="chatgpt">ChatGPT</button>
+          <button type="button" id="wt-tab-other" class="s36-wt-tab" role="tab" aria-selected="false" aria-controls="wt-panel-other" data-wt-tab="other">Other</button>
+        </div>
+
+        <div id="wt-panel-claude" class="wt-panel-root" role="tabpanel" aria-labelledby="wt-tab-claude">
+          <ol class="s36-wt-ol">
+            <li>Open <strong>Claude</strong> (desktop app or Claude on the web).</li>
+            <li>Go to <strong>Settings → Connectors</strong>, then tap <strong>Add</strong>.</li>
+            <li>Paste your magic link, or tap <strong>Open in Claude</strong> above to use the MCP deep-link.</li>
+            <li>Confirm tools loaded — try asking what your learning goals are.</li>
+          </ol>
+          <figure class="s36-wt-visual">
+            <img
+              alt=""
+              width="560" height="315"
+              decoding="async" loading="lazy"
+              src="/walkthroughs/claude.gif"
+              onerror="this.onerror=null;this.src='/walkthroughs/claude.svg';"
+            />
+          </figure>
+          <button type="button" class="btn-secondary wt-copy-mcp-inline" style="width:100%">Copy magic link again</button>
+          <p class="s36-wt-deeplink muted">
+            Claude Desktop recognizes <code>claude://mcp/add?url=…</code>; mobile browsers usually need copy-paste.
+          </p>
+          <p class="s36-wt-foot">
+            ChatGPT doesn't ship a comparable deep-link — use the ChatGPT tab with copy-paste.
+          </p>
+        </div>
+
+        <div id="wt-panel-chatgpt" class="wt-panel-root" role="tabpanel" aria-labelledby="wt-tab-chatgpt" hidden aria-hidden="true">
+          <p class="s36-wt-deeplink" style="color:var(--warn);margin:0 0 10px">
+            ChatGPT doesn't support deep-link MCP install yet — paste the URL manually below.
+          </p>
+          <ol class="s36-wt-ol">
+            <li>Open <strong>ChatGPT</strong> (web or native app).</li>
+            <li>Go to <strong>Settings → Connectors → Add connector</strong> (wording varies slightly by client).</li>
+            <li>Paste your magic link when prompted for an MCP endpoint URL.</li>
+            <li>Save — then ask Claude-style questions scoped to AllowMe tools.</li>
+          </ol>
+          <figure class="s36-wt-visual">
+            <img
+              alt=""
+              width="560" height="315"
+              decoding="async" loading="lazy"
+              src="/walkthroughs/chatgpt.gif"
+              onerror="this.onerror=null;this.src='/walkthroughs/chatgpt.svg';"
+            />
+          </figure>
+          <button type="button" class="btn-secondary wt-copy-mcp-inline" style="width:100%">Copy magic link</button>
+          <p class="s36-wt-foot">
+            Already inside ChatGPT? Use the banner above plus these steps instead of juggling browsers.
+          </p>
+        </div>
+
+        <div id="wt-panel-other" class="wt-panel-root" role="tabpanel" aria-labelledby="wt-tab-other" hidden aria-hidden="true">
+          <ol class="s36-wt-ol">
+            <li>Open your MCP-capable assistant (Cursor, Claude Code, Windsurf, custom stack, …).</li>
+            <li>Find the project's <strong>custom MCP / connector</strong> settings.</li>
+            <li>Paste the MCP URL (<code>mcp.allowme.dev/…</code> style links from your magic link) into the server's URL field.</li>
+          </ol>
+          <figure class="s36-wt-visual">
+            <img
+              alt=""
+              width="560" height="315"
+              decoding="async" loading="lazy"
+              src="/walkthroughs/other.gif"
+              onerror="this.onerror=null;this.src='/walkthroughs/other.svg';"
+            />
+          </figure>
+          <button type="button" class="btn-secondary wt-copy-mcp-inline" style="width:100%">Copy magic link</button>
+          <p class="s36-wt-foot">
+            If your MCP client isn't listed, paste the URL into whichever field accepts remote MCP servers — most follow the VS Code/Cursor JSON pattern.
+          </p>
+        </div>
+
+        <p class="s36-wt-foot" style="margin-top:16px;margin-bottom:0">
+          Having trouble? Email <a class="subtle-link" href="mailto:help@allowme.dev">help@allowme.dev</a> — include screenshot + device.
+        </p>
+      </section>
+
+      <p class="muted s36-modal-triggers">
+        <a href="#" id="lnk-s36-copy-security" class="subtle-link">How AllowMe protects your kid's money</a>
+        &nbsp;·&nbsp;
+        <a href="#" id="lnk-s36-copy-why" class="subtle-link">Why we built AllowMe</a>
+      </p>
+
       <div class="alert alert-warn">
         <strong>Don't share this link.</strong> Anyone who has it can act as you in AllowMe.
       </div>
@@ -426,6 +697,23 @@
     </p>
   </main>
 
+  <!-- Sprint 3.6 Step 7 — markdown brand modals (fetch /copy/*.md → marked.parse) -->
+  <div
+    id="s36-copy-modal"
+    class="s36-modal-overlay hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="s36-copy-modal-title"
+  >
+    <div class="s36-modal-sheet" role="document">
+      <div class="s36-modal-toolbar">
+        <h2 id="s36-copy-modal-title" class="s36-modal-title">AllowMe</h2>
+        <button type="button" id="btn-s36-modal-close" class="s36-modal-close" aria-label="Close dialog">&times;</button>
+      </div>
+      <div id="s36-copy-modal-body" class="s36-modal-body"></div>
+    </div>
+  </div>
+
   <script type="module">
     // ---------- Config ----------
     // Injected by GET /verify route — see app/server.ts. Falls back to
@@ -435,6 +723,12 @@
       appLogoUrl: "/favicon.ico",
       chainId: "0x14a34", // Base Sepolia (84532). Flip to "0x2105" (8453) for mainnet.
       statement: "Sign in to AllowMe to manage your family's allowance.",
+    };
+
+    const verifyUa = await import("./verify-ua.js");
+    window.__ALLOWME_UA_INSTALL__ = {
+      defaultInstallTab: verifyUa.defaultInstallTab,
+      detectInAppClient: verifyUa.detectInAppClient,
     };
 
     // ---------- State ----------
@@ -484,6 +778,220 @@
       const mins = Math.max(1, Math.floor(ms / 60_000));
       return mins + " minute" + (mins === 1 ? "" : "s");
     }
+
+    /** Sprint 3.6 — copy MCP magic link (mirrors `#btn-copy-url`). */
+    async function copyMcpMagicLinkWithFeedback(feedbackBtn) {
+      const box = $("success-url");
+      if (!box) return;
+      const url = (box.textContent || "").trim();
+      if (!url) return;
+      try {
+        await navigator.clipboard.writeText(url);
+        if (feedbackBtn && "textContent" in feedbackBtn) {
+          const original = feedbackBtn.textContent;
+          feedbackBtn.textContent = "✓ Copied";
+          setTimeout(() => { feedbackBtn.textContent = original; }, 1500);
+        }
+      } catch {
+        const range = document.createRange();
+        range.selectNodeContents(box);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
+
+    function resolveWalkthroughDefaultTab() {
+      const uaMod = window.__ALLOWME_UA_INSTALL__;
+      const ua = navigator.userAgent || "";
+      try {
+        if (uaMod?.defaultInstallTab) {
+          const v = uaMod.defaultInstallTab(ua);
+          if (v === "chatgpt" || v === "other" || v === "claude") return v;
+        }
+      } catch { /* UA helper may throw if signature changes */ }
+      return "claude";
+    }
+
+    function updateWtInAppBanner() {
+      const banner = $("wt-inapp-banner");
+      const uaMod = window.__ALLOWME_UA_INSTALL__;
+      if (!banner || !uaMod?.detectInAppClient) return;
+      try {
+        if (uaMod.detectInAppClient(navigator.userAgent || "") === "chatgpt") {
+          banner.textContent =
+            "You're already browsing inside ChatGPT — open Settings → Connectors and paste your magic link manually. Claude deep-links won't help from here.";
+          banner.classList.remove("hidden");
+          return;
+        }
+      } catch { /* noop */ }
+      banner.classList.add("hidden");
+    }
+
+    function selectWalkthroughTab(tabKey) {
+      const keys = ["claude", "chatgpt", "other"];
+      const t = keys.includes(tabKey) ? tabKey : "claude";
+      for (const k of keys) {
+        const btn = $("wt-tab-" + k);
+        const panel = $("wt-panel-" + k);
+        const active = k === t;
+        if (btn) btn.setAttribute("aria-selected", active ? "true" : "false");
+        if (panel) {
+          panel.hidden = !active;
+          panel.setAttribute("aria-hidden", active ? "false" : "true");
+        }
+      }
+    }
+
+    function refreshInstallWalkthroughAfterSuccess() {
+      updateWtInAppBanner();
+      selectWalkthroughTab(resolveWalkthroughDefaultTab());
+    }
+
+    function wireInstallWalkthroughOnce() {
+      const root = $("install-walkthrough");
+      if (!root || root.dataset.s36Wired === "1") return;
+      root.dataset.s36Wired = "1";
+      root.querySelectorAll("[data-wt-tab]").forEach((btn) => {
+        btn.addEventListener("click", () =>
+          selectWalkthroughTab(btn.getAttribute("data-wt-tab") || "claude"));
+      });
+      root.querySelectorAll(".wt-copy-mcp-inline").forEach((btn) => {
+        btn.addEventListener("click", async () => copyMcpMagicLinkWithFeedback(btn));
+      });
+    }
+
+    wireInstallWalkthroughOnce();
+
+    // ---------- Sprint 3.6 Step 7 — brand modals (marked + /copy/*.md) ----------
+    const S36_MARKED_CDN =
+      "https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js";
+
+    const s36MdCache = Object.create(null);
+    /** @type {Promise<void> | null} */
+    let s36MarkedPromise = null;
+
+    function ensureMarkedBundled() {
+      if (globalThis.marked?.parse) return Promise.resolve();
+      if (!s36MarkedPromise) {
+        s36MarkedPromise = new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = S36_MARKED_CDN;
+          s.async = true;
+          s.crossOrigin = "anonymous";
+          s.onload = () => resolve();
+          s.onerror = () =>
+            reject(new Error("Marked library failed to load from CDN."));
+          document.head.appendChild(s);
+        });
+      }
+      return s36MarkedPromise;
+    }
+
+    /** @returns {Promise<string>} */
+    async function fetchBrandCopyMarkdown(slug) {
+      const key = String(slug);
+      if (Object.prototype.hasOwnProperty.call(s36MdCache, key)) {
+        return s36MdCache[key];
+      }
+      const res = await fetch(`/copy/${key}.md`, { cache: "force-cache" });
+      if (!res.ok) {
+        throw new Error(`fetch /copy/${key}.md → HTTP ${res.status}`);
+      }
+      const txt = await res.text();
+      s36MdCache[key] = txt;
+      return txt;
+    }
+
+    let s36ModalReturnFocus = null;
+
+    function closeS36CopyModal() {
+      const overlay = $("s36-copy-modal");
+      if (!overlay) return;
+      overlay.classList.add("hidden");
+      document.body.style.overflow = "";
+      if (s36ModalReturnFocus?.focus) {
+        s36ModalReturnFocus.focus({ preventScroll: true });
+      }
+      s36ModalReturnFocus = null;
+    }
+
+    /** @param {{ slug: string; title: string }} spec */
+    async function openS36CopyModal({ slug, title }) {
+      const overlay = $("s36-copy-modal");
+      const ttl = $("s36-copy-modal-title");
+      const body = $("s36-copy-modal-body");
+      if (!overlay || !ttl || !body) return;
+
+      s36ModalReturnFocus = /** @type {HTMLElement|null} */ (document.activeElement);
+      ttl.textContent = title;
+      body.innerHTML =
+        "<p class=\"muted\"><span class=\"spinner\"></span>&nbsp;&nbsp;Loading…</p>";
+      overlay.classList.remove("hidden");
+      document.body.style.overflow = "hidden";
+
+      try {
+        await ensureMarkedBundled();
+        const markedLib = globalThis.marked;
+        if (!markedLib || typeof markedLib.parse !== "function") {
+          throw new Error("`marked.parse` missing after CDN load.");
+        }
+        const md = await fetchBrandCopyMarkdown(slug);
+        body.innerHTML = markedLib.parse(md, { breaks: true, gfm: true });
+        $("btn-s36-modal-close")?.focus({ preventScroll: true });
+      } catch (err) {
+        const msg = escapeHtml(err instanceof Error ? err.message : String(err));
+        body.innerHTML = `
+          <div class="alert alert-error">
+            Couldn't load this story yet. Retry in a moment, or email
+            <a href="mailto:help@allowme.dev">help@allowme.dev</a>.
+          </div>
+          <p class="muted" style="margin-top:8px;font-size:13px;">${msg}</p>`;
+      }
+    }
+
+    function wireS36BrandModalsOnce() {
+      const overlay = $("s36-copy-modal");
+      const closer = $("btn-s36-modal-close");
+      const lnkSecurity = $("lnk-s36-copy-security");
+      const lnkWhy = $("lnk-s36-copy-why");
+      if (!overlay || overlay.dataset.s36Wired === "1") return;
+      overlay.dataset.s36Wired = "1";
+
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) closeS36CopyModal();
+      });
+      closer?.addEventListener("click", closeS36CopyModal);
+
+      document.addEventListener("keydown", (ev) => {
+        const modal = $("s36-copy-modal");
+        if (
+          ev.key !== "Escape" ||
+          !modal ||
+          modal.classList.contains("hidden")
+        )
+          return;
+        ev.preventDefault();
+        closeS36CopyModal();
+      });
+
+      lnkSecurity?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        void openS36CopyModal({
+          slug: "security",
+          title: "How AllowMe protects your kid's money",
+        });
+      });
+      lnkWhy?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        void openS36CopyModal({
+          slug: "why",
+          title: "Why we built AllowMe",
+        });
+      });
+    }
+
+    wireS36BrandModalsOnce();
 
     // ---------- Base Account SDK ----------
     let sdk = null;
@@ -1282,6 +1790,7 @@
         starter.appendChild(tip);
       }
 
+      refreshInstallWalkthroughAfterSuccess();
       show("success");
     }
 
@@ -1351,20 +1860,7 @@
     $("btn-family-create").addEventListener("click", submitFamilyCreate);
 
     $("btn-copy-url").addEventListener("click", async () => {
-      const url = $("success-url").textContent;
-      try {
-        await navigator.clipboard.writeText(url);
-        const b = $("btn-copy-url");
-        const original = b.textContent;
-        b.textContent = "✓ Copied";
-        setTimeout(() => (b.textContent = original), 1500);
-      } catch {
-        // Fallback: select text so user can long-press → copy on mobile
-        const range = document.createRange();
-        range.selectNodeContents($("success-url"));
-        const sel = window.getSelection();
-        sel.removeAllRanges(); sel.addRange(range);
-      }
+      await copyMcpMagicLinkWithFeedback($("btn-copy-url"));
     });
 
     $("btn-rate-retry").addEventListener("click", () => {

@@ -26,6 +26,8 @@ import {
   buildNoIdentityResponse,
   getChildScope,
   rbacFields,
+  type CallerContext,
+  type ToolResponse,
 } from "../middleware/access-control.js";
 
 /** Shape of one entry in `reports[].goals[]`. Exported for test ergonomics. */
@@ -36,6 +38,174 @@ export interface GoalReport {
   subgoals?: Array<{ topic: string; status: "complete" | "not-started" }>;
   deadline?: string;
   daysUntilDeadline?: number;
+}
+
+/**
+ * Sprint 3.6 — Unicode status lines for MCP `summary` (contract CARD3).
+ */
+export function buildCheckGoalsRichMarkdown(
+  childName: string,
+  goals: GoalReport[],
+): string {
+  if (goals.length === 0) {
+    return (
+      `**${childName}'s learning goals**\n\n` +
+      `○ No goals on your board yet — ask a parent to add some in **configure-policy**.`
+    );
+  }
+  const lines: string[] = [`**${childName}'s learning goals**`, ""];
+  for (const g of goals) {
+    const mark =
+      g.status === "complete" ? "✓" : g.status === "in-progress" ? "⏳" : "○";
+    lines.push(`${mark} ${g.topic}`);
+    if (g.subgoals?.length) {
+      for (const sg of g.subgoals) {
+        const sm = sg.status === "complete" ? "✓" : "○";
+        lines.push(`   ${sm} ${sg.topic}`);
+      }
+    }
+    lines.push("");
+  }
+  return lines.join("\n").trimEnd() + "\n";
+}
+
+export async function checkGoalsHandler(
+  args: Record<string, unknown>,
+  caller: CallerContext | null,
+): Promise<ToolResponse> {
+  if (!caller) return buildNoIdentityResponse("check-goals");
+  const requestedChildArg = args.childName as string | undefined;
+
+  try {
+    const state = new StateManager();
+    const familyId = caller.familyId;
+    const config = await state.loadFamilyConfig(familyId);
+
+    if (!config) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              success: false,
+              error: "No family configured.",
+            }),
+          },
+        ],
+      };
+    }
+
+    const childScope = getChildScope(caller);
+    const requestedChild = childScope || requestedChildArg;
+
+    const children = requestedChild
+      ? config.children.filter(
+          (c) => c.name.toLowerCase() === requestedChild.toLowerCase(),
+        )
+      : config.children;
+
+    if (children.length === 0) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              success: false,
+              error: `Child "${requestedChildArg}" not found.`,
+            }),
+          },
+        ],
+      };
+    }
+
+    const allAchievements = await state.loadAchievements(familyId);
+
+    const reports = children.map((child) => {
+      const childAchievements = allAchievements.filter(
+        (a) => a.childName.toLowerCase() === child.name.toLowerCase(),
+      );
+
+      const goals = child.learningGoals ?? [];
+      const now = Date.now();
+
+      const goalReports: GoalReport[] = goals.map((goal) => {
+        const matchingAchievements = childAchievements.filter(
+          (a) => a.category.toLowerCase() === goal.category.toLowerCase(),
+        );
+
+        const status: GoalReport["status"] = goal.completed
+          ? "complete"
+          : matchingAchievements.length > 0
+            ? "in-progress"
+            : "not-started";
+
+        return {
+          topic: goal.topic,
+          category: goal.category,
+          status,
+          subgoals: goal.subgoals?.map((sg) => ({
+            topic: sg.topic,
+            status: sg.completed
+              ? ("complete" as const)
+              : ("not-started" as const),
+          })),
+          deadline: goal.deadline,
+          daysUntilDeadline: goal.deadline
+            ? Math.ceil(
+                (new Date(goal.deadline).getTime() - now) /
+                  (24 * 60 * 60 * 1000),
+              )
+            : undefined,
+        };
+      });
+
+      const summary = buildCheckGoalsSummary(
+        child.name,
+        goalReports,
+        caller.role,
+      );
+
+      return {
+        childName: child.name,
+        summary,
+        goalCount: goalReports.length,
+        completeCount: goalReports.filter((g) => g.status === "complete").length,
+        inProgressCount: goalReports.filter((g) => g.status === "in-progress").length,
+        notStartedCount: goalReports.filter((g) => g.status === "not-started").length,
+        goals: goalReports,
+      };
+    });
+
+    const payload: Record<string, unknown> = { success: true, reports };
+    if (reports.length === 1) {
+      const r = reports[0]!;
+      payload.summary = buildCheckGoalsRichMarkdown(
+        r.childName,
+        r.goals as GoalReport[],
+      );
+    }
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(payload),
+        },
+      ],
+    };
+  } catch (error) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify({
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          }),
+        },
+      ],
+    };
+  }
 }
 
 export function registerCheckGoalsTool(server: McpServer): void {
@@ -50,134 +220,7 @@ export function registerCheckGoalsTool(server: McpServer): void {
         .describe("Check a specific child's goals, or all children's goals if omitted"),
       ...rbacFields,
     },
-    withAccessControl("check-goals", async (args, caller) => {
-      if (!caller) return buildNoIdentityResponse("check-goals");
-      const requestedChildArg = args.childName as string | undefined;
-
-      try {
-        const state = new StateManager();
-        const familyId = caller.familyId;
-        const config = await state.loadFamilyConfig(familyId);
-
-        if (!config) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  success: false,
-                  error: "No family configured.",
-                }),
-              },
-            ],
-          };
-        }
-
-        // Child-scoping: Learner sees only their own; everyone else sees all
-        // or the explicitly requested child.
-        const childScope = getChildScope(caller);
-        const requestedChild = childScope || requestedChildArg;
-
-        const children = requestedChild
-          ? config.children.filter(
-              (c) => c.name.toLowerCase() === requestedChild.toLowerCase()
-            )
-          : config.children;
-
-        if (children.length === 0) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  success: false,
-                  error: `Child "${requestedChildArg}" not found.`,
-                }),
-              },
-            ],
-          };
-        }
-
-        const allAchievements = await state.loadAchievements(familyId);
-
-        const reports = children.map((child) => {
-          const childAchievements = allAchievements.filter(
-            (a) => a.childName.toLowerCase() === child.name.toLowerCase()
-          );
-
-          const goals = child.learningGoals ?? [];
-          const now = Date.now();
-
-          const goalReports: GoalReport[] = goals.map((goal) => {
-            const matchingAchievements = childAchievements.filter(
-              (a) => a.category.toLowerCase() === goal.category.toLowerCase()
-            );
-
-            const status: GoalReport["status"] = goal.completed
-              ? "complete"
-              : matchingAchievements.length > 0
-                ? "in-progress"
-                : "not-started";
-
-            return {
-              topic: goal.topic,
-              category: goal.category,
-              status,
-              subgoals: goal.subgoals?.map((sg) => ({
-                topic: sg.topic,
-                status: sg.completed
-                  ? ("complete" as const)
-                  : ("not-started" as const),
-              })),
-              deadline: goal.deadline,
-              daysUntilDeadline: goal.deadline
-                ? Math.ceil(
-                    (new Date(goal.deadline).getTime() - now) /
-                      (24 * 60 * 60 * 1000)
-                  )
-                : undefined,
-            };
-          });
-
-          const summary = buildCheckGoalsSummary(
-            child.name,
-            goalReports,
-            caller.role
-          );
-
-          return {
-            childName: child.name,
-            summary,
-            goalCount: goalReports.length,
-            completeCount: goalReports.filter((g) => g.status === "complete").length,
-            inProgressCount: goalReports.filter((g) => g.status === "in-progress").length,
-            notStartedCount: goalReports.filter((g) => g.status === "not-started").length,
-            goals: goalReports,
-          };
-        });
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ success: true, reports }),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
-              }),
-            },
-          ],
-        };
-      }
-    })
+    withAccessControl("check-goals", checkGoalsHandler),
   );
 }
 

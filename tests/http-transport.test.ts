@@ -67,7 +67,8 @@ describe("H2: MCP tool registration", () => {
     // Manager: 12 in expectedTools + convert-savings (Sprint 2.5) = 13.
     // Sprint 3.0.3 added check-goals to the Manager allowlist.
     // Sprint 3.0.6 added view-policy to the Manager allowlist → 14.
-    expect(managerTools.length).toBe(14);
+    // Sprint 3.6 added resend-invite → 15, then test-connection + view-my-link → 17.
+    expect(managerTools.length).toBe(17);
   });
 });
 
@@ -89,6 +90,9 @@ describe("H3-H5: x402 pricing configuration", () => {
     "check-goals",
     "release-savings",
     "connect-fitbit",
+    // Sprint 3.6 recovery — free for every role that can call them.
+    "test-connection",
+    "view-my-link",
   ];
 
   it("H3: Paid tools have x402 pricing defined", () => {
