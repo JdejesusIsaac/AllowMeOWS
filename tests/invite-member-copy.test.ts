@@ -68,7 +68,11 @@ describe("SC: invite-member copy contract", () => {
     expect(message).toMatch(/this link is for their browser only/i);
 
     // Verify URL is present and shaped as a real verify-page URL.
-    expect(message).toMatch(/https:\/\/[^\s]+\/verify\?invite=/);
+    // Sprint 3.7 — URL form moved from `/verify?invite=…&role=…` to
+    // `/join/CODE`. Tests assert the new shape; the legacy route still
+    // works server-side for backward-compat.
+    expect(message).toMatch(/https:\/\/[^\s]+\/join\/[A-Z]/);
+    expect(message).not.toMatch(/\/verify\?invite=/);
 
     // Fallback is present but explicitly framed as the harder path.
     expect(message).toMatch(/fallback/i);

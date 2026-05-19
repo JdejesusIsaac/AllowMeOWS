@@ -82,7 +82,12 @@ describe("QR: invite-member QR code", () => {
     // 4. The verify URL must still be present — QR is a supplement, not
     //    a replacement. The link is the canonical handoff artifact; the QR
     //    is the camera-scannable representation of the same URL.
-    expect(body.verifyUrl).toMatch(/^https:\/\/[^\s]+\/verify\?invite=/);
+    //
+    //    Sprint 3.7 — URL form is now `/join/CODE` (path-shaped), not
+    //    `/verify?invite=…&role=…` (queryparam). The QR encodes the new form.
+    expect(body.verifyUrl).toMatch(/^https:\/\/[^\s]+\/join\/[A-Z]/);
+    expect(body.verifyUrl).not.toContain("?invite=");
+    expect(body.verifyUrl).not.toContain("&role=");
 
     // 5. The response copy must reference the QR option so the parent
     //    understands what the inline image is for.

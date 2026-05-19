@@ -103,9 +103,18 @@ export async function inviteMemberHandler(
     const serverUrl = process.env.ALLOWANCE_AGENT_URL || undefined;
 
     // Sprint 3.0 v4 (W2.5): surface the verify-page URL so Managers can
-    // text/email a single link that auto-fills the invite code and role.
+    // text/email a single link that auto-fills the invite code.
+    //
+    // Sprint 3.7 (W1.2): emit the new path-shaped form `/join/CODE` so the
+    // URL reads as a destination ("join the family") rather than a
+    // configuration endpoint ("verify with these queryparams"). Role is no
+    // longer in the URL — it's resolved from the invite record at
+    // redemption time, eliminating the URL/record mismatch class of bugs.
+    // The old `/verify?invite=…&role=…` form continues to work via the
+    // backward-compat route in `app/server.ts` for any links already in
+    // the wild. See research-3.7.md Decision 1.
     const verifyBase = process.env.ALLOWANCE_AGENT_URL || "https://allowme.dev";
-    const verifyUrl = `${verifyBase}/verify?invite=${invite.code}&role=${role}`;
+    const verifyUrl = `${verifyBase}/join/${invite.code}`;
 
     const familySuffix = config.familyName.toLowerCase().endsWith("family") ? "" : " family";
     const joinMessage = serverUrl

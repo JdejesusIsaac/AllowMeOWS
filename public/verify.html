@@ -733,7 +733,15 @@
 
     // ---------- State ----------
     const qs = new URLSearchParams(window.location.search);
-    const inviteCode = (qs.get("invite") || "").toUpperCase().trim();
+    // Sprint 3.7: extract the invite code from either form:
+    //   • new path-shaped URL: /join/SOFI-LEARN-X7K2
+    //   • legacy queryparam URL: /verify?invite=SOFI-LEARN-X7K2&role=learner
+    // The role is no longer read from the URL — it's resolved authoritatively
+    // from the invite record by /api/invites/:code/preview. The legacy
+    // `?role=` queryparam is ignored on purpose (research-3.7.md Decision 1).
+    const pathMatch = /^\/join\/([^/?#]+)/i.exec(window.location.pathname || "");
+    const pathCode = pathMatch ? decodeURIComponent(pathMatch[1]) : "";
+    const inviteCode = ((qs.get("invite") || pathCode) || "").toUpperCase().trim();
     const inviteRole = (qs.get("role") || "").toLowerCase().trim();
 
     let sessionToken = null; // set after SIWE verify

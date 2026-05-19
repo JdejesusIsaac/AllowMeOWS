@@ -291,6 +291,12 @@ if (existsSync(landingPath)) {
 // W2.3 — GET /verify serves the Sign-in-with-Base onboarding SPA. Query
 // params (`?invite=CODE&role=ROLE`) are read client-side by the page JS.
 //
+// Sprint 3.7 — GET /join/:code serves the same SPA at a cleaner path-shaped
+// URL. The client-side bootstrap reads the path segment (or queryparam, for
+// backward compat with old invite links) and resolves role-from-record via
+// the `/api/invites/:code/preview` endpoint — the URL form does NOT carry
+// the role. See research-3.7.md Decision 1 for the URL design rationale.
+//
 // The page expects a `window.__ALLOWME_CONFIG__` blob to pick up the
 // network (testnet vs mainnet) and app branding, so we inject it inline
 // before sending the raw HTML through. Injection uses a unique placeholder
@@ -311,6 +317,13 @@ if (existsSync(verifyPath)) {
   const verifyHtml = rawVerifyHtml.replace("</head>", `${injection}\n</head>`);
 
   app.get("/verify", (_req, res) => {
+    res.type("html").send(verifyHtml);
+  });
+  // Sprint 3.7 — path-shaped invite URL. The same SPA handles both forms;
+  // client-side JS extracts the code from `location.pathname` when no
+  // `?invite=` queryparam is present. Backward-compat with the old
+  // `/verify?invite=…&role=…` form is preserved by the existing route.
+  app.get("/join/:code", (_req, res) => {
     res.type("html").send(verifyHtml);
   });
 }

@@ -71,7 +71,8 @@ describe("D3b: Invite Delivery Response", () => {
     expect(response.inviteCode).toBeDefined();
     expect(response.serverUrl).toBeUndefined();
     expect(response.joinMessage).toBeUndefined();
-    expect(response.verifyUrl).toMatch(/^https:\/\/allowme\.dev\/verify\?invite=/);
+    // Sprint 3.7 — URL form moved to /join/CODE.
+    expect(response.verifyUrl).toMatch(/^https:\/\/allowme\.dev\/join\/[A-Z]/);
   });
 
   it("ID3: joinMessage points at verify URL with browser framing and no duplicate family suffix", async () => {
@@ -96,7 +97,8 @@ describe("D3b: Invite Delivery Response", () => {
     const verifyUrl = response.verifyUrl as string;
 
     expect(joinMessage).toContain(verifyUrl);
-    expect(joinMessage).toMatch(/\/verify\?invite=/);
+    // Sprint 3.7 — URL form moved to /join/CODE.
+    expect(joinMessage).toMatch(/\/join\/[A-Z]/);
     expect(joinMessage).toMatch(/safari|chrome/i);
     expect(joinMessage).toMatch(/NOT in Claude\/ChatGPT/i);
     expect(joinMessage).not.toMatch(/family family/i);

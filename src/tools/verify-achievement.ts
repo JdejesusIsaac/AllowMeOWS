@@ -5,7 +5,12 @@ import { StateManager } from "../engine/state.js";
 import { PolicyEngine } from "../engine/policy.js";
 import { AchievementSourceEnum } from "../schemas.js";
 import type { AchievementRecord } from "../schemas.js";
-import { findMatchingGoalIndex } from "../engine/learning-goals.js";
+import {
+  findMatchingGoalIndex,
+  findMatchingSubgoal,
+  SUBGOAL_MATCH_AUTO_COMPLETE,
+  type SubgoalMatchResult,
+} from "../engine/learning-goals.js";
 import { USDC } from "../constants.js";
 import {
   withAccessControl,
@@ -26,6 +31,11 @@ export function buildVerifyAchievementRichMarkdown(input: {
   streakDays: number;
   streakMultiplier: number;
   goalCompleted: string | null;
+  // Sprint 3.7 — subgoal auto-matching surface area in the rich card.
+  // Exactly one of `subgoalAutoCompleted` or `subgoalHint` will be set
+  // when a match clears the relevant threshold; both null otherwise.
+  subgoalAutoCompleted?: string | null;
+  subgoalHint?: string | null;
 }): string {
   const lines: string[] = [
     `**Achievement logged — ${input.childName}**`,
@@ -49,6 +59,18 @@ export function buildVerifyAchievementRichMarkdown(input: {
     lines.push(
       "",
       `Bonus: learning goal **${input.goalCompleted}** marked complete 🎯`,
+    );
+  }
+
+  if (input.subgoalAutoCompleted) {
+    lines.push(
+      "",
+      `✨ Subgoal completed: **${input.subgoalAutoCompleted}**!`,
+    );
+  } else if (input.subgoalHint) {
+    lines.push(
+      "",
+      `📎 Possible match for subgoal **'${input.subgoalHint}'** — ask your parent to mark it complete if you finished it.`,
     );
   }
 
@@ -182,6 +204,54 @@ export async function verifyAchievementHandler(
       }
     }
 
+    // Sprint 3.7 — subgoal auto-matching. Runs after `findMatchingGoalIndex`
+    // so a parent goal that just auto-completed (rare) and a subgoal under
+    // a *different* goal can both fire from the same achievement.
+    //
+    // Conservative threshold philosophy (research-3.7.md Decision 2):
+    //   • confidence ≥ SUBGOAL_MATCH_AUTO_COMPLETE → flip subgoal.completed,
+    //     persist, write `subgoal-auto-completed` audit entry, and surface
+    //     the celebration line in the rich card.
+    //   • confidence ∈ [SUBGOAL_MATCH_HINT_FLOOR, SUBGOAL_MATCH_AUTO_COMPLETE)
+    //     → no state mutation; surface a "possible match — ask your parent"
+    //     hint so the kid sees the matcher noticed their work.
+    //   • below floor → silent no-op.
+    let subgoalMatch: SubgoalMatchResult | null = null;
+    let subgoalAutoCompleted: string | null = null;
+    let subgoalHint: string | null = null;
+    if (childConfig.learningGoals && childConfig.learningGoals.length > 0) {
+      subgoalMatch = findMatchingSubgoal(
+        { category: matchedCat, description },
+        { learningGoals: childConfig.learningGoals },
+      );
+      if (subgoalMatch) {
+        if (subgoalMatch.confidence >= SUBGOAL_MATCH_AUTO_COMPLETE) {
+          const goal = childConfig.learningGoals[subgoalMatch.goalIndex]!;
+          const sg = goal.subgoals![subgoalMatch.subgoalIndex]!;
+          sg.completed = true;
+          subgoalAutoCompleted = sg.topic;
+          await state.saveFamilyConfig(familyId, config);
+          await state.addAuditEntry(familyId, {
+            id: randomUUID(),
+            timestamp: new Date().toISOString(),
+            action: "subgoal-auto-completed",
+            actor: caller.memberId,
+            details: {
+              childName: childConfig.name,
+              subgoalTopic: subgoalMatch.subgoalTopic,
+              goalTopic: subgoalMatch.goalTopic,
+              achievementId: record.id,
+              achievementDescription: description,
+              confidence: subgoalMatch.confidence,
+              matchType: subgoalMatch.matchType,
+            },
+          });
+        } else {
+          subgoalHint = subgoalMatch.subgoalTopic;
+        }
+      }
+    }
+
     await state.addAuditEntry(familyId, {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
@@ -226,6 +296,8 @@ export async function verifyAchievementHandler(
       streakDays: streak.currentStreak,
       streakMultiplier: streak.multiplier,
       goalCompleted,
+      subgoalAutoCompleted,
+      subgoalHint,
     });
 
     return {
@@ -244,6 +316,12 @@ export async function verifyAchievementHandler(
           goalCompleted,
           completedGoals: completedCount,
           totalGoals,
+          // Sprint 3.7 — subgoal matcher surface area for downstream
+          // consumers (check-goals, audit log readers, mobile smoke).
+          subgoalAutoCompleted,
+          subgoalHint,
+          subgoalMatchConfidence: subgoalMatch?.confidence ?? null,
+          subgoalMatchType: subgoalMatch?.matchType ?? null,
           message,
           summary,
           delta: multipliedAmount,

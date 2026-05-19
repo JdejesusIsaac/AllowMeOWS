@@ -29,5 +29,17 @@ describe("MODAL: brand narrative modals", () => {
     expect(whyContent).toMatch(/financial literacy|underserved|families/i);
     expect(whyContent.length).toBeGreaterThan(200);
     expect(whyContent.length).toBeLessThan(3000);
+
+    // Sprint 3.7 — founder bio paragraph closes the brand-trust gap from
+    // the design-lead critique. Asserts mission + credentials + motivation
+    // are all present without locking in marketing-speak phrasing.
+    expect(whyContent).toMatch(/Juan Isaac|built by/i);
+    expect(whyContent).toMatch(
+      /security researcher|Coinbase Developer Platform Ambassador|CDP Ambassador/i,
+    );
+    expect(whyContent).toMatch(
+      /AI literacy|charter-school|NYC|Yonkers|families/i,
+    );
+    expect(whyContent).toMatch(/AllowMe LLC|pilot/i);
   });
 });

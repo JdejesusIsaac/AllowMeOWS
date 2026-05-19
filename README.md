@@ -602,6 +602,15 @@ Design + recovery + kid UX polish layered on Sprint 3.0.x without breaking JSON 
 
 Automated sprint bar: **432 passing + 1 skipped**. Remaining gates: Railway smoke + recorded GIFs (+ real-device walkthrough QA).
 
+### Sprint 3.7 (Done — design completeness arc closeout)
+
+Three deliverables that close the design-completeness arc opened in Sprint 3.6, scoped to one focused day with no core schema changes.
+
+- [x] **URL design pass** — invite URLs move from `/verify?invite=CODE&role=ROLE` to `/join/CODE`. Role is resolved from the invite record at redemption time (single source of truth), eliminating the URL/record mismatch class of bugs. The legacy `/verify?invite=…&role=…` route remains live for backward compat with any links already in the wild (**U1–U4** guarded in CI; existing `qr-code` and `invite-delivery` assertions updated to the new shape).
+- [x] **Subgoal auto-matching** — `verify-achievement` runs a conservative matcher (substring or `string-similarity` Dice ≥0.85) against open subgoals after the existing parent-goal match. Confident matches flip `subgoal.completed`, persist, and write a `subgoal-auto-completed` audit entry. Ambiguous matches (0.65–0.85) surface a "possible match" hint without state mutation. Below 0.65 stays silent. False-positive prevention is the load-bearing property (**AM1–AM7** guarded in CI; AM6 is the critical-path).
+- [x] **Polish** — founder bio paragraph (Juan Isaac, security researcher / CDP Ambassador, NYC + Yonkers AI-literacy workshops, AllowMe LLC) appended to `public/copy/why.md` and asserted by `MODAL1`. Walkthrough SVG fallback text softened from the dev-affordance "Drop walkthroughs/*.gif here" to user-facing "Walkthrough video — coming soon".
+- [x] **One audit-enum extension** — `subgoal-auto-completed` added to `AuditEntrySchema.action`. No other schema changes; no data migration.
+
 ### Sprint 4.0 (Next)
 - [ ] **Postgres migration** — replace JSON file store; `listMembershipsByWallet` becomes O(1) on `wallet_address` index.
 - [ ] **Paymaster + Sybil defense** — Coinbase Verifications integration so Learner wallets get gasless transactions without opening a DoS vector.

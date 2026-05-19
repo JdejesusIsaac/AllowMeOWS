@@ -237,6 +237,12 @@ export const AuditEntrySchema = z.object({
     // read (audit `details` MUST NOT contain the setup code itself).
     "invite-revoked",
     "magic-link-viewed",
+    // Sprint 3.7 — subgoal auto-matching on verify-achievement. Recorded
+    // when the matcher finds a high-confidence (≥0.85) match between an
+    // achievement description and an open subgoal topic and auto-flips
+    // `subgoal.completed` to true. `details` includes
+    // {subgoalTopic, goalTopic, achievementDescription, confidence, matchType}.
+    "subgoal-auto-completed",
   ]),
   actor: z.string(), // member ID or "system"
   details: z.record(z.unknown()),
