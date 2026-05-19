@@ -101,8 +101,18 @@ export async function inviteMemberHandler(
     };
 
     const serverUrl = process.env.ALLOWANCE_AGENT_URL || undefined;
+
+    // Sprint 3.0 v4 (W2.5): surface the verify-page URL so Managers can
+    // text/email a single link that auto-fills the invite code and role.
+    const verifyBase = process.env.ALLOWANCE_AGENT_URL || "https://allowme.dev";
+    const verifyUrl = `${verifyBase}/verify?invite=${invite.code}&role=${role}`;
+
+    const familySuffix = config.familyName.toLowerCase().endsWith("family") ? "" : " family";
     const joinMessage = serverUrl
-      ? `Your ${config.familyName} family set up your allowance! Connect your Claude to: ${serverUrl} — then tell Claude: ${invite.code}`
+      ? `Hi ${argChildName ?? "there"}! Your ${config.familyName}${familySuffix} ` +
+        `set up your allowance on AllowMe. ` +
+        `Tap this link on your phone to join (open in Safari/Chrome, NOT in Claude/ChatGPT): ` +
+        `${verifyUrl}`
       : undefined;
 
     const responsePayload: Record<string, unknown> = {
@@ -118,10 +128,6 @@ export async function inviteMemberHandler(
       responsePayload.joinMessage = joinMessage;
     }
 
-    // Sprint 3.0 v4 (W2.5): surface the verify-page URL so Managers can
-    // text/email a single link that auto-fills the invite code and role.
-    const verifyBase = process.env.ALLOWANCE_AGENT_URL || "https://allowme.dev";
-    const verifyUrl = `${verifyBase}/verify?invite=${invite.code}&role=${role}`;
     responsePayload.verifyUrl = verifyUrl;
 
     const inviteQrCode = await QRCode.toDataURL(verifyUrl, { width: 256, margin: 1 });
@@ -132,6 +138,7 @@ export async function inviteMemberHandler(
       `${argChildName ? argChildName : "They"} are invited as a **${role}** ` +
       `(${roleDescription[role]}).\n\n` +
       `**Scan this QR code** with their phone camera (easiest), or send the link below.\n\n` +
+      `![Scan with phone camera](${inviteQrCode})\n\n` +
       `**Send them this link.** They should tap it on their phone in a browser ` +
       `(Safari, Chrome, etc.), then follow the steps on the page.\n\n` +
       `🔗 ${verifyUrl}\n\n` +

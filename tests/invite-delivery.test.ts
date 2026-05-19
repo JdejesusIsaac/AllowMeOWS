@@ -1,54 +1,20 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { rm, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { StateManager } from "../src/engine/state.js";
-import { InviteSystem } from "../src/invites/system.js";
-import type { FamilyConfig } from "../src/schemas.js";
-
-const FAMILY_ID = "a0000000-0000-0000-0000-000000000001";
+import { inviteMemberHandler } from "../src/tools/invite-member.js";
+import { createTestFamily, makeChild } from "./helpers/family.js";
 
 const testDataDir = join(process.cwd(), "data");
 
 /**
  * D3b: Invite Delivery Response Tests (ID1-ID5)
  *
- * These tests verify the invite-member response format:
- * serverUrl, joinMessage, and delivery prompt behavior.
- * We replicate the response construction logic from invite-member.ts
- * to unit-test it without needing the MCP transport layer.
+ * Exercises `inviteMemberHandler` directly (no duplicated response builder).
  */
 describe("D3b: Invite Delivery Response", () => {
-  let state: StateManager;
-  let inviteSystem: InviteSystem;
-  const familyConfig: FamilyConfig = {
-    familyName: "Garcia",
-    children: [
-      {
-        name: "Maya",
-        walletName: "child-maya",
-        weeklyBudget: 15_000_000,
-        categories: [
-          { name: "education", pct: 33, budget: 5_000_000 },
-          { name: "health", pct: 33, budget: 5_000_000 },
-          { name: "personal", pct: 33, budget: 5_000_000 },
-        ],
-        savingsPercent: 20,
-        savingsLockDays: 90,
-      },
-    ],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    chainId: "eip155:84532",
-    usdcAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-  };
-
   beforeEach(async () => {
     await rm(testDataDir, { recursive: true, force: true });
     await mkdir(testDataDir, { recursive: true });
-    state = new StateManager();
-    await state.createFamilyDir(FAMILY_ID);
-    inviteSystem = new InviteSystem();
-    await state.saveFamilyConfig(FAMILY_ID, familyConfig);
   });
 
   afterEach(async () => {
@@ -56,137 +22,127 @@ describe("D3b: Invite Delivery Response", () => {
     delete process.env.ALLOWANCE_AGENT_URL;
   });
 
-  // Helper: replicates the response construction logic from invite-member.ts
-  function buildInviteResponse(
-    invite: { code: string; expiresAt: string },
-    args: { name: string; role: string; childName?: string },
-    config: FamilyConfig
-  ): Record<string, unknown> {
-    const roleDescription: Record<string, string> = {
-      manager: "full control — set rules, approve progress, manage funds",
-      "co-parent": "approve achievements and see progress, no fund access",
-      family: "see progress and send gifts",
-      advisor: "view estate audit log only",
-      learner: "see your progress and savings, report achievements",
-    };
-
-    const serverUrl = process.env.ALLOWANCE_AGENT_URL || undefined;
-    const joinMessage = serverUrl
-      ? `Your ${config.familyName} family set up your allowance! Connect your Claude to: ${serverUrl} — then tell Claude: ${invite.code}`
-      : undefined;
-
-    const responsePayload: Record<string, unknown> = {
-      success: true,
-      inviteCode: invite.code,
-      role: args.role,
-      roleDescription: roleDescription[args.role],
-      expiresAt: invite.expiresAt,
-    };
-
-    if (serverUrl) {
-      responsePayload.serverUrl = serverUrl;
-      responsePayload.joinMessage = joinMessage;
-    }
-
-    const verifyBase = serverUrl || "https://allowme.dev";
-    const verifyUrl = `${verifyBase}/verify?invite=${invite.code}&role=${args.role}`;
-    responsePayload.verifyUrl = verifyUrl;
-
-    const argChildName = args.childName;
-    const expiryHours = 48;
-    const messageText =
-      `${argChildName ? argChildName : "They"} are invited as a **${args.role}** ` +
-      `(${roleDescription[args.role]}).\n\n` +
-      `**Send them this link.** They should tap it on their phone in a browser ` +
-      `(Safari, Chrome, etc.), then follow the steps on the page.\n\n` +
-      `🔗 ${verifyUrl}\n\n` +
-      `The page will set them up and give them a personal AllowMe link to paste ` +
-      `into Claude or ChatGPT. **They do NOT paste THIS link into Claude/ChatGPT directly** ` +
-      `— this link is for their browser only.\n\n` +
-      `*Invite expires in ${expiryHours} hours.*\n\n` +
-      `_If the link doesn't work, the fallback is: connect them to ` +
-      `https://allowme.dev/mcp first, then have them say "I have a code: ${invite.code}". ` +
-      `This requires reinstalling the connector after, so the link above is much smoother._\n\n` +
-      `Want me to draft a text message to send them?`;
-
-    responsePayload.message = messageText;
-    return responsePayload;
-  }
-
-  it("ID1: invite-member with ALLOWANCE_AGENT_URL set — response includes serverUrl and joinMessage", () => {
+  it("ID1: invite-member with ALLOWANCE_AGENT_URL set — response includes serverUrl and joinMessage", async () => {
     process.env.ALLOWANCE_AGENT_URL = "https://allowanceagent.app";
 
-    const invite = inviteSystem.generateInvite("learner", "Maya", "Garcia", "manager");
-    const response = buildInviteResponse(
-      invite,
-      { name: "Maya", role: "learner", childName: "Maya" },
-      familyConfig
+    const family = await createTestFamily({
+      familyName: "Garcia",
+      children: [
+        makeChild("Maya", {
+          weeklyBudgetUsd: 15,
+          categories: [{ name: "education", pct: 100 }],
+        }),
+      ],
+    });
+
+    const res = await inviteMemberHandler(
+      { name: "Maya", role: "learner", childName: "Maya", ...family.asManager() },
+      family.managerContext,
     );
+    const response = JSON.parse(res.content[0]!.text);
 
     expect(response.success).toBe(true);
     expect(response.serverUrl).toBe("https://allowanceagent.app");
     expect(response.joinMessage).toBeDefined();
     expect(typeof response.joinMessage).toBe("string");
-    expect(response.inviteCode).toBe(invite.code);
+    expect(response.inviteCode).toBeDefined();
   });
 
-  it("ID2: invite-member without ALLOWANCE_AGENT_URL — response has inviteCode but omits serverUrl and joinMessage", () => {
+  it("ID2: invite-member without ALLOWANCE_AGENT_URL — response has inviteCode but omits serverUrl and joinMessage", async () => {
     delete process.env.ALLOWANCE_AGENT_URL;
 
-    const invite = inviteSystem.generateInvite("learner", "Maya", "Garcia", "manager");
-    const response = buildInviteResponse(
-      invite,
-      { name: "Maya", role: "learner", childName: "Maya" },
-      familyConfig
+    const family = await createTestFamily({
+      familyName: "Garcia",
+      children: [
+        makeChild("Maya", {
+          weeklyBudgetUsd: 15,
+          categories: [{ name: "education", pct: 100 }],
+        }),
+      ],
+    });
+
+    const res = await inviteMemberHandler(
+      { name: "Maya", role: "learner", childName: "Maya", ...family.asManager() },
+      family.managerContext,
     );
+    const response = JSON.parse(res.content[0]!.text);
 
     expect(response.success).toBe(true);
-    expect(response.inviteCode).toBe(invite.code);
+    expect(response.inviteCode).toBeDefined();
     expect(response.serverUrl).toBeUndefined();
     expect(response.joinMessage).toBeUndefined();
+    expect(response.verifyUrl).toMatch(/^https:\/\/allowme\.dev\/verify\?invite=/);
   });
 
-  it("ID3: joinMessage contains both server URL and invite code", () => {
+  it("ID3: joinMessage points at verify URL with browser framing and no duplicate family suffix", async () => {
     process.env.ALLOWANCE_AGENT_URL = "https://allowanceagent.app";
 
-    const invite = inviteSystem.generateInvite("learner", "Maya", "Garcia", "manager");
-    const response = buildInviteResponse(
-      invite,
-      { name: "Maya", role: "learner", childName: "Maya" },
-      familyConfig
-    );
+    const family = await createTestFamily({
+      familyName: "The Asencio Family",
+      children: [
+        makeChild("Elina", {
+          weeklyBudgetUsd: 5,
+          categories: [{ name: "education", pct: 100 }],
+        }),
+      ],
+    });
 
+    const res = await inviteMemberHandler(
+      { name: "Elina", role: "learner", childName: "Elina", ...family.asManager() },
+      family.managerContext,
+    );
+    const response = JSON.parse(res.content[0]!.text);
     const joinMessage = response.joinMessage as string;
-    expect(joinMessage).toContain("https://allowanceagent.app");
-    expect(joinMessage).toContain(invite.code);
-    expect(joinMessage).toContain("Garcia");
+    const verifyUrl = response.verifyUrl as string;
+
+    expect(joinMessage).toContain(verifyUrl);
+    expect(joinMessage).toMatch(/\/verify\?invite=/);
+    expect(joinMessage).toMatch(/safari|chrome/i);
+    expect(joinMessage).toMatch(/NOT in Claude\/ChatGPT/i);
+    expect(joinMessage).not.toMatch(/family family/i);
+    expect(joinMessage).not.toContain("Connect your Claude to:");
   });
 
-  it("ID4: learner invite message ends with delivery prompt", () => {
+  it("ID4: learner invite message ends with delivery prompt", async () => {
     process.env.ALLOWANCE_AGENT_URL = "https://allowanceagent.app";
 
-    const invite = inviteSystem.generateInvite("learner", "Maya", "Garcia", "manager");
-    const response = buildInviteResponse(
-      invite,
-      { name: "Maya", role: "learner", childName: "Maya" },
-      familyConfig
-    );
+    const family = await createTestFamily({
+      familyName: "Garcia",
+      children: [
+        makeChild("Maya", {
+          weeklyBudgetUsd: 15,
+          categories: [{ name: "education", pct: 100 }],
+        }),
+      ],
+    });
 
-    const message = response.message as string;
-    expect(message).toContain("Want me to draft a text message to send them?");
+    const res = await inviteMemberHandler(
+      { name: "Maya", role: "learner", childName: "Maya", ...family.asManager() },
+      family.managerContext,
+    );
+    const response = JSON.parse(res.content[0]!.text);
+
+    expect(response.message).toContain("Want me to draft a text message to send them?");
   });
 
   it("ID5: Learner invite requires childName — error when missing", async () => {
-    // This tests the validation logic from invite-member.ts lines 39-46
-    const role = "learner";
-    const childName: string | undefined = undefined;
+    const family = await createTestFamily({
+      familyName: "Garcia",
+      children: [
+        makeChild("Maya", {
+          weeklyBudgetUsd: 15,
+          categories: [{ name: "education", pct: 100 }],
+        }),
+      ],
+    });
 
-    // The tool checks: if role === "learner" && !childName → error
-    const requiresChildName = role === "learner" && !childName;
-    expect(requiresChildName).toBe(true);
+    const res = await inviteMemberHandler(
+      { name: "Maya", role: "learner", ...family.asManager() },
+      family.managerContext,
+    );
+    const response = JSON.parse(res.content[0]!.text);
 
-    // Verify the actual error message format matches
-    const errorPayload = { success: false, error: "childName required for learner role" };
-    expect(errorPayload.error).toBe("childName required for learner role");
+    expect(response.success).toBe(false);
+    expect(response.error).toBe("childName required for learner role");
   });
 });

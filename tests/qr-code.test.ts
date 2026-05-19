@@ -87,5 +87,14 @@ describe("QR: invite-member QR code", () => {
     // 5. The response copy must reference the QR option so the parent
     //    understands what the inline image is for.
     expect(body.message).toMatch(/scan.*QR|QR.*scan/i);
+
+    // 6. Message must embed the QR as renderable markdown (not only a JSON field).
+    const message: string = body.message;
+    const dataUrlEmbed = /!\[[^\]]*\]\(data:image\/png;base64,/.test(message);
+    const hostedUrlEmbed = /!\[[^\]]*\]\(https:\/\/[^\s)]+\.png\)/.test(message);
+    expect(dataUrlEmbed || hostedUrlEmbed).toBe(true);
+    if (isBase64) {
+      expect(message).toContain(qrValue);
+    }
   });
 });
