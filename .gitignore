@@ -4,7 +4,12 @@ data/
 *.tmp.*
 .env
 .env.local
-.cursor/mcp.json
-.cursor/state/
 .windsurf
+
+# Cursor harness (local only — not shipped with the product)
+.cursor/
+evaluation/
+implementation/
+planning/
+AGENTS.md
 
