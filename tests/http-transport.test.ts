@@ -68,7 +68,9 @@ describe("H2: MCP tool registration", () => {
     // Sprint 3.0.3 added check-goals to the Manager allowlist.
     // Sprint 3.0.6 added view-policy to the Manager allowlist → 14.
     // Sprint 3.6 added resend-invite → 15, then test-connection + view-my-link → 17.
-    expect(managerTools.length).toBe(17);
+    // Sprint 4.0 added view-session-receipt (Manager + Co-Parent + Advisor +
+    // Learner read access; only Learner runs the session lifecycle) → 18.
+    expect(managerTools.length).toBe(18);
   });
 });
 
@@ -93,6 +95,14 @@ describe("H3-H5: x402 pricing configuration", () => {
     // Sprint 3.6 recovery — free for every role that can call them.
     "test-connection",
     "view-my-link",
+    // Sprint 4.0 Learning Mode — not x402-gated. The economic loop is
+    // the engagement-weighted USDC settlement inside complete-learning-
+    // session, not per-tool-call charges. Charging the kid to start a
+    // session would invert the incentive shape the product is built on.
+    "start-learning-session",
+    "get-session-state",
+    "complete-learning-session",
+    "view-session-receipt",
   ];
 
   it("H3: Paid tools have x402 pricing defined", () => {

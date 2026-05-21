@@ -33,6 +33,72 @@ export const SubgoalSchema = z.object({
 });
 export type Subgoal = z.infer<typeof SubgoalSchema>;
 
+// Sprint 4.0: Learning Mode foundation. A StudyPlan attaches structured
+// pedagogy to a LearningGoal — duration in days, minutes per session,
+// progressively-completed sessions, and optional baseline-assessment
+// calibration. Optional on LearningGoal so pre-4.0 goals continue to
+// behave as tracker-only. See sprint-4.0/plan.md Decision 5.
+export const BaselineAssessmentSchema = z.object({
+  completedAt: z.string().datetime(),
+  // Score on the adaptive baseline (0-100). Optional for fallback paths
+  // where the parent supplies a level without running an LLM assessment.
+  score: z.number().min(0).max(100).optional(),
+  level: z.enum(["novice", "intermediate", "advanced"]),
+  gaps: z.array(z.string()).default([]),
+});
+export type BaselineAssessment = z.infer<typeof BaselineAssessmentSchema>;
+
+// One completed Learning Mode session. Persisted in studyPlan.sessions.
+// Sprint Contract criterion 7: receipt is stored as `receiptSummary` AND
+// surfaced via the `learning-session-completed` audit entry. Criterion 9:
+// `confidenceFlag` is the L5 cool-down statistical signal — "low" means
+// medianTurnIntervalSeconds < 5, surfaced to parent in the receipt.
+export const SessionRecordSchema = z.object({
+  sessionId: z.string().min(1),
+  date: z.string().datetime(),
+  durationMinutes: z.number().nonnegative(),
+  topic: z.string().min(1),
+  assessmentPassed: z.boolean(),
+  // Raw assessment score (0-100). Optional because a session can complete
+  // without a graded assessment if the kid bails mid-quiz.
+  assessmentScore: z.number().min(0).max(100).optional(),
+  conceptsCovered: z.array(z.string()).default([]),
+  knownGaps: z.array(z.string()).default([]),
+  // 1-5 engagement scale, averaged across kid turns. Q1 from research.
+  avgEngagement: z.number().min(1).max(5),
+  medianTurnIntervalSeconds: z.number().nonnegative(),
+  confidenceFlag: z.enum(["ok", "low"]).default("ok"),
+  // 6-decimal USDC micros. Stays z.number().int() to match the rest of
+  // the codebase ($5/wk = 5_000_000 micros, well under MAX_SAFE_INTEGER).
+  usdcSettled: z.number().int().nonnegative().default(0),
+  receiptSummary: z.string().default(""),
+});
+export type SessionRecord = z.infer<typeof SessionRecordSchema>;
+
+export const StudyPlanSchema = z.object({
+  // Bounded 1-60 days. Anything longer is a curriculum, not a study plan.
+  durationDays: z.number().int().min(1).max(60),
+  // Bounded 15-60 min/session. Shorter sessions don't sustain pedagogy;
+  // longer sessions are exhausting on a kid's device (research risk 4).
+  minutesPerSession: z.number().int().min(15).max(60),
+  startedAt: z.string().datetime().optional(),
+  sessionsCompleted: z.number().int().nonnegative().default(0),
+  sessionsPlanned: z.number().int().positive(),
+  currentPhase: z.string().default(""),
+  baselineAssessment: BaselineAssessmentSchema.optional(),
+  sessions: z.array(SessionRecordSchema).default([]),
+  // Q2 from research: flexible daily limit. Default false (one-per-day).
+  // Manager flips true via configure-policy for sick-day / weekend catchup.
+  allowMakeupSessions: z.boolean().default(false),
+  // YYYY-MM-DD UTC. Updated on each start-learning-session; the L4 daily
+  // limit compares against today's UTC date.
+  lastSessionDate: z.string().optional(),
+  // Aggregate of knownGaps across sessions; tutor LLM probes these on
+  // subsequent sessions (L3 conversation-state binding).
+  knownGaps: z.array(z.string()).default([]),
+});
+export type StudyPlan = z.infer<typeof StudyPlanSchema>;
+
 export const LearningGoalSchema = z.object({
   topic: z.string().min(1).max(200),
   category: z.string().min(1), // must match a configured category name on the child
@@ -46,6 +112,12 @@ export const LearningGoalSchema = z.object({
   // (e.g., "catch up to grade level before school starts").
   // ISO-8601 datetime — Claude formats parent's natural-language dates on input.
   deadline: z.string().datetime().optional(),
+  // Sprint 4.0: optional Learning Mode study plan. Backward-compat — pre-4.0
+  // goals without this field continue to behave as tracker-only goals.
+  // Math-only enforcement is handled at the configure-policy boundary
+  // (plan.md success criterion 12), not in the schema, so non-math goals
+  // can still persist a studyPlan and run as tracker-only with a note.
+  studyPlan: StudyPlanSchema.optional(),
 });
 export type LearningGoal = z.infer<typeof LearningGoalSchema>;
 
@@ -243,6 +315,20 @@ export const AuditEntrySchema = z.object({
     // `subgoal.completed` to true. `details` includes
     // {subgoalTopic, goalTopic, achievementDescription, confidence, matchType}.
     "subgoal-auto-completed",
+    // Sprint 4.0 — Learning Mode lifecycle. `learning-session-started`:
+    // details include {childName, goalTopic, sessionId, sessionNumber,
+    // isFirstSession, isMakeupSession}. `baseline-assessment-completed`:
+    // details include {childName, goalTopic, level, gaps, score?}.
+    // `learning-session-completed`: details include {childName, goalTopic,
+    // sessionId, avgEngagement, medianTurnIntervalSeconds, assessmentPassed,
+    // confidenceFlag, baseRate, engagementMultiplier, completionRatio,
+    // payoutUsdc, txHash, receiptSummary}. `learning-session-flagged-low-
+    // confidence`: details include {childName, sessionId,
+    // medianTurnIntervalSeconds, reason}.
+    "learning-session-started",
+    "baseline-assessment-completed",
+    "learning-session-completed",
+    "learning-session-flagged-low-confidence",
   ]),
   actor: z.string(), // member ID or "system"
   details: z.record(z.unknown()),

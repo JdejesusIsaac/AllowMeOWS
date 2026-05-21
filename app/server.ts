@@ -31,6 +31,11 @@ import { registerGetFundingAddressTool } from "../src/tools/get-funding-address.
 import { registerReleaseSavingsTool } from "../src/tools/release-savings.js";
 import { registerConnectFitbitTool } from "../src/tools/connect-fitbit.js";
 import { registerConvertSavingsTool } from "../src/tools/convert-savings.js";
+// Sprint 4.0 — Learning Mode tools
+import { registerStartLearningSessionTool } from "../src/tools/start-learning-session.js";
+import { registerGetSessionStateTool } from "../src/tools/get-session-state.js";
+import { registerCompleteLearningSessionTool } from "../src/tools/complete-learning-session.js";
+import { registerViewSessionReceiptTool } from "../src/tools/view-session-receipt.js";
 
 // Sprint 3.0 v4 — Sign-in-with-Base verify-page endpoints.
 import { buildVerifyRoutes } from "./verify-routes.js";
@@ -89,6 +94,11 @@ function createMcpServer(): McpServer {
   registerReleaseSavingsTool(server);
   registerConnectFitbitTool(server);
   registerConvertSavingsTool(server);
+  // Sprint 4.0 — Learning Mode lifecycle + parent visibility
+  registerStartLearningSessionTool(server);
+  registerGetSessionStateTool(server);
+  registerCompleteLearningSessionTool(server);
+  registerViewSessionReceiptTool(server);
 
   return server;
 }

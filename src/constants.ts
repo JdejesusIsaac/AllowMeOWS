@@ -77,6 +77,10 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     // Sprint 3.6 — diagnostics + magic-link retrieval (every role incl. Manager).
     "test-connection",
     "view-my-link",
+    // Sprint 4.0 — Learning Mode parent visibility. Manager can read any
+    // child's session receipts; cannot start or complete sessions
+    // (criterion 8: only the learner runs sessions).
+    "view-session-receipt",
   ],
   [ROLES.CO_PARENT]: [
     "view-policy",
@@ -87,6 +91,8 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     "accept-invite",
     "test-connection",
     "view-my-link",
+    // Sprint 4.0 — co-parent has same read access as Manager.
+    "view-session-receipt",
   ],
   [ROLES.FAMILY]: [
     "check-progress",
@@ -104,6 +110,9 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     "accept-invite",
     "test-connection",
     "view-my-link",
+    // Sprint 4.0 — advisor is read-only. Receipts are appropriate read
+    // access; starting / completing sessions is not.
+    "view-session-receipt",
   ],
   [ROLES.LEARNER]: [
     "check-progress",
@@ -113,6 +122,12 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     "accept-invite",
     "test-connection",
     "view-my-link",
+    // Sprint 4.0 — learner owns the session lifecycle and can read
+    // their own receipts.
+    "start-learning-session",
+    "get-session-state",
+    "complete-learning-session",
+    "view-session-receipt",
   ],
 };
 

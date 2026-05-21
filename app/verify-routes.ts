@@ -109,6 +109,17 @@ const configureFamilyBodySchema = z.object({
                 .max(20)
                 .optional(),
               deadline: z.string().datetime().optional(),
+              // Sprint 4.0 — optional Learning Mode study plan. Mirrors the
+              // parent-input subset of StudyPlanSchema (src/schemas.ts);
+              // server-side fields (sessions[], sessionsCompleted, etc.)
+              // are populated by start-learning-session, not by the form.
+              studyPlan: z
+                .object({
+                  durationDays: z.number().int().min(1).max(60),
+                  minutesPerSession: z.number().int().min(15).max(60),
+                  allowMakeupSessions: z.boolean().optional(),
+                })
+                .optional(),
             })
           )
           .max(20)

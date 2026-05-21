@@ -557,6 +557,16 @@ export function validateChildren(
       category: string;
       subgoals?: Array<{ topic: string }>;
       deadline?: string;
+      // Sprint 4.0 — parent-supplied study plan subset. Validation of
+      // bounds (1-60 days, 15-60 min) lives in the Zod schemas at both the
+      // HTTP and MCP boundaries. Cross-field validation here is intentionally
+      // minimal: math-only enforcement is a non-blocking note (criterion 12),
+      // not a hard reject, so it lives in the configure-policy response layer.
+      studyPlan?: {
+        durationDays: number;
+        minutesPerSession: number;
+        allowMakeupSessions?: boolean;
+      };
     }>;
   }>
 ): string | null {
@@ -596,6 +606,11 @@ export function normalizeChildren(
       category: string;
       subgoals?: Array<{ topic: string }>;
       deadline?: string;
+      studyPlan?: {
+        durationDays: number;
+        minutesPerSession: number;
+        allowMakeupSessions?: boolean;
+      };
     }>;
   }>
 ): ChildConfig[] {
@@ -621,6 +636,27 @@ export function normalizeChildren(
         // start with completed=false; deadline is preserved as-is (ISO).
         subgoals: g.subgoals?.map((sg) => ({ topic: sg.topic, completed: false })),
         deadline: g.deadline,
+        // Sprint 4.0: build the canonical StudyPlan shape from the parent's
+        // subset (durationDays / minutesPerSession / allowMakeupSessions).
+        // Server-side fields take defaults here; `sessionsPlanned` mirrors
+        // `durationDays` (1 session/day; the L4 daily limit enforces that
+        // pacing). Subsequent `start-learning-session` / `complete-learning-
+        // session` calls evolve sessionsCompleted, currentPhase, sessions,
+        // baselineAssessment, lastSessionDate, knownGaps. mergeLearningGoals
+        // preserves those server-side mutations across configure-policy
+        // updates (see src/engine/learning-goals.ts).
+        studyPlan: g.studyPlan
+          ? {
+              durationDays: g.studyPlan.durationDays,
+              minutesPerSession: g.studyPlan.minutesPerSession,
+              sessionsCompleted: 0,
+              sessionsPlanned: g.studyPlan.durationDays,
+              currentPhase: "",
+              sessions: [],
+              allowMakeupSessions: g.studyPlan.allowMakeupSessions ?? false,
+              knownGaps: [],
+            }
+          : undefined,
       })),
     };
   });

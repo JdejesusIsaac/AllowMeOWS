@@ -19,6 +19,11 @@ import { registerGetFundingAddressTool } from "./tools/get-funding-address.js";
 import { registerReleaseSavingsTool } from "./tools/release-savings.js";
 import { registerConnectFitbitTool } from "./tools/connect-fitbit.js";
 import { registerConvertSavingsTool } from "./tools/convert-savings.js";
+// Sprint 4.0 — Learning Mode tools
+import { registerStartLearningSessionTool } from "./tools/start-learning-session.js";
+import { registerGetSessionStateTool } from "./tools/get-session-state.js";
+import { registerCompleteLearningSessionTool } from "./tools/complete-learning-session.js";
+import { registerViewSessionReceiptTool } from "./tools/view-session-receipt.js";
 
 // Resolve master encryption key at startup (auto-generates if needed)
 try {
@@ -62,6 +67,11 @@ registerGetFundingAddressTool(server);
 registerReleaseSavingsTool(server);
 registerConnectFitbitTool(server);
 registerConvertSavingsTool(server);
+// Sprint 4.0 — Learning Mode lifecycle + parent visibility
+registerStartLearningSessionTool(server);
+registerGetSessionStateTool(server);
+registerCompleteLearningSessionTool(server);
+registerViewSessionReceiptTool(server);
 
 // Connect via stdio transport
 const transport = new StdioServerTransport();

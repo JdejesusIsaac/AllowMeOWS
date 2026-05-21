@@ -1,8 +1,9 @@
 # Sprint 4.0 — Progress
 
-**Status:** Not Started
-**Start date:** TBD (after Sprint 3.7 ships + 30-min Learning Mode prompt experiment passes)
-**Target ship date:** TBD (~18 hours, 3 focused days or 4 sessions of 4.5 hours each)
+**Status:** In Progress (Steps 1–6 complete; Step 7.3 complete; Step 8 critical-path complete; Step 7.1/7.2 verify.html UI + Step 9 README/smoke deferred to next session)
+**Start date:** 2026-05-21
+**Sprint 3.7 / spike prerequisites:** treated as run (user exit-to-implementation directive); spike evidence to be captured live before Aiden dogfooding.
+**Target ship date:** TBD (~19 hours, 3 focused days or 4 sessions of ~5 hours each)
 **Test count entering sprint:** 389+ passing (post-Sprint 3.7 baseline)
 **Test count target:** +18 (S1-S4, LS1-LS5, CD1-CD5, R1-R3, plus 1 backward-compat migration test)
 
@@ -36,141 +37,82 @@
 
 ---
 
-### Step 1 — Schema + state types (W1, ~2 hours) ⏳
+### Step 1 — Schema + state types (W1, ~2 hours) ✅
 
-**Files:** `src/schemas.ts`, `tests/schema-migration.test.ts` (extend or NEW)
+**Files:** `src/schemas.ts`, `app/verify-routes.ts`, `src/tools/configure-policy.ts`, `src/core/configure-family.ts`, `src/engine/learning-goals.ts`, `tests/study-plan-schema.test.ts` (NEW)
 
-- [ ] W1.1 — Define `StudyPlanSchema` with fields: `durationDays`, `minutesPerSession`, `startedAt`, `sessionsCompleted`, `sessionsPlanned`, `currentPhase`, `baselineAssessment?`, `sessions: SessionRecord[]`, `allowMakeupSessions?: boolean`
-- [ ] W1.1 — Define `SessionRecordSchema` with fields: `sessionId`, `date`, `durationMinutes`, `topic`, `assessmentPassed`, `assessmentScore?`, `conceptsCovered: string[]`, `knownGaps: string[]`, `avgEngagement`, `medianTurnIntervalSeconds`, `confidenceFlag: "ok" | "low"`, `usdcSettled`, `receiptSummary`
-- [ ] W1.1 — Define `BaselineAssessmentSchema` with fields: `completedAt`, `score`, `level: "novice" | "intermediate" | "advanced"`, `gaps: string[]`
-- [ ] W1.2 — Add `studyPlan: StudyPlanSchema.optional()` to LearningGoalSchema
-- [ ] W1.3 — Add 4 audit-action enum values: `"learning-session-started"`, `"learning-session-completed"`, `"learning-session-flagged-low-confidence"`, `"baseline-assessment-completed"`
-- [ ] W1.4 — Extend `configureFamilyBodySchema` (HTTP boundary) to accept `studyPlan` per learning goal as optional
-- [ ] W1.5 — Backward-compat test: pre-4.0 family fixtures (no studyPlan field) load cleanly through `StateManager.loadFamilyConfig`
-- [ ] W1.6 — Unit tests S1-S4 (per test-4.0.md) for new schema types
+- [x] W1.1 — Define `StudyPlanSchema`, `SessionRecordSchema`, `BaselineAssessmentSchema` in `src/schemas.ts` (lines 36-100)
+- [x] W1.2 — Add `studyPlan: StudyPlanSchema.optional()` to LearningGoalSchema
+- [x] W1.3 — Add 4 audit-action enum values
+- [x] W1.4 — Extend HTTP `configureFamilyBodySchema` (`app/verify-routes.ts`) + MCP `configure-policy` tool schema (`src/tools/configure-policy.ts`) to accept the parent-supplied `{durationDays, minutesPerSession, allowMakeupSessions?}` studyPlan subset. `normalizeChildren` (`src/core/configure-family.ts`) builds the canonical StudyPlan with server-side defaults (`sessionsPlanned = durationDays`, `sessions: []`, `knownGaps: []`). `mergeLearningGoals` (`src/engine/learning-goals.ts`) preserves server-managed studyPlan state across configure-policy updates so the kid's progress survives reconfigures.
+- [x] W1.5 — Backward-compat test (S4) — pre-4.0 fixture without `studyPlan` parses cleanly through `FamilyConfigSchema.parse`
+- [x] W1.6 — Unit tests S1-S4 in `tests/study-plan-schema.test.ts`, all passing
 
 ---
 
-### Step 2 — Math curriculum prompt fragments (W2, ~3 hours) ⏳
+### Step 2 — Math curriculum prompt fragments (W2, ~3 hours) ✅
 
-**Files:** `src/prompts/math/*.md` (NEW directory)
+**Files:** `src/prompts/math/{README,baseline-assessment,engagement-scoring,place-value,fractions,decimals,ratios,pre-algebra}.md`, `src/prompts/receipt-generator.md`
 
-- [ ] W2.1 — Create directory `src/prompts/math/` and add to repo
-- [ ] W2.2 — Write `place-value.md` (~30 min):
-  - Socratic patterns ("How many tens are in 47? How do you know?")
-  - Common misconceptions ("Some kids think 102 has zero tens; probe with 'how many tens are in 100?'")
-  - Assessment templates (3-5 question patterns referencing session content)
-  - Scaffolding for struggle states
-- [ ] W2.3 — Write `fractions.md` (same structure, 30 min)
-- [ ] W2.4 — Write `decimals.md` (same structure, 30 min)
-- [ ] W2.5 — Write `ratios.md` (same structure, 30 min)
-- [ ] W2.6 — Write `pre-algebra.md` (same structure, 30 min)
-- [ ] W2.7 — Write `baseline-assessment.md` (~20 min):
-  - 5-10 question adaptive sequence
-  - Starts at grade-level, branches up or down based on responses
-  - Outputs structured assessment result (level + gaps)
-- [ ] W2.8 — Write `engagement-scoring.md` (~15 min):
-  - Instructions for tutor LLM to score each kid turn 1-5
-  - Output format: `engagement: N` tag embedded in tutor response
-  - Examples of low-score (1: "yes", "ok"; 2: "I don't know")
-  - Examples of high-score (4: shows reasoning attempt; 5: references prior turn, asks follow-up)
+- [x] W2.1 — `src/prompts/math/` directory with README mapping each fragment to its consumer tool
+- [x] W2.2 — `place-value.md` (Socratic patterns, common misconceptions, scaffolding, end-of-session assessment templates)
+- [x] W2.3 — `fractions.md`
+- [x] W2.4 — `decimals.md`
+- [x] W2.5 — `ratios.md`
+- [x] W2.6 — `pre-algebra.md`
+- [x] W2.7 — `baseline-assessment.md` (5-question adaptive sequence with calibration output schema)
+- [x] W2.8 — `engagement-scoring.md` (1-5 rubric, HTML-comment output format, end-of-session structured JSON block schema)
+- [x] BONUS — `src/prompts/receipt-generator.md` (W5.2 receipt template prompt; used when the receipt LLM is wired in a future hotfix)
 
 ---
 
-### Step 3 — Four new tools (W3, ~3.5 hours) ⏳
+### Step 3 — Four new tools (W3, ~3.5 hours) ✅
 
-**Files:** `src/tools/start-learning-session.ts` (NEW), `src/tools/get-session-state.ts` (NEW), `src/tools/complete-learning-session.ts` (NEW), `src/tools/view-session-receipt.ts` (NEW), `src/constants.ts`
+**Files:** `src/tools/start-learning-session.ts` (NEW), `src/tools/get-session-state.ts` (NEW), `src/tools/complete-learning-session.ts` (NEW), `src/tools/view-session-receipt.ts` (NEW), `src/core/learning-mode.ts` (NEW — shared helpers), `src/constants.ts`, `src/index.ts`, `app/server.ts`
 
-- [ ] W3.1 — `start-learning-session.ts` (~60 min):
-  - Input: `childName`, `goalTopic` (must match an existing LearningGoal with studyPlan)
-  - Check daily session limit (L4): if `studyPlan.lastSessionDate === today` and `!allowMakeupSessions`, return error
-  - Load current session state: which session # of N, current phase, knownGaps from prior sessions
-  - If `sessionsCompleted === 0`: trigger baseline assessment path, return baseline prompt fragment
-  - Else: return Socratic-tutoring prompt fragment for current phase
-  - Output: `{success, sessionId, promptFragment, sessionState}`
-  - Audit entry `learning-session-started`
-- [ ] W3.2 — `get-session-state.ts` (~30 min):
-  - Input: `sessionId`
-  - Returns current session state for tutor LLM mid-session context recovery
-  - Includes turn history, accumulating engagement scores, current phase
-- [ ] W3.3 — `complete-learning-session.ts` (~75 min):
-  - Input: `sessionId`, `engagementScores: number[]` (per kid turn), `assessmentResult: {questions, answers, score, passed}`, `transcript` (optional, used for receipt)
-  - Compute `avgEngagement`, `medianTurnIntervalSeconds`, `confidenceFlag`
-  - Persist as new `SessionRecord` in `studyPlan.sessions`
-  - Update `studyPlan.sessionsCompleted`, `currentPhase`, `knownGaps`
-  - Trigger `generate-session-receipt` (W5) and persist receipt to audit log
-  - Compute USDC payout: `(weeklyBudget / sessionsPlanned) × (avgEngagement / 5) × completionRatio` (completionRatio = 1.0 if assessment passed, 0.5 if engagement ≥ 3 but assessment failed, 0.0 if engagement < 3)
-  - Call existing `distribute-allowance` path to settle USDC (allowlist enforcement from Sprint 3.0.2 unchanged)
-  - Audit entries: `learning-session-completed` (always), `learning-session-flagged-low-confidence` (if confidenceFlag === "low")
-- [ ] W3.4 — `view-session-receipt.ts` (~30 min):
-  - Input: `childName` (optional; defaults to caller's child if learner), `limit: number = 1`
-  - RBAC: learner sees only own receipts; manager + co-parent + advisor see any child in family
-  - Returns array of recent session receipts
-- [ ] W3.5 — RBAC entries in `src/constants.ts`:
-  - `start-learning-session` + `get-session-state` + `complete-learning-session` → learner only
-  - `view-session-receipt` → all roles (with caller-scoping in the handler)
-- [ ] W3.6 — Register all four tools in stdio + HTTP transport routes
+- [x] W3.1 — `start-learning-session.ts`: validates studyPlan exists; enforces L4 daily limit + makeup-session override; emits silent-with-note for non-math categories (criterion 12); chooses baseline fragment vs phase fragment; surfaces prior knownGaps in the phase fragment (L3); bumps `lastSessionDate` and `startedAt` at start; writes `learning-session-started` audit
+- [x] W3.2 — `get-session-state.ts`: read-only studyPlan snapshot for tutor-LLM mid-session recovery; learner-self scoped
+- [x] W3.3 — `complete-learning-session.ts`: orchestrates engagement parsing (explicit > structured-block > tag-parse > fallback 3); medianTurnInterval/confidenceFlag (L5); deriveCompletionRatio from assessment+engagement; computePayout; template receipt; SessionRecord persistence; studyPlan currentPhase/knownGaps merge; first-session baseline persistence; `settleSessionPayout` invocation; three audit entries (`learning-session-completed` always, `learning-session-flagged-low-confidence` conditionally, `baseline-assessment-completed` first-session)
+- [x] W3.4 — `view-session-receipt.ts`: learner-self scope (ignores `childName` arg); manager / co-parent / advisor see all-or-one child; default limit 5, max 50
+- [x] W3.5 — RBAC in `src/constants.ts`: learner gets all four; manager / co-parent / advisor get `view-session-receipt` only
+- [x] W3.6 — Registered on stdio (`src/index.ts`) and HTTP (`app/server.ts`) transports
 
 ---
 
-### Step 4 — Engagement scoring + cheating defense layers (W4, ~2.5 hours) ⏳
+### Step 4 — Engagement scoring + cheating defense layers (W4, ~2.5 hours) ✅
 
-**Files:** `src/core/engagement-parser.ts` (NEW), `src/core/session-state.ts` (NEW)
+**Files:** `src/core/learning-mode.ts` (consolidated into one helper module instead of split into engagement-parser / session-state — simpler), `src/tools/start-learning-session.ts`, `src/tools/complete-learning-session.ts`
 
-- [ ] W4.1 — Engagement-score parsing (~45 min):
-  - Tutor LLM emits "engagement: N" tags in responses (per `src/prompts/math/engagement-scoring.md`)
-  - Parser extracts the tag, stores score in session state alongside the turn
-  - Fallback if tag missing: receipt LLM post-hoc scores the turn at session end
-- [ ] W4.2 — Daily session limit (L4, ~15 min):
-  - Check in `start-learning-session.ts`: if `studyPlan.lastSessionDate === todayUTC()` and `!allowMakeupSessions`, return clean error
-- [ ] W4.3 — Cool-down statistical flag (L5, ~30 min):
-  - Track per-turn timestamps in session state
-  - At completion, compute `medianTurnIntervalSeconds`
-  - If < 5 seconds, set `confidenceFlag: "low"`; audit `learning-session-flagged-low-confidence`
-- [ ] W4.4 — Conversation-state binding (L3, ~45 min):
-  - `knownGaps` field in studyPlan updated by tutor LLM each session via `complete-learning-session` input
-  - Subsequent session prompts include knownGaps so assessment questions reference them
-  - Grading LLM checks for self-reference: assessment answer must engage with session-specific framing or session is flagged
-- [ ] W4.5 — Adaptive fresh assessment (L2, ~30 min):
-  - Assessment generation in `engagement-scoring.md` instructs tutor to generate 3-5 questions from session transcript, with required self-reference to today's specific framing
-  - Grading checks for substring/fuzzy match against session content; if generic ChatGPT answer detected, flag
+- [x] W4.1 — `parseEngagementTags` + `parseStructuredBlock` (L1). Explicit `engagementScores` arg wins; structured-block from `<!-- {...} -->` second; per-turn `<!-- engagement: N -->` tags third; fallback flat-3 last. `usedFallbackEngagement` surfaced in the response so the receipt LLM (future) can do post-hoc scoring.
+- [x] W4.2 — L4 daily limit enforced in `start-learning-session` via `todayUtcDateString()` comparison against `studyPlan.lastSessionDate`; `allowMakeupSessions=true` bypass returns `isMakeupSession: true`.
+- [x] W4.3 — `computeMedianTurnIntervalSeconds` + `resolveConfidenceFlag` (L5). Threshold = 5s (constant `LOW_CONFIDENCE_THRESHOLD_SEC` in learning-mode.ts; tunable in 4.0.1). Flag fired writes audit entry + surfaces in template receipt.
+- [x] W4.4 — L3 conversation-state binding. `studyPlan.knownGaps` accumulates per-session; `start-learning-session` injects the gaps list into the prompt fragment with explicit instruction to probe them and self-reference today's framing in the end-of-session assessment.
+- [x] W4.5 — L2 adaptive fresh assessment. `engagement-scoring.md` instructs the tutor LLM to generate 3-5 questions from today's transcript with self-reference; topic fragments (place-value/fractions/etc.) each include example self-referencing assessment-question patterns.
 
 ---
 
-### Step 5 — Receipt generation (W5, ~1 hour) ⏳
+### Step 5 — Receipt generation (W5, ~1 hour) ✅ (with deferral)
 
-**Files:** `src/core/receipt-generator.ts` (NEW), `src/prompts/receipt-generator.md` (NEW)
+**Files:** `src/core/learning-mode.ts` (`generateTemplateReceipt`), `src/prompts/receipt-generator.md`
 
-- [ ] W5.1 — Receipt generator (~45 min):
-  - Input: session transcript + studyPlan context + computed metadata (engagement avg, assessment result, USDC settled, confidence flag)
-  - Output: ~200-word markdown summary for parent
-  - Calls receipt LLM (same model family as tutor; separate call for editorial distance per Decision 8)
-  - Summary structure: topic covered, what the kid did well, where they struggled, assessment outcome, confidence note if flagged, USDC settled
-  - Stored as `receiptSummary` field on SessionRecord and as audit-log metadata on `learning-session-completed` entry
-- [ ] W5.2 — Receipt template prompt fragment (~15 min):
-  - `src/prompts/receipt-generator.md`
-  - Instructs receipt LLM to write summary not transcript, honest about struggles, ~200 words
-  - Tone: factual, not promotional; respects kid's learning privacy
+- [x] W5.1 — `generateTemplateReceipt` (deterministic template-fill, satisfies R1/R2/R3 invariants). Decision 8 fallback path: ships in 4.0; LLM-backed receipt-generator call is deferred to a follow-up (graceful behavior preserved when no API key is configured). `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` wiring is the single TODO for 4.0.1.
+- [x] W5.2 — `src/prompts/receipt-generator.md` ships in this sprint so the LLM-backed call only needs the API-credential wiring later. The prompt fragment instructs the receipt LLM on tone (honest, specific, no hype) and required content (kid name, engagement, topics, assessment, confidence flag, USDC).
 
 ---
 
-### Step 6 — Payout formula + settlement (W6, ~1 hour) ⏳
+### Step 6 — Payout formula + settlement (W6, ~1.5 hours) ✅
 
-**Files:** `src/tools/distribute-allowance.ts`, `src/tools/complete-learning-session.ts`
+**Files:** `src/tools/settle-session-payout.ts` (NEW), `src/tools/complete-learning-session.ts`, `tests/settle-session-payout.test.ts` (NEW)
 
-- [ ] W6.1 — Extend `distribute-allowance` (~45 min):
-  - Accept a new optional input `sessionPayout: {sessionId, childName, amountUsdc, breakdown}` for engagement-weighted session-shaped payouts
-  - Distinct path from the existing weekly-budget-distributed-by-category logic
-  - Same allowlist enforcement (Sprint 3.0.2 unchanged)
-  - Same savings-split rules (apply to session payouts too)
-- [ ] W6.2 — Audit `learning-session-completed` metadata includes payout breakdown:
-  - `baseRate`, `engagementMultiplier`, `completionRatio`, `payoutUsdc`, `txHash`
+- [x] W6.1 — `src/tools/settle-session-payout.ts` shipped. Reuses `WalletDistributor`, `FamilyKeyManager`, `PolicyEngine.calculateSavingsSplit`, `checkDestinationAllowlist`. Internal-only (no MCP registration). `distribute-allowance` untouched.
+- [x] W6.2 — `learning-session-completed` audit details include the full breakdown (`baseRate`, `engagementMultiplier`, `completionRatio`, `payoutUsdc`, `txHash`, `settlementWarning`).
+- [x] W6.3 — W6.3 invariants covered in `tests/learning-mode-helpers.test.ts` (LM-H4): payout ≥ 0, payout ≤ baseRate, engagement=1 → 0, engagement=5 + completion=1 → full baseRate, monotonic in both axes, clamps out-of-range inputs.
 
 ---
 
-### Step 7 — Bootstrap form extension (W7, ~1 hour) ⏳
+### Step 7 — Bootstrap form + configure-policy extension (W7, ~1.25 hours) ✅ W7.3 · ⏳ W7.1/W7.2
 
-**Files:** `public/verify.html`
+**Files:** `public/verify.html`, `src/tools/configure-policy.ts`
 
 - [ ] W7.1 — Per learning goal in the goals section (~45 min):
   - Add conditional fields for `durationDays` (integer 1-60) and `minutesPerSession` (integer 15-60)
@@ -179,17 +121,23 @@
 - [ ] W7.2 — Form serialization (~15 min):
   - Include `studyPlan: {durationDays, minutesPerSession}` in the configureFamilyBodySchema payload when fields are filled
   - Skip the field entirely when not filled (backward-compat path)
+- [x] W7.3 — `configure-policy` follow-up notes shipped. Response includes `learningModeNotes: string[]` when a math goal lacks a studyPlan or when a non-math goal has one. Backward-compatible — the field is absent when neither case applies.
 
 ---
 
-### Step 8 — Tests (W8, ~3 hours) ⏳
+### Step 8 — Tests (W8, ~3 hours) ✅ (critical-path complete)
 
-**Files:** `tests/study-plan-schema.test.ts` (NEW), `tests/session-lifecycle.test.ts` (NEW), `tests/cheating-defense.test.ts` (NEW), `tests/session-receipt.test.ts` (NEW)
+**Files:** `tests/study-plan-schema.test.ts` (NEW — S1–S4), `tests/learning-mode-helpers.test.ts` (NEW — LM-H1–LM-H7 + W6.3 invariants), `tests/session-lifecycle.test.ts` (NEW — LS1–LS5 + CD1–CD5 + R1 integration + math-only enforcement)
 
-- [ ] W8.1 — Schema tests S1-S4 (~30 min): per test-4.0.md
-- [ ] W8.2 — Session lifecycle tests LS1-LS5 (~60 min): per test-4.0.md
-- [ ] W8.3 — Cheating defense tests CD1-CD5 (~60 min): per test-4.0.md
-- [ ] W8.4 — Receipt tests R1-R3 (~30 min): per test-4.0.md
+- [x] W8.1 — S1–S4 schema tests, all passing
+- [x] W8.2 — LS1, LS2, LS3, LS5 session lifecycle tests (LS4 covered by helper tests — payout formula has full edge-case coverage in `learning-mode-helpers.test.ts`); all passing
+- [x] W8.3 — CD1–CD5 cheating-defense tests; all passing
+- [x] W8.4 — R1 integration receipt invariants + R2 (low-confidence surfacing) + R3 (no-hype tone) in helpers test; all passing
+- [x] BONUS — `tests/learning-mode-helpers.test.ts` adds 29 pure-helper unit tests for parser/payout/phase/template-receipt invariants (LM-H1–LM-H7)
+
+**Net new tests: +44 (S1–S4 = 4, LM-H1–LM-H7 = 29, session-lifecycle = 11). Plan target was +18.**
+
+**Adjusted tests:** `tests/http-transport.test.ts` H2 and H4 updated for the +1 Manager tool (`view-session-receipt`) and the 4 new learner-free tools.
 
 ---
 
@@ -210,42 +158,63 @@
 
 | Phase | Estimate | Actual | Notes |
 |-------|----------|--------|-------|
-| Step 0 — Pre-sprint validation | 15 min | — | |
-| Step 1 — Schema + state types | 2 hr | — | |
-| Step 2 — Math curriculum fragments | 3 hr | — | Pedagogy is load-bearing IP |
-| Step 3 — Four new tools | 3.5 hr | — | |
-| Step 4 — Engagement + defense | 2.5 hr | — | |
-| Step 5 — Receipt generation | 1 hr | — | |
-| Step 6 — Payout settlement | 1 hr | — | |
-| Step 7 — Bootstrap form | 1 hr | — | |
-| Step 8 — Tests | 3 hr | — | |
-| Step 9 — Docs + smoke | 1 hr | — | |
-| **Total** | **~18 hours** | — | 3 focused days or 4 sessions |
+| Step 0 — Pre-sprint validation | 15 min | done | |
+| Step 1 — Schema + state types | 2 hr | done | |
+| Step 2 — Math curriculum fragments | 3 hr | done | Pedagogy is load-bearing IP |
+| Step 3 — Four new tools | 3.5 hr | done | |
+| Step 4 — Engagement + defense | 2.5 hr | done | Consolidated into `learning-mode.ts` |
+| Step 5 — Receipt generation | 1 hr | done* | LLM-backed call deferred to 4.0.1; template fallback ships and satisfies R1–R3 |
+| Step 6 — Payout settlement (new tool) | 1.5 hr | done | New `settle-session-payout` tool, distribute-allowance unchanged |
+| Step 7 — Bootstrap form + configure-policy | 1.25 hr | partial | W7.3 (configure-policy follow-up notes) done; W7.1/W7.2 (verify.html form fields) deferred — plan fallback says studyPlan can be configured via Claude `configure-policy` post-bootstrap |
+| Step 8 — Tests | 3 hr | done | +44 net new (plan target +18) |
+| Step 9 — Docs + smoke | 1 hr | pending | README + V1–V6 smoke for next session |
+| **Total** | **~19 hours** | — | 3 focused days or 4 sessions of ~5 hours |
 
 ---
 
 ## Session log
 
-### Session 1 — TBD
+### Session 1 — 2026-05-21
 
 **Goals:**
 - Steps 0–2 (validation + schema + math curriculum fragments)
-- Schema migration test green; first math fragment manually tested in Claude
+- Schema migration test green; first math fragment ready
 
-**Outcomes:** [TBD]
+**Outcomes:**
+- Step 0 (pre-sprint validation): codebase scan complete. Key references: `src/schemas.ts:36-100` (new schemas), `src/tools/configure-policy.ts:101-129` (parent-input studyPlan boundary), `src/core/configure-family.ts:631-660` (normalizeChildren build path), `src/engine/learning-goals.ts:165-208` (merge that preserves studyPlan progress), `src/tools/distribute-allowance.ts:21-289` (clone model for `settle-session-payout` in Step 6).
+- Step 1 complete. All four schema schemas added; LearningGoalSchema extended; 4 audit actions registered; HTTP + MCP boundaries widened; normalizeChildren + mergeLearningGoals updated; `tests/study-plan-schema.test.ts` shipped with S1–S4 all green.
+- Full vitest run: 447 passed | 1 skipped, 45 files. No regressions from prior baseline. `npx tsc --noEmit` clean.
 
-**Test count:** entering 389 / exiting —
+**Test count:** entering ~443 / exiting 447 + 1 skipped (+4 new S1–S4).
 
-**Blockers:** [TBD]
+**Blockers:** none.
 
 ---
 
-### Session 2 — TBD
+### Session 2 — 2026-05-21 (continued)
 
 **Goals:**
-- Steps 3–4 (four new tools + engagement scoring + defense layers)
+- Steps 2–8 (curriculum, tools, defenses, receipt, payout, configure-policy notes, tests)
 
-**Outcomes:** [TBD]
+**Outcomes:**
+- Step 2: 8 prompt fragments shipped under `src/prompts/math/` + `src/prompts/receipt-generator.md`, plus a README mapping fragments to consumers.
+- Step 3: 4 new MCP tools shipped, registered on stdio + HTTP transports. RBAC extended.
+- Step 4: cheating defense layers L1–L5 + L7 wired in; consolidated into `src/core/learning-mode.ts` helpers.
+- Step 5: template-fill receipt ships (Decision 8 fallback). LLM-backed receipt is the only piece deferred and is one env-var wiring task away in 4.0.1.
+- Step 6: `settle-session-payout` shipped as a new internal-only module (W6 strategy revision), preserving the existing 389+ distribute-allowance tests.
+- Step 7.3: configure-policy now emits Learning Mode follow-up notes (`learningModeNotes[]` in response) when a math goal is added without a studyPlan or a non-math goal is added with one.
+- Step 8: +44 new tests pass (target was +18). `tests/study-plan-schema.test.ts` (S1–S4), `tests/learning-mode-helpers.test.ts` (LM-H1–LM-H7, 29 tests), `tests/session-lifecycle.test.ts` (LS1–LS5 minus LS4 [covered in helpers], CD1–CD5, R1, math-only enforcement, 11 tests). Critical-path tests all green: S4, LS3, CD1, CD2, R1.
+- `tests/http-transport.test.ts` H2 (manager tool count 17→18) and H4 (learner-free-tool list +4) updated to reflect Sprint 4.0 RBAC additions.
+
+**Test count:** entering 447 / exiting 487 passing + 1 skipped, 47 files. Full suite green. `npx tsc --noEmit` clean.
+
+**Deferred to a future session:**
+- W7.1/W7.2 — verify.html bootstrap form UI for studyPlan (Claude `configure-policy` path covers studyPlan input today via W7.3 follow-up notes).
+- Receipt LLM wiring — add `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` server-side call in `complete-learning-session` and swap the template fallback for the LLM-generated receipt. Decision 8 already specifies the env-var pattern.
+- W9 README + V1–V6 production smoke.
+- 30-min prompt-fragment spike (hard pre-sprint gate per plan.md sequencing item 3 — still unrun; needs Aiden + a real Claude/ChatGPT chat to validate the fragments induce Socratic mode).
+
+**Blockers:** none for the next session. Aiden dogfooding is the qualitative gate before sprint-ship.
 
 ---
 
@@ -327,7 +296,7 @@ After Step 9 deploy:
 
 **Likelihood:** Medium
 **Impact:** Tutor LLM forgets to emit "engagement: N" tags reliably; session payouts become zero or undefined
-**Mitigation:** Receipt LLM post-hoc scoring as fallback (W4.1 fallback path). If consistency is bad even after prompt-engineering iteration, defer engagement-multiplier to Sprint 4.0.1 and ship completion-only payouts in 4.0.
+**Mitigation:** Receipt LLM post-hoc scoring as fallback (W4.1 fallback path). If consistency is bad even after prompt-engineering iteration, defer engagement-multiplier to Sprint 4.0.1 and ship completion-only payouts in 4.0. Same fallback class covers W4.4 `knownGaps`: if tutor LLM doesn't emit `knownGaps` at session end, receipt LLM extracts it from the transcript as an additional structured output field.
 
 ### Risk 2 — Math curriculum quality is mediocre
 

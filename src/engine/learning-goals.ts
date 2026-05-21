@@ -154,6 +154,14 @@ export function findMatchingSubgoal(
 // Merge prior completion state into a new goals list. Match key is the
 // (topic, category) lowercased pair. Used by configure-policy on update so
 // the parent can add/edit goals mid-week without wiping earned progress.
+//
+// Sprint 4.0 — also preserves server-managed StudyPlan state (sessions,
+// sessionsCompleted, baselineAssessment, currentPhase, lastSessionDate,
+// knownGaps) when a goal matches a prior one. Parent-supplied study-plan
+// fields (durationDays, minutesPerSession, allowMakeupSessions) accept the
+// new values; the kid's actual progress stays put. If the new goal omits
+// studyPlan entirely, the prior studyPlan is preserved as-is — re-running
+// configure-policy without re-supplying the plan does not wipe it.
 export function mergeLearningGoals(
   oldGoals: readonly LearningGoal[] | undefined,
   newGoals: readonly LearningGoal[]
@@ -175,6 +183,25 @@ export function mergeLearningGoals(
         completedAt: prior.completedAt,
         achievementId: prior.achievementId,
       };
+    }
+    if (prior?.studyPlan) {
+      // Preserve the server-managed state of the prior studyPlan. If the
+      // parent re-supplied a studyPlan, accept their new parent-facing
+      // fields; otherwise keep the prior studyPlan unchanged.
+      if (g.studyPlan) {
+        return {
+          ...g,
+          studyPlan: {
+            ...prior.studyPlan,
+            durationDays: g.studyPlan.durationDays,
+            minutesPerSession: g.studyPlan.minutesPerSession,
+            allowMakeupSessions: g.studyPlan.allowMakeupSessions,
+            // sessionsPlanned tracks the (possibly extended) duration.
+            sessionsPlanned: g.studyPlan.durationDays,
+          },
+        };
+      }
+      return { ...g, studyPlan: prior.studyPlan };
     }
     return { ...g };
   });

@@ -98,6 +98,35 @@ export function registerConfigurePolicyTool(server: McpServer): void {
                   .describe(
                     "Optional ISO-8601 deadline (e.g. '2026-08-15T00:00:00.000Z'). Surfaced as urgency in check-goals."
                   ),
+                // Sprint 4.0 — optional Learning Mode study plan. Active
+                // pedagogy is math-only in 4.0 (success criterion 12);
+                // non-math goals with studyPlan accept silently and run
+                // tracker-only with a note in the configure-policy response.
+                studyPlan: z
+                  .object({
+                    durationDays: z
+                      .number()
+                      .int()
+                      .min(1)
+                      .max(60)
+                      .describe("Length of the study plan in days (1-60)"),
+                    minutesPerSession: z
+                      .number()
+                      .int()
+                      .min(15)
+                      .max(60)
+                      .describe("Target session length in minutes (15-60)"),
+                    allowMakeupSessions: z
+                      .boolean()
+                      .optional()
+                      .describe(
+                        "If true, the kid can run a second session in the same day (e.g. weekend catchup). Default false."
+                      ),
+                  })
+                  .optional()
+                  .describe(
+                    "Optional daily Learning Mode tutoring plan. Math-only in Sprint 4.0; non-math goals accept silently and stay tracker-only."
+                  ),
               })
             )
             .max(20)
@@ -150,7 +179,15 @@ export function registerConfigurePolicyTool(server: McpServer): void {
           caller
         );
 
-        return jsonResponse(toMcpPayload(result, useTestnet));
+        // Sprint 4.0 W7.3 — Learning Mode follow-up notes. Inspected at
+        // the tool boundary (not in core) because the messaging is a
+        // conversational-surface concern, not a state-mutation concern.
+        const learningModeNotes = buildLearningModeNotes(rawChildren);
+
+        return jsonResponse({
+          ...(toMcpPayload(result, useTestnet) as Record<string, unknown>),
+          ...(learningModeNotes.length > 0 ? { learningModeNotes } : {}),
+        });
       } catch (error) {
         // Sprint 3.0.2 — surface destination-allowlist validation errors
         // as structured payloads so the conversational surface can list
@@ -179,6 +216,56 @@ function jsonResponse(payload: unknown): ToolResponse {
   return {
     content: [{ type: "text" as const, text: JSON.stringify(payload) }],
   };
+}
+
+/**
+ * Sprint 4.0 W7.3 — derive Learning Mode follow-up notes from the raw
+ * children input the parent supplied. Two cases:
+ *
+ *   1. Math-category goal with no studyPlan → prompt to add one. Hint
+ *      copy is short enough to fit in Claude's reply and explicit
+ *      enough for the parent to act on without further help.
+ *   2. Non-math-category goal with a studyPlan → silent-accept-with-note
+ *      (criterion 12). Reassures the parent the data is saved but sets
+ *      expectations that Learning Mode itself stays math-only in 4.0.
+ *
+ * Notes are returned as an array so multiple children / goals can each
+ * surface their own note without colliding.
+ */
+function buildLearningModeNotes(
+  children: Array<{
+    name: string;
+    learningGoals?: Array<{
+      topic: string;
+      category: string;
+      studyPlan?: {
+        durationDays: number;
+        minutesPerSession: number;
+        allowMakeupSessions?: boolean;
+      };
+    }>;
+  }>
+): string[] {
+  const notes: string[] = [];
+  for (const child of children) {
+    for (const goal of child.learningGoals ?? []) {
+      const isMath = goal.category.toLowerCase() === "math";
+      if (isMath && !goal.studyPlan) {
+        notes.push(
+          `${child.name} — "${goal.topic}": want a daily study plan for this math goal? ` +
+            `Reply with: duration in days, minutes per session ` +
+            `(e.g. "15 days, 30 min").`
+        );
+      } else if (!isMath && goal.studyPlan) {
+        notes.push(
+          `${child.name} — "${goal.topic}": studyPlan accepted for tracking, ` +
+            `but Learning Mode is math-only in Sprint 4.0 — this goal will ` +
+            `continue as tracker-only.`
+        );
+      }
+    }
+  }
+  return notes;
 }
 
 function toMcpPayload(result: ConfigureFamilyResult, useTestnet: boolean): unknown {
