@@ -74,19 +74,19 @@ surprises, no hidden balances.
           <Step title="Connect AllowMe">
             <Tabs>
               <Tab title="Claude">
+                **Fastest path:** [Open AllowMe in Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=AllowMe&connectorUrl=https%3A%2F%2Fallowme.dev%2Fmcp) — opens the Add custom connector modal with **Name** and **URL** already filled (same behavior as **Open in Claude** on the verify page).
+
+                **No button? Add manually:**
                 1. Open **Customize → Connectors → Add custom connector**.
                 2. Fill in:
                    - **Name:** `AllowMe`
                    - **Remote MCP server URL:** `https://allowme.dev/mcp`
                 3. Click **Add**.
                 4. Click **Connect**, then complete sign-in.
-
-                <Note>
-                  There's no one-click connect button yet — add AllowMe manually
-                  with the steps above. Works in Claude.ai and the Claude apps.
-                </Note>
               </Tab>
               <Tab title="ChatGPT">
+                [Open ChatGPT connector settings](https://chatgpt.com/#settings/Connectors) — shortcut to the Apps/Connectors settings page. It does **not** pre-fill anything; complete the steps below.
+
                 1. Open **Settings → Apps → Advanced settings**.
                 2. Enable **Developer Mode** if prompted.
                 3. Click **Create** to open the **New App** modal.
@@ -155,30 +155,28 @@ surprises, no hidden balances.
         You're a **Co-parent** — you join a family that already exists and can
         verify achievements and check progress.
 
+        Your partner sent you a **magic link** (from the verify page) like
+        `https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX`. Use that **full link** as
+        your connection URL — not bare `allowme.dev/mcp`.
+
         <Steps>
           <Step title="Connect AllowMe">
             <Tabs>
               <Tab title="Claude">
-                1. Open **Customize → Connectors → Add custom connector**.
-                2. Fill in:
-                   - **Name:** `AllowMe`
-                   - **Remote MCP server URL:** `https://allowme.dev/mcp`
-                3. Click **Add**.
-                4. Click **Connect**, then complete sign-in.
+                **Fastest path:** [Open AllowMe in Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=AllowMe&connectorUrl=https%3A%2F%2Fallowme.dev%2Fmcp%3Fsetup%3DSETUP-XXXX-XXXX) — opens the modal with your **magic link** already in the URL field.
 
-                <Note>
-                  After you sign in, you'll join the family you were invited to —
-                  you don't create a new one.
-                </Note>
+                **No button?** Paste your full magic link into **Remote MCP server URL**, then **Add** → **Connect** → sign in. You join the family you were invited to — you don't create a new one.
               </Tab>
               <Tab title="ChatGPT">
+                [Open ChatGPT connector settings](https://chatgpt.com/#settings/Connectors) — shortcut only; pre-fills nothing. Then:
+
                 1. Open **Settings → Apps → Advanced settings**.
                 2. Enable **Developer Mode** if prompted.
                 3. Click **Create** to open the **New App** modal.
                 4. Fill in:
                    - **Name:** `AllowMe`
                    - **Description:** `Family allowance and savings on Base`
-                   - **MCP Server URL:** `https://allowme.dev/mcp`
+                   - **MCP Server URL:** your full **magic link** (`https://allowme.dev/mcp?setup=…`)
                    - **Authentication:** `OAuth`
                 5. Check **"I understand and want to continue"** on the risk warning.
                 6. Click **Create**.
@@ -206,32 +204,31 @@ surprises, no hidden balances.
         you're doing and move your own earnings — that's it. No setup, no
         confusing words.
 
+        **Open the magic link your parent sent you** (from email, text, or the
+        verify page). It looks like
+        `https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX` — use that whole link,
+        not `allowme.dev/mcp` by itself.
+
         <Steps>
           <Step title="Connect AllowMe">
             <Tabs>
               <Tab title="Claude">
-                1. Open **Customize → Connectors → Add custom connector**.
-                2. Fill in:
-                   - **Name:** `AllowMe`
-                   - **Remote MCP server URL:** `https://allowme.dev/mcp`
-                3. Click **Add**.
-                4. Click **Connect**, then sign in with the invite from your parent.
+                **Easiest:** [Open AllowMe in Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=AllowMe&connectorUrl=https%3A%2F%2Fallowme.dev%2Fmcp%3Fsetup%3DSETUP-XXXX-XXXX) — one tap; the modal opens with your link already filled (like **Open in Claude** on the verify page).
+
+                **Or paste manually:** **Customize → Connectors → Add custom connector** → paste your parent's **magic link** in **Remote MCP server URL** → **Add** → **Connect** → sign in.
 
                 <Note>
-                  You're joining your family — you don't set anything up. If you
-                  don't have an invite yet, ask your parent.
+                  You're joining your family — you don't set anything up. No invite
+                  yet? Ask your parent.
                 </Note>
               </Tab>
               <Tab title="ChatGPT">
-                1. Open **Settings → Apps → Advanced settings**.
-                2. Enable **Developer Mode** if prompted.
-                3. Click **Create** to open the **New App** modal.
-                4. Fill in:
-                   - **Name:** `AllowMe`
-                   - **MCP Server URL:** `https://allowme.dev/mcp`
-                   - **Authentication:** `OAuth`
-                5. Check **"I understand and want to continue"**.
-                6. Click **Create**, then sign in with the invite from your parent.
+                [Open ChatGPT connector settings](https://chatgpt.com/#settings/Connectors) — opens settings only; you still fill everything in:
+
+                1. **Settings → Apps → Advanced settings** → enable **Developer Mode**.
+                2. **Create** → **New App**.
+                3. **Name:** `AllowMe` · **MCP Server URL:** your parent's full **magic link** · **Authentication:** `OAuth`
+                4. Check the risk box → **Create** → sign in.
               </Tab>
             </Tabs>
           </Step>
@@ -255,37 +252,38 @@ surprises, no hidden balances.
         You're an **Advisor** — you have a scoped, read-and-advise view of a
         family you support.
 
+        Use the **magic link** you were invited with (`https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX`), not bare `allowme.dev/mcp`.
+
         <Steps>
           <Step title="Connect AllowMe">
             <Tabs>
               <Tab title="Claude">
-                1. Open **Customize → Connectors → Add custom connector**.
-                2. Fill in:
-                   - **Name:** `AllowMe`
-                   - **Remote MCP server URL:** `https://allowme.dev/mcp`
-                3. Click **Add**.
-                4. Click **Connect**, then complete sign-in.
+                **Fastest path:** [Open AllowMe in Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=AllowMe&connectorUrl=https%3A%2F%2Fallowme.dev%2Fmcp%3Fsetup%3DSETUP-XXXX-XXXX)
+
+                **No button?** Paste your magic link into **Remote MCP server URL** → **Add** → **Connect** → sign in.
               </Tab>
               <Tab title="ChatGPT">
+                [Open ChatGPT connector settings](https://chatgpt.com/#settings/Connectors) — then:
+
                 1. Open **Settings → Apps → Advanced settings**.
                 2. Enable **Developer Mode** if prompted.
                 3. Click **Create** to open the **New App** modal.
                 4. Fill in:
                    - **Name:** `AllowMe`
-                   - **MCP Server URL:** `https://allowme.dev/mcp`
+                   - **MCP Server URL:** your **magic link**
                    - **Authentication:** `OAuth`
                 5. Check **"I understand and want to continue"**, then **Create** and sign in.
               </Tab>
               <Tab title="Claude Code">
                 ```bash
-                claude mcp add --transport http allowme https://allowme.dev/mcp
+                claude mcp add --transport http allowme "https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX"
                 ```
               </Tab>
               <Tab title="Codex">
                 ```json
                 {
                   "mcpServers": {
-                    "allowme": { "url": "https://allowme.dev/mcp" }
+                    "allowme": { "url": "https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX" }
                   }
                 }
                 ```
@@ -296,7 +294,7 @@ surprises, no hidden balances.
                 ```json
                 {
                   "mcpServers": {
-                    "allowme": { "url": "https://allowme.dev/mcp" }
+                    "allowme": { "url": "https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX" }
                   }
                 }
                 ```
@@ -316,26 +314,18 @@ surprises, no hidden balances.
         You're a **Family viewer** — a read-only follower. You can check how the
         kids are doing and view receipts. You can't change rules or move money.
 
+        Use your invite **magic link** (`https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX`), not bare `allowme.dev/mcp`.
+
         <Steps>
           <Step title="Connect AllowMe">
             <Tabs>
               <Tab title="Claude">
-                1. Open **Customize → Connectors → Add custom connector**.
-                2. Fill in:
-                   - **Name:** `AllowMe`
-                   - **Remote MCP server URL:** `https://allowme.dev/mcp`
-                3. Click **Add**.
-                4. Click **Connect**, then complete sign-in with your invite.
+                **Fastest path:** [Open AllowMe in Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=AllowMe&connectorUrl=https%3A%2F%2Fallowme.dev%2Fmcp%3Fsetup%3DSETUP-XXXX-XXXX)
+
+                **No button?** Paste your magic link into **Remote MCP server URL** → **Add** → **Connect** → sign in.
               </Tab>
               <Tab title="ChatGPT">
-                1. Open **Settings → Apps → Advanced settings**.
-                2. Enable **Developer Mode** if prompted.
-                3. Click **Create** to open the **New App** modal.
-                4. Fill in:
-                   - **Name:** `AllowMe`
-                   - **MCP Server URL:** `https://allowme.dev/mcp`
-                   - **Authentication:** `OAuth`
-                5. Check **"I understand and want to continue"**, then **Create** and sign in.
+                [Open ChatGPT connector settings](https://chatgpt.com/#settings/Connectors) — then complete dev-mode setup with your **magic link** as **MCP Server URL** (steps same as Co-parent ChatGPT tab).
               </Tab>
             </Tabs>
           </Step>
@@ -352,9 +342,10 @@ surprises, no hidden balances.
 </Steps>
 
 <Note>
-  **Coming soon:** an App Directory listing with one-click add, plus a packaged
-  AllowMe skill that teaches your assistant the ropes automatically. For now,
-  the connect steps above are the way in.
+  **Coming soon:** App Directory listing and one-click ChatGPT connect (today
+  ChatGPT only opens connector **settings** — you still complete dev-mode setup).
+  Packaged AllowMe skill also coming soon. The connect steps above match what
+  ships on `allowme.dev/verify` today.
 </Note>
 
 ## Next steps

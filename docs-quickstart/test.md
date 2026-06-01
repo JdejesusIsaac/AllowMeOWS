@@ -1,7 +1,7 @@
 # Quickstart Page — Verification Checks (test.md, Deliverable 1)
 
 > Sibling artifact to the Quickstart docs contract (§12). Converts the
-> twelve acceptance criteria C1–C12, the five hard-fails HF1–HF5, and
+> fourteen acceptance criteria C1–C14, hard-fails HF1 + HF2a/HF2b + HF3–HF5 (CA-D1), and
 > the structural tree (§7) into concrete, inspectable checks the
 > Evaluator runs against the **rendered page + its source only** — never
 > the planning docs or author rationale (contract §9 rule 5).
@@ -37,8 +37,10 @@ weighted).
 | Criterion | Checks | Rubric category | Gate? |
 |-----------|--------|-----------------|-------|
 | C4 — connection verbatim | T-C4-1 … T-C4-6 | Accuracy 35% | Fail-gate (§10) |
-| C11 — zero fiction | T-HF1 … T-HF5 | Accuracy 35% | Hard-fail gate (§6) |
+| C11 — zero fiction | T-HF1, T-HF2a, T-HF2b, T-HF3 … T-HF5 | Accuracy 35% | Hard-fail gate (§6) |
 | C12 — links resolve | T-C12-1 … T-C12-3 | Accuracy 35% | Soft-fail eligible |
+| C13 — role-determined URL | T-C13-1 … T-C13-3 | Accuracy 35% | Fail-gate |
+| C14 — verify-page consistency | T-C14-1 … T-C14-3 | Accuracy 35% | Fail-gate |
 | C1 — demo-first | T-C1-1 … T-C1-4 | Structure 25% | Fail-gate |
 | C2 — role primary fork | T-C2-1 … T-C2-3 | Structure 25% | Fail-gate |
 | C3 — client nested | T-C3-1 … T-C3-2 | Structure 25% | Fail-gate |
@@ -50,27 +52,38 @@ weighted).
 
 ## 2. Accuracy / No-fiction checks (35%)
 
-### Hard-fail gates — HF1–HF5 (C11)
+### Hard-fail gates — HF1, HF2a/HF2b, HF3–HF5 (C11, CA-D1)
 
-These run first. **Any** positive hit is an automatic Fail (contract §6,
-§10). All are mechanical greps against the source — the point of HF
-checks being mechanical is that fiction-detection must not depend on the
-Evaluator's reading judgment.
+These run first. **Any** HF fail is an automatic Fail (contract §6, §10).
 
 | Check | Target | How to verify | Pass = |
 |-------|--------|---------------|--------|
-| **T-HF1** | App Directory install | **[MECH]** grep source (case-insensitive) for: `directory`, `app store`, `install from`. For each hit, confirm it is NOT presenting a directory-install path as available. | No hit presents directory-install as an available step |
-| **T-HF2** | Deep-link buttons | **[MECH]** grep for: `Add to Claude`, `Add to ChatGPT`, `img.shields.io/badge/Add`, `claude.ai/customize/connectors?modal=`, `cursor://`. The Base template uses these — they MUST NOT appear. | Zero deep-link install buttons |
-| **T-HF3** | Unpublished skill as real | **[MECH+READ]** grep for `skill`, `SKILL.md`, `.zip`, `Download skill`, `Upload skill`. Any hit MUST be inside a clearly future-tense "coming soon" block, NOT inside a numbered Connect/Install step presented as doable today. | No skill presented as currently installable |
-| **T-HF4** | OAuth 2.1 auth-server | **[MECH]** grep for: `authorization server`, `OAuth 2.1`, `PKCE`, `token endpoint`, `/.well-known/oauth`, `client_id`. (Note: the ChatGPT dev-mode step legitimately says `Authentication: OAuth` — that's the connector setting, allowed. An auth-*server setup* is not.) | No authorization-server setup instructions |
-| **T-HF5** | Future-state-as-current | **[READ]** For every connection mechanic in a numbered step, confirm it exists in the deployed build (cross-check against T-C4 set). Any mechanic not verifiable in the live connect flow → fail. | Every numbered-step mechanic exists today |
+| **T-HF1** | App Directory install | **[MECH]** grep (case-insensitive): `directory`, `app store`, `install from`. Each hit must NOT present directory-install as available today. | No directory-install as an available step |
+| **T-HF2a** | Claude deep-link (REQUIRED) | **[MECH]** On **every** role path's Claude tab: grep for `claude.ai/customize/connectors?modal=add-custom-connector` with `connectorName=AllowMe` and URL-encoded `connectorUrl`. Manager path uses bare `allowme.dev/mcp` (encoded `%2Fmcp` without `setup=`). Invitee paths use `setup=` in encoded URL. Manual-only Claude path with no deep link = **fail**. Malformed params = **fail**. | Deep link present, well-formed, role-correct URL |
+| **T-HF2b** | ChatGPT shortcut (if present) | **[MECH+READ]** If `chatgpt.com/#settings/Connectors` link exists: (a) caption is shortcut-style ("Open ChatGPT connector settings"), NOT one-click connect; (b) full dev-mode manual steps remain **required** immediately below, not demoted to fallback. Pre-fill-implying caption or steps removed = **fail**. | Honest shortcut OR no ChatGPT button |
+| **T-HF3** | Unpublished skill as real | **[MECH+READ]** grep `skill`, `SKILL.md`, `.zip`, `Download skill`. Hits only in future-tense "coming soon", not in numbered steps as doable today. | No installable skill today |
+| **T-HF4** | OAuth 2.1 auth-server | **[MECH]** grep `authorization server`, `OAuth 2.1`, `PKCE`, `token endpoint`, `/.well-known/oauth`. (`Authentication: OAuth` in ChatGPT dev-mode step is allowed.) | No auth-server setup |
+| **T-HF5** | Future-state-as-current | **[READ]** Every numbered-step mechanic exists in deployed build. | Zero unverifiable mechanics |
 
-**Companion (allowed, not a fail):** "coming soon: directory install /
-one-click add / packaged skill" in clearly future tense, outside the
-numbered steps, is permitted (contract §6 companion rule). T-HF1/2/3
-must distinguish an allowed coming-soon note from a forbidden
-available-step claim — the discriminator is *tense + placement*: future
-tense AND outside numbered Connect/Install steps = allowed.
+**Revoked:** **T-HF2** (blanket deep-link ban) — replaced by T-HF2a/T-HF2b per CA-D1.
+
+**Companion (allowed):** future-tense "coming soon: directory / one-click ChatGPT connect / packaged skill" outside numbered steps.
+
+### C13 — role-determined connection URL
+
+| Check | How to verify | Pass = |
+|-------|---------------|--------|
+| **T-C13-1** | **[MECH]** Manager path connection URL is bare `https://allowme.dev/mcp`. | Bare URL on Manager only |
+| **T-C13-2** | **[READ]** Co-parent, Learner, Family-viewer paths describe the `?setup=CODE` **magic link** (e.g. `https://allowme.dev/mcp?setup=SETUP-…`), not typing bare MCP. | Invitee paths use magic link |
+| **T-C13-3** | **[MECH]** In invitee role tabs, no instruction to use bare `https://allowme.dev/mcp` as the connect URL (grep invitee sections; bare MCP only OK in Manager/CLI examples). | No bare URL as invitee connect mechanic |
+
+### C14 — quickstart ↔ verify-page consistency
+
+| Check | How to verify | Pass = |
+|-------|---------------|--------|
+| **T-C14-1** | **[READ]** Invitee join flow matches verify page: parent sends link → open in browser / paste magic link → connect. | Flows align |
+| **T-C14-2** | **[MECH]** Terminology consistent: "magic link" (or equivalent single term) on both surfaces — not "magic link" vs "setup URL" mismatch. | Consistent terms |
+| **T-C14-3** | **[READ]** Claude deep-link behavior documented same as verify page "Open in Claude" (pre-filled connector modal). | Deep-link story consistent |
 
 ### C4 — connection steps match current reality, verbatim
 
@@ -197,14 +210,13 @@ must not lower any score:
 | **T-OOS-3** | Absence of Guides / Reference / tool-list — not penalized |
 | **T-OOS-4** | Absence of an actual es-419 translation — not penalized (only readiness graded) |
 | **T-OOS-5** | Absence of an animated demo — not penalized (static satisfies C1) |
-| **T-OOS-6** | Absence of directory-install / deep-link / installable-skill path — **required**, never penalized |
+| **T-OOS-6** | Absence of directory-install / installable-skill — not penalized. Claude deep-link (HF2a) **must** be present. |
 
 ## 8. Execution order
 
-1. **HF gates first** (T-HF1 … T-HF5). Any hit → stop, Fail. Cheapest
+1. **HF gates first** (T-HF1, T-HF2a, T-HF2b, T-HF3 … T-HF5). Any fail → stop.
    checks, highest-weight failure. Run before anything else.
-2. **C4 accuracy** (T-C4-1 … T-C4-6) and **C8 kid-safety** (T-C8-1 …
-   T-C8-4) — the other two fail-gates. Run second.
+2. **C4, C13, C14** and **C8 kid-safety** — accuracy fail-gates. Run second.
 3. **Structure** (C1, C2, C3, C10) — the remaining fail-gates plus C10
    weighted.
 4. **Copy** (C6), **Safety** (C7), **Bilingual** (C9) — weighted /
@@ -214,7 +226,7 @@ must not lower any score:
 
 ## 9. Verdict assembly
 
-- **Fail** if: any HF1–HF5 hit (T-HF*), OR C4 diverges (T-C4-6), OR demo
+- **Fail** if: any HF hit (T-HF*), OR C4/C13/C14 fail, OR demo
   absent/after-steps (T-C1-1/T-C1-3), OR fork order wrong
   (T-C2-1/T-C3-1/T-C3-2), OR kid path exposes wallet/family-creation
   (T-C8-1).
@@ -222,13 +234,13 @@ must not lower any score:
   image embeds EN text), C7 stated-but-not-shown, or C12 single
   coming-soon link — each with its named ticket, IF all Accuracy +
   Structure fail-gates are clean.
-- **Pass** if: all C1–C12 satisfied, each rubric category ≥75% of
-  weight, zero HF hits.
+- **Pass** if: all **C1–C14** satisfied, each rubric category ≥75% of
+  weight, zero HF fails (HF2a satisfied on every Claude path).
 
 ## 10. Status
 
-- test.md version: 1.0
-- Pairs with: Quickstart docs contract v1.0 (all §11 assumptions now
+- test.md version: **1.0 + CA-D1**
+- Pairs with: Quickstart docs contract v1.0 + CA-D1 (all §11 assumptions now
   confirmed: A2 coming-soon, A5 URLs, A6 five-role tiered).
 - Evaluator uses: this file + the rendered page + its source. Nothing
   else.

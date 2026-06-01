@@ -7,7 +7,7 @@
 
 - **Deliverable:** `docs-quickstart/quickstart.mdx` — the Quickstart page (Get
   Started with AllowMe). Scoped to `onboarding-plan.md` §2 only.
-- **State:** Draft v1 complete; pending Evaluator pass against `test.md`.
+- **State:** CA-D1 regen applied (HF2a/HF2b, C13/C14); pending Evaluator pass against amended `test.md`.
 - **Inputs confirmed:** A2 (no skill → coming-soon, HF3 active), A5
   (`docs.allowme.dev` / `https://allowme.dev/mcp`), A6 (five roles, tiered),
   A7 (CLI clients only under Manager + Advisor), A3 (static demo OK), A4

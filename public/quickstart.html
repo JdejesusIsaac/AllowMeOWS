@@ -160,15 +160,17 @@ pre code { background:none; color:inherit; padding:0; }
             <button class="tab-btn" data-tab="m-cursor" aria-selected="false">Cursor</button>
           </div>
           <div class="panel active" id="m-claude">
+            <p><strong>Fastest path:</strong> <a href="https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=AllowMe&amp;connectorUrl=https%3A%2F%2Fallowme.dev%2Fmcp" target="_blank" rel="noopener">Open AllowMe in Claude</a> — Add custom connector modal pre-filled (same as <strong>Open in Claude</strong> on the verify page).</p>
+            <p><strong>No button? Add manually:</strong></p>
             <ol>
               <li>Open <strong>Customize → Connectors → Add custom connector</strong>.</li>
               <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>Remote MCP server URL:</strong> <code>https://allowme.dev/mcp</code></li></ul></li>
               <li>Click <strong>Add</strong>.</li>
               <li>Click <strong>Connect</strong>, then complete sign-in.</li>
             </ol>
-            <div class="note">There's no one-click connect button yet — add AllowMe manually with the steps above. Works in Claude.ai and the Claude apps.</div>
           </div>
           <div class="panel" id="m-chatgpt">
+            <p><a href="https://chatgpt.com/#settings/Connectors" target="_blank" rel="noopener">Open ChatGPT connector settings</a> — shortcut to Apps/Connectors settings (pre-fills nothing). Then:</p>
             <ol>
               <li>Open <strong>Settings → Apps → Advanced settings</strong>.</li>
               <li>Enable <strong>Developer Mode</strong> if prompted.</li>
@@ -206,6 +208,7 @@ Verify that Maya read for 30 minutes today</code></pre>
     <!-- CO-PARENT -->
     <div class="panel" id="r-coparent" role="tabpanel">
       <p>You're a <strong>Co-parent</strong> — you join a family that already exists and can verify achievements and check progress.</p>
+      <p>Your partner sent you a <strong>magic link</strong> like <code>https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX</code>. Use that full link — not bare <code>allowme.dev/mcp</code>.</p>
       <div class="step"><h3>Connect AllowMe</h3>
         <div class="tabs" data-tabs>
           <div class="tablist" role="tablist">
@@ -213,20 +216,16 @@ Verify that Maya read for 30 minutes today</code></pre>
             <button class="tab-btn" data-tab="c-chatgpt" aria-selected="false">ChatGPT</button>
           </div>
           <div class="panel active" id="c-claude">
-            <ol>
-              <li>Open <strong>Customize → Connectors → Add custom connector</strong>.</li>
-              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>Remote MCP server URL:</strong> <code>https://allowme.dev/mcp</code></li></ul></li>
-              <li>Click <strong>Add</strong>.</li>
-              <li>Click <strong>Connect</strong>, then complete sign-in.</li>
-            </ol>
-            <div class="note">After you sign in, you'll join the family you were invited to — you don't create a new one.</div>
+            <p><strong>Fastest path:</strong> <a href="https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=AllowMe&amp;connectorUrl=https%3A%2F%2Fallowme.dev%2Fmcp%3Fsetup%3DSETUP-XXXX-XXXX" target="_blank" rel="noopener">Open AllowMe in Claude</a> — modal opens with your magic link pre-filled.</p>
+            <p><strong>No button?</strong> Paste your magic link into <strong>Remote MCP server URL</strong> → <strong>Add</strong> → <strong>Connect</strong> → sign in. You join the invited family — you don't create a new one.</p>
           </div>
           <div class="panel" id="c-chatgpt">
+            <p><a href="https://chatgpt.com/#settings/Connectors" target="_blank" rel="noopener">Open ChatGPT connector settings</a> — then:</p>
             <ol>
               <li>Open <strong>Settings → Apps → Advanced settings</strong>.</li>
               <li>Enable <strong>Developer Mode</strong> if prompted.</li>
               <li>Click <strong>Create</strong> to open the <strong>New App</strong> modal.</li>
-              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>Description:</strong> <code>Family allowance and savings on Base</code></li><li><strong>MCP Server URL:</strong> <code>https://allowme.dev/mcp</code></li><li><strong>Authentication:</strong> <code>OAuth</code></li></ul></li>
+              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>Description:</strong> <code>Family allowance and savings on Base</code></li><li><strong>MCP Server URL:</strong> your full <strong>magic link</strong></li><li><strong>Authentication:</strong> <code>OAuth</code></li></ul></li>
               <li>Check <strong>"I understand and want to continue"</strong> on the risk warning.</li>
               <li>Click <strong>Create</strong>.</li>
               <li>Complete sign-in to authorize.</li>
@@ -245,6 +244,7 @@ Verify that Maya practiced piano for 20 minutes today</code></pre>
     <!-- LEARNER -->
     <div class="panel" id="r-learner" role="tabpanel">
       <p>You're a <strong>Learner</strong>. Someone in your family invited you. You can see how you're doing and move your own earnings — that's it. No setup, no confusing words.</p>
+      <p><strong>Open the magic link your parent sent</strong> — <code>https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX</code> — not bare <code>allowme.dev/mcp</code>.</p>
       <div class="step"><h3>Connect AllowMe</h3>
         <div class="tabs" data-tabs>
           <div class="tablist" role="tablist">
@@ -252,22 +252,16 @@ Verify that Maya practiced piano for 20 minutes today</code></pre>
             <button class="tab-btn" data-tab="l-chatgpt" aria-selected="false">ChatGPT</button>
           </div>
           <div class="panel active" id="l-claude">
-            <ol>
-              <li>Open <strong>Customize → Connectors → Add custom connector</strong>.</li>
-              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>Remote MCP server URL:</strong> <code>https://allowme.dev/mcp</code></li></ul></li>
-              <li>Click <strong>Add</strong>.</li>
-              <li>Click <strong>Connect</strong>, then sign in with the invite from your parent.</li>
-            </ol>
-            <div class="note">You're joining your family — you don't set anything up. If you don't have an invite yet, ask your parent.</div>
+            <p><strong>Easiest:</strong> <a href="https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=AllowMe&amp;connectorUrl=https%3A%2F%2Fallowme.dev%2Fmcp%3Fsetup%3DSETUP-XXXX-XXXX" target="_blank" rel="noopener">Open AllowMe in Claude</a> — one tap; link pre-filled.</p>
+            <p><strong>Or paste manually:</strong> Add custom connector → paste your parent's <strong>magic link</strong> → <strong>Add</strong> → <strong>Connect</strong> → sign in.</p>
+            <div class="note">No invite yet? Ask your parent.</div>
           </div>
           <div class="panel" id="l-chatgpt">
+            <p><a href="https://chatgpt.com/#settings/Connectors" target="_blank" rel="noopener">Open ChatGPT connector settings</a> — then dev-mode setup with your <strong>magic link</strong> as MCP Server URL.</p>
             <ol>
-              <li>Open <strong>Settings → Apps → Advanced settings</strong>.</li>
-              <li>Enable <strong>Developer Mode</strong> if prompted.</li>
-              <li>Click <strong>Create</strong> to open the <strong>New App</strong> modal.</li>
-              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>MCP Server URL:</strong> <code>https://allowme.dev/mcp</code></li><li><strong>Authentication:</strong> <code>OAuth</code></li></ul></li>
-              <li>Check <strong>"I understand and want to continue"</strong>.</li>
-              <li>Click <strong>Create</strong>, then sign in with the invite from your parent.</li>
+              <li><strong>Settings → Apps → Advanced settings</strong> → enable <strong>Developer Mode</strong>.</li>
+              <li><strong>Create</strong> → <strong>New App</strong> → <strong>Name:</strong> AllowMe · <strong>MCP Server URL:</strong> magic link · <strong>Authentication:</strong> OAuth</li>
+              <li>Risk checkbox → <strong>Create</strong> → sign in.</li>
             </ol>
           </div>
         </div>
@@ -285,6 +279,7 @@ How much is in my savings?</code></pre>
     <!-- ADVISOR -->
     <div class="panel" id="r-advisor" role="tabpanel">
       <p>You're an <strong>Advisor</strong> — you have a scoped, read-and-advise view of a family you support.</p>
+      <p>Use your invite <strong>magic link</strong> (<code>https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX</code>), not bare <code>allowme.dev/mcp</code>.</p>
       <div class="step"><h3>Connect AllowMe</h3>
         <div class="tabs" data-tabs>
           <div class="tablist" role="tablist">
@@ -295,31 +290,28 @@ How much is in my savings?</code></pre>
             <button class="tab-btn" data-tab="a-cursor" aria-selected="false">Cursor</button>
           </div>
           <div class="panel active" id="a-claude">
-            <ol>
-              <li>Open <strong>Customize → Connectors → Add custom connector</strong>.</li>
-              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>Remote MCP server URL:</strong> <code>https://allowme.dev/mcp</code></li></ul></li>
-              <li>Click <strong>Add</strong>.</li>
-              <li>Click <strong>Connect</strong>, then complete sign-in.</li>
-            </ol>
+            <p><strong>Fastest path:</strong> <a href="https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=AllowMe&amp;connectorUrl=https%3A%2F%2Fallowme.dev%2Fmcp%3Fsetup%3DSETUP-XXXX-XXXX" target="_blank" rel="noopener">Open AllowMe in Claude</a></p>
+            <p><strong>No button?</strong> Paste magic link into <strong>Remote MCP server URL</strong> → <strong>Add</strong> → <strong>Connect</strong>.</p>
           </div>
           <div class="panel" id="a-chatgpt">
+            <p><a href="https://chatgpt.com/#settings/Connectors" target="_blank" rel="noopener">Open ChatGPT connector settings</a> — then dev-mode steps with <strong>magic link</strong> as MCP Server URL.</p>
             <ol>
               <li>Open <strong>Settings → Apps → Advanced settings</strong>.</li>
               <li>Enable <strong>Developer Mode</strong> if prompted.</li>
               <li>Click <strong>Create</strong> to open the <strong>New App</strong> modal.</li>
-              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>MCP Server URL:</strong> <code>https://allowme.dev/mcp</code></li><li><strong>Authentication:</strong> <code>OAuth</code></li></ul></li>
+              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>MCP Server URL:</strong> your <strong>magic link</strong></li><li><strong>Authentication:</strong> <code>OAuth</code></li></ul></li>
               <li>Check <strong>"I understand and want to continue"</strong>, then <strong>Create</strong> and sign in.</li>
             </ol>
           </div>
-          <div class="panel" id="a-cc"><pre><code>claude mcp add --transport http allowme https://allowme.dev/mcp</code></pre></div>
+          <div class="panel" id="a-cc"><pre><code>claude mcp add --transport http allowme "https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX"</code></pre></div>
           <div class="panel" id="a-codex"><pre><code>{
   "mcpServers": {
-    "allowme": { "url": "https://allowme.dev/mcp" }
+    "allowme": { "url": "https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX" }
   }
 }</code></pre></div>
           <div class="panel" id="a-cursor"><p>Add AllowMe to <code>~/.cursor/mcp.json</code>:</p><pre><code>{
   "mcpServers": {
-    "allowme": { "url": "https://allowme.dev/mcp" }
+    "allowme": { "url": "https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX" }
   }
 }</code></pre></div>
         </div>
@@ -333,6 +325,7 @@ How much has each child earned this month?</code></pre>
     <!-- FAMILY VIEWER -->
     <div class="panel" id="r-family" role="tabpanel">
       <p>You're a <strong>Family viewer</strong> — a read-only follower. You can check how the kids are doing and view receipts. You can't change rules or move money.</p>
+      <p>Use your invite <strong>magic link</strong> (<code>https://allowme.dev/mcp?setup=SETUP-XXXX-XXXX</code>).</p>
       <div class="step"><h3>Connect AllowMe</h3>
         <div class="tabs" data-tabs>
           <div class="tablist" role="tablist">
@@ -340,21 +333,11 @@ How much has each child earned this month?</code></pre>
             <button class="tab-btn" data-tab="f-chatgpt" aria-selected="false">ChatGPT</button>
           </div>
           <div class="panel active" id="f-claude">
-            <ol>
-              <li>Open <strong>Customize → Connectors → Add custom connector</strong>.</li>
-              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>Remote MCP server URL:</strong> <code>https://allowme.dev/mcp</code></li></ul></li>
-              <li>Click <strong>Add</strong>.</li>
-              <li>Click <strong>Connect</strong>, then complete sign-in with your invite.</li>
-            </ol>
+            <p><strong>Fastest path:</strong> <a href="https://claude.ai/customize/connectors?modal=add-custom-connector&amp;connectorName=AllowMe&amp;connectorUrl=https%3A%2F%2Fallowme.dev%2Fmcp%3Fsetup%3DSETUP-XXXX-XXXX" target="_blank" rel="noopener">Open AllowMe in Claude</a></p>
+            <p><strong>No button?</strong> Paste magic link → <strong>Add</strong> → <strong>Connect</strong>.</p>
           </div>
           <div class="panel" id="f-chatgpt">
-            <ol>
-              <li>Open <strong>Settings → Apps → Advanced settings</strong>.</li>
-              <li>Enable <strong>Developer Mode</strong> if prompted.</li>
-              <li>Click <strong>Create</strong> to open the <strong>New App</strong> modal.</li>
-              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>MCP Server URL:</strong> <code>https://allowme.dev/mcp</code></li><li><strong>Authentication:</strong> <code>OAuth</code></li></ul></li>
-              <li>Check <strong>"I understand and want to continue"</strong>, then <strong>Create</strong> and sign in.</li>
-            </ol>
+            <p><a href="https://chatgpt.com/#settings/Connectors" target="_blank" rel="noopener">Open ChatGPT connector settings</a> — then dev-mode setup with your <strong>magic link</strong>.</p>
           </div>
         </div>
       </div>
@@ -366,7 +349,7 @@ Show me the family's recent achievements</code></pre>
   </div>
 
   <div class="note soon">
-    <strong>Coming soon:</strong> an App Directory listing with one-click add, plus a packaged AllowMe skill that teaches your assistant the ropes automatically. For now, the connect steps above are the way in.
+    <strong>Coming soon:</strong> App Directory listing and one-click ChatGPT connect (today ChatGPT only opens connector settings). Packaged skill also coming soon. Connect steps above match <code>allowme.dev/verify</code> today.
   </div>
 
   <h2>Next steps</h2>

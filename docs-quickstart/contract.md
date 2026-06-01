@@ -1,6 +1,6 @@
 # Quickstart Page — Docs Contract (Deliverable 1)
 
-**Status:** Derived from [`onboarding-plan.md`](../onboarding-plan.md) §2 and the Base MCP quickstart template (https://docs.base.org/ai-agents/quickstart). Pending user confirmation of the flagged assumptions in §11.
+**Status:** v1.0 + **CA-D1** (connection mechanics correction, 2026-06-01). Derived from [`onboarding-plan.md`](../onboarding-plan.md) §2 and the Base MCP quickstart template. See [`contract-amendment-CA-D1.md`](contract-amendment-CA-D1.md) for the full amendment record.
 **Inputs:** `onboarding-plan.md` v1 (IA §1, Quickstart spec §2, primer §3, sequencing §4, open decisions §5, exclusions §6); the deployed AllowMe build (current connection reality: Claude custom-connector, ChatGPT dev-mode app).
 **Deliverable type:** Docs — a single page (`Get Started with AllowMe`). No code, no schema, no product behavior.
 **Doc class:** **Accuracy-critical onboarding.** The load-bearing failure mode is *documenting something that does not exist yet* (a fiction-trap, §6) — it burns reviewer trust and produces dead-end setup steps for real families. The rubric (§5) is weighted toward Accuracy / No-fiction accordingly.
@@ -12,11 +12,11 @@
 
 **Problem statement.** AllowMe has no public onboarding. A family arriving from a referral has no documented path to connect AllowMe to their assistant and complete a first session. Base solved the equivalent problem for a single crypto-fluent adult; AllowMe must solve it for a *family across five roles* with *low assumed crypto fluency*, while AllowMe is still a **custom connector (Claude) / dev-mode app (ChatGPT)** — not a directory-listed app.
 
-**"What is" statement.** Today the only way to connect is the manual custom-connector (Claude) or Developer-Mode app-creation (ChatGPT) flow. There is no "Add to Claude" button, no App Directory listing, no published packaged skill (assumption A2), and no OAuth 2.1 authorization-server documentation. Any docs that imply otherwise are fiction.
+**"What is" statement.** Today the connection paths are: **Claude** — a deep-link button opens the Add-custom-connector modal pre-filled (F1), with manual steps as fallback; **ChatGPT** — a settings-page shortcut only (F2), with required dev-mode manual steps below it; **invitees** — connect with the per-person `?setup=CODE` magic link from the verify page (F3/F4), not the bare MCP URL. There is no App Directory listing, no published packaged skill (A2), and no OAuth 2.1 authorization-server documentation. Fiction = implying ChatGPT one-click connect or directory install as available today.
 
 **Solution thesis.** A Base-style Quickstart that (a) shows the *family loop* in a demo before asking anyone to set anything up, (b) forks by **role first**, then by **client** nested underneath, (c) documents the connection mechanics *exactly as they exist today*, and (d) ends with role-specific copy-paste prompts that make the first interaction succeed.
 
-**Definition of done (D1).** The rendered Quickstart page satisfies every criterion C1–C12 (§4), contains zero hard-fail fictions (§6), and conforms to the structural component tree (§7). Every user-visible string is either lifted from `onboarding-plan.md` §2 or flagged as an assumption (§11) — never invented.
+**Definition of done (D1).** The rendered Quickstart page satisfies every criterion **C1–C14** (§4), contains zero hard-fail fictions (§6), and conforms to the structural component tree (§7). Every user-visible string is either lifted from `onboarding-plan.md` §2, aligned with the shipped verify page (C14), or flagged as an assumption (§11) — never invented.
 
 ---
 
@@ -60,9 +60,13 @@ Twelve criteria, each verifiable from the **rendered page + its source** alone (
 
 ### Accuracy / No-fiction (35% rubric weight)
 
-**C4 — Connection steps match current reality, verbatim.** The Claude tab documents the **custom-connector** flow (Customize → Connectors → Add custom connector; Name `AllowMe`; Remote MCP server URL `https://allowme.dev/mcp` [A5]; Add → Connect → sign in). The ChatGPT tab documents the **Developer-Mode app** flow (Settings → Apps → Advanced settings → enable Developer Mode → Create → New App modal with Name/Description/MCP Server URL/Authentication OAuth → risk-warning checkbox → Create → sign in). Both steps match `onboarding-plan.md` §2.3 step-for-step. The ChatGPT tab explicitly states the dev-mode caveat. *Source: §2.3.*
+**C4 — Connection steps match current reality, verbatim.** The Claude tab leads with the **HF2a deep-link button** (pre-filled modal per F1) and documents manual custom-connector steps as fallback. The **Manager** Claude URL is bare `https://allowme.dev/mcp` [A5]; **invitee** Claude URLs use the role's `?setup=CODE` magic link (C13). The ChatGPT tab leads with the **HF2b settings shortcut** (`chatgpt.com/#settings/Connectors`, shortcut-captioned per F2) and retains the full **Developer-Mode app** manual flow below as required steps (not demoted to fallback). *Source: §2.3, CA-D1.*
 
-**C11 — Zero fiction.** The page contains **none** of the HF1–HF5 items in §6. Specifically: no "Install from directory", no "Add to Claude/ChatGPT" deep-link button, no documentation of a skill that isn't published (A2), no OAuth 2.1 authorization-server setup, and no future-state connection path presented as available today. *This criterion is a gate — see §6 and §8.*
+**C13 — Role-determined connection URL.** Manager connects with bare `https://allowme.dev/mcp`. Co-parent, Learner, and Family-viewer connect with the `?setup=CODE` magic link the inviting Manager generated — never bare-URL manual entry as the invitee mechanic (F3/F4). Client tabs do not carry all connection variation; role does.
+
+**C14 — Quickstart ↔ verify-page consistency.** Invitee join flow and terminology ("magic link", Claude deep-link behavior) match the shipped verify page (`allowme.dev/verify`), which issues `https://allowme.dev/mcp?setup=SETUP-…` and ships "Open in Claude". The quickstart conforms to the verify page, not the reverse.
+
+**C11 — Zero fiction.** The page contains **none** of the HF1, HF3–HF5 items in §6, and satisfies **HF2a/HF2b** (not the revoked blanket HF2). Specifically: no directory install; no ChatGPT button captioned as one-click connect; Claude deep-link present on every role path with role-correct URL; no unpublished skill as real (A2); no OAuth 2.1 auth-server setup; no future-state path presented as available today. *Gate — see §6.*
 
 **C12 — Internal links and references resolve.** Every cross-link (to primer/concepts/guides/reference pages, the privacy page, the skill asset) either resolves to a real target or is marked "coming soon"; no dangling anchors. The MCP URL and domain are consistent with A5 throughout. *Source: §1 IA, §5 open decision 5.*
 
@@ -80,7 +84,7 @@ Twelve criteria, each verifiable from the **rendered page + its source** alone (
 
 **C6 — Try-it prompts are role-specific with approval framing.** Each role path ends with copy-paste starter prompts scoped to that role's permissions (Manager set-up prompts; Kid no-jargon prompts; Co-parent/Advisor scoped). Every money-moving prompt carries the line: *"AllowMe will show you exactly what will happen and ask you to approve before anything moves."* *Source: §2.5.*
 
-**C8 — Kid/Learner path is child-safe.** The Kid path is the shortest, contains no financial jargon, includes no wallet-setup step, and is invite-only (no family-creation affordance). Its prompts match the §2.5 kid set ("How am I doing this week?", "How much have I earned?", "Move my earnings to my wallet", "How much is in my savings?"). *Source: §2.2, §2.5.*
+**C8 — Kid/Learner path is child-safe.** The Kid path is the shortest, contains no financial jargon, includes no wallet-setup step, and is invite-only (no family-creation affordance). It **leads with the one-click Claude deep link** (invitee magic-link URL) and manual paste of the parent's magic link as fallback — not bare `allowme.dev/mcp` typing (strengthens C8 per CA-D1). Prompts match the §2.5 kid set. *Source: §2.2, §2.5, CA-D1.*
 
 ### Safety framing (12% rubric weight)
 
@@ -96,7 +100,7 @@ Twelve criteria, each verifiable from the **rendered page + its source** alone (
 
 | Category | Weight | Definition | Locked criteria |
 |----------|--------|------------|-----------------|
-| Accuracy / No-fiction | **35%** | Connection steps match current reality verbatim; zero fiction-traps; links resolve | C4, C11, C12 |
+| Accuracy / No-fiction | **35%** | Connection steps match current reality verbatim; role-correct URLs; verify-page consistency; zero fiction-traps; links resolve | C4, C11, C12, **C13, C14** |
 | Structure / IA | **25%** | Demo-first; role-as-primary-fork; client nested under role; valid Mintlify components | C1, C2, C3, C10 |
 | Copy / UX clarity | **20%** | Role-specific prompts with approval framing; child-safe kid path | C6, C8 |
 | Safety framing | **12%** | Family-control story leads and is shown, not buried | C7 |
@@ -116,7 +120,9 @@ Twelve criteria, each verifiable from the **rendered page + its source** alone (
 Presence of **any** of the following is an automatic Fail (gates C11). Each cites its source so the Evaluator can verify against the plan, not opinion.
 
 - **HF1 — App Directory install flow.** Any "Install from the ChatGPT/Claude directory" path. → `onboarding-plan.md` §6, §2.3, §0 "Document the CURRENT connection reality".
-- **HF2 — Deep-link install buttons.** Any "Add to Claude" / "Add to ChatGPT" one-click button. → §2.3 (note: "no deep-link button yet… document the manual add"), §6.
+- **HF2 — REVOKED** (replaced by HF2a/HF2b per CA-D1). The blanket ban on deep-link buttons was incorrect for Claude (F1/F3).
+- **HF2a — Claude deep-link (PERMITTED and EXPECTED).** Every role path includes a well-formed `claude.ai/customize/connectors?modal=add-custom-connector&connectorName=AllowMe&connectorUrl=…` link with URL-encoded, role-correct `connectorUrl` (bare MCP for Manager; `?setup=CODE` magic link for invitees). Manual steps are fallback below. **Fail:** Claude path is manual-only, malformed deep link, or wrong URL for role.
+- **HF2b — ChatGPT settings shortcut (PERMITTED only if honestly captioned).** A link to `chatgpt.com/#settings/Connectors` is allowed only when captioned as a shortcut to settings (not one-click connect) and the full dev-mode manual steps remain required immediately below. **Fail:** ChatGPT button implies pre-fill/completion, or manual steps removed/demoted on the strength of the button.
 - **HF3 — Unpublished skill documented as real.** Step 3 presenting a downloadable/persistent skill as available when none is published (gated by A2). → §2.4 ("Don't document a skill that isn't published — that's the same fiction trap"), §5 open decision 1.
 - **HF4 — OAuth 2.1 authorization-server docs.** Any authorization-server setup instructions. → §6 (Sprint 5.0 / Distribution Readiness work).
 - **HF5 — Future-state-as-current.** Any connection mechanic that does not exist in the deployed build presented as currently available. → §0, §6.
@@ -166,7 +172,7 @@ Rules:
 - Absence of per-task Guides and the Reference/tool-list — Deliverables 5–6.
 - Absence of an *actual* es-419 translation (only structural readiness is graded — C9).
 - Absence of an animated demo component (static screenshots satisfy C1 — A3).
-- Absence of a directory-install / deep-link / skill path — their absence is *required* (§6), never penalized.
+- Absence of a directory-install or installable-skill path — required (§6), never penalized. **Claude deep-link (HF2a) must be present** — its absence is penalized.
 
 ---
 
@@ -176,13 +182,13 @@ Rules:
 2. **Current-reality rule:** if a connection mechanic's current state is uncertain at author time, the Generator runs a 5-minute verification against the live Claude/ChatGPT connect flow before writing the step — and if still unverifiable, marks it "coming soon" rather than guessing (avoids HF5).
 3. **Copy is sourced, not invented:** every user-visible string traces to `onboarding-plan.md` §2 or to a resolved assumption in §11. New copy required by a gap becomes a new flagged assumption, not silent invention.
 4. **Assumptions gate the build:** the Generator MUST NOT begin until the §11 assumptions are confirmed/corrected by the user — A2 (skill published?) and A6 (role set) materially change which sections ship.
-5. Evaluator (Phase 3) grades the **rendered page + source** against C1–C12, §6, §7 only — never the planning chatter or author rationale.
+5. Evaluator (Phase 3) grades the **rendered page + source** against **C1–C14**, §6 (HF2a/HF2b), §7 only — never the planning chatter or author rationale.
 
 ---
 
 ## 10. Grading thresholds
 
-- **Pass:** all of C1–C12 satisfied; each rubric category at ≥75% of its weight; zero §6 fiction-traps.
+- **Pass:** all of **C1–C14** satisfied; each rubric category at ≥75% of its weight; zero §6 fiction-traps (HF2a/HF2b satisfied).
 - **Fail:** any §6 fiction-trap present (C11). OR C4 connection steps diverge from current reality. OR C1 demo absent / placed after steps. OR C2/C3 fork order wrong (client primary, or role not the outer fork). OR C8 kid path exposes wallet-setup/family-creation.
 - **Soft-fail (Pass-with-followup):**
   - C9 bilingual-readiness partially met (e.g., one image embeds English text) AND all Accuracy + Structure criteria clean → Pass with a translation-readiness ticket.
@@ -223,8 +229,7 @@ Written research-doc style. Correct any of these and I will fold the correction 
 
 ## 12. Status
 
-- Contract version: 1.0
-- Approval: **pending user confirmation of §11 assumptions** (A2 and A6 are blocking — they change which sections ship).
-- Generator entry point on approval: DEL1 (demo block) → DEL2 (role selector) → DEL3/DEL4 (nested connect) → DEL5 (skill, gated) → DEL6/DEL7/DEL8.
-- Evaluator entry point on hand-off: this contract + the rendered page + its source only.
-- Sibling artifact (not in this deliverable): a `docs-quickstart/test.md` mapping C1–C12 to concrete inspectable checks can follow next.
+- Contract version: **1.0 + CA-D1 v1.0**
+- Generator entry (CA-D1 regen): add HF2a Claude deep links per role; HF2b ChatGPT shortcut + required manual steps; C13 invitee magic-link URLs; C14 verify-page alignment.
+- Evaluator entry: this contract + [`test.md`](test.md) + rendered page + source.
+- Sibling artifacts: [`test.md`](test.md), [`contract-amendment-CA-D1.md`](contract-amendment-CA-D1.md).

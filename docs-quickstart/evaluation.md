@@ -1,8 +1,9 @@
-# Quickstart Page — Evaluation Report (Phase 3)
+# Quickstart Page — Evaluation Report (Phase 3, CA-D1)
 
-**Verdict: PASS (with one follow-up ticket).**
-**Evaluator inputs:** `contract.md` (Sprint Contract) + `test.md` (instrument) + the deployed build (`quickstart.mdx`, `docs.json`). `progress.md` and Generator reasoning were NOT read (structural independence).
-**Build check:** `npx mint@latest broken-links` ran clean of any MDX/parse error — the page compiles; only link/asset issues were reported (see C12).
+**Verdict: PASS (with follow-up tickets).**
+**Contract:** v1.0 + **CA-D1** (connection mechanics correction).
+**Evaluator inputs:** `contract.md` + `test.md` + `quickstart.mdx` + `public/quickstart.html` (deployed `/quickstart` mirror). `progress.md` and Generator reasoning were **not** read.
+**Build check:** `npx mint@latest broken-links` — MDX parses; 4 demo images + 3 internal routes unresolved (see C12).
 
 ---
 
@@ -10,58 +11,82 @@
 
 | Rubric category | Weight | Score | Criteria |
 |-----------------|--------|-------|----------|
-| Accuracy / No-fiction | 35% | **32 / 35** | C4 ✓, C11 ✓, C12 soft (4 demo images unresolved) |
+| Accuracy / No-fiction | 35% | **33 / 35** | C4 ✓ (one thin tab), C11 ✓, C12 soft, **C13 ✓**, **C14 ✓** |
 | Structure / IA | 25% | **25 / 25** | C1 ✓, C2 ✓, C3 ✓, C10 ✓ |
 | Copy / UX clarity | 20% | **20 / 20** | C6 ✓, C8 ✓ |
 | Safety framing | 12% | **12 / 12** | C7 ✓ |
 | Bilingual readiness | 8% | **8 / 8** | C9 ✓ |
-| **Total** | 100% | **97 / 100** | every category ≥ 75% of weight |
+| **Total** | 100% | **98 / 100** | every category ≥ 75% of weight |
 
-All fail-gates clean (HF1–HF5, C4, C8, C1 ordering, C2/C3 fork). Zero fiction-traps. → **Pass** per contract §10.
+All **hard-fail gates** clean (HF1, **HF2a**, **HF2b** on paths that include ChatGPT steps, HF3–HF5, C8, C1 ordering, C2/C3 fork). Zero fiction-traps. → **Pass** per contract §10.
 
----
-
-## Hard-fail gates (HF1–HF5) — all clear
-
-- **T-HF1/HF2 (directory + deep-link buttons):** the only `directory`/`one-click add` mentions are in the future-tense "Coming soon" `<Note>` (line 354–358) and the dev-mode caveats ("isn't listed in the directory yet", lines 104/189) — all outside numbered steps. No deep-link install button. No literal "Add to Claude/ChatGPT" strings. **PASS.**
-- **T-HF3 (unpublished skill):** the only `skill` mention is the future-tense coming-soon note; no numbered install step, no `.zip`/Download/Upload. **PASS.**
-- **T-HF4 (OAuth 2.1 auth-server):** only `Authentication: OAuth` (the connector field, explicitly allowed). No `authorization server`/`PKCE`/`token endpoint`/`client_id`. **PASS.**
-- **T-HF5 (future-as-current):** every numbered-step mechanic is a current reality (custom connector / dev-mode app / CLI add). **PASS.**
-
-## Criterion results
-
-- **C4 (connection verbatim) — PASS.** Claude tab: Customize → Connectors → Add custom connector; Name `AllowMe`; URL `https://allowme.dev/mcp`; Add → Connect → sign-in, in order. ChatGPT tab: Settings → Apps → Advanced settings → Developer Mode → Create → New App; Name/Description/MCP Server URL/Authentication=OAuth; "I understand and want to continue"; Create; sign-in, in order. Dev-mode caveat present. MCP URL identical across all 16 occurrences (T-C4-4). CLI commands present for Claude Code/Codex/Cursor (T-C4-5).
-- **C11 (zero fiction) — PASS.** See HF gates.
-- **C12 (links resolve) — SOFT-FAIL (Pass-with-followup).** The 3 internal page links (`/safety`, `/concepts/earned-vs-settled`, `/guides/set-allowance-rules`) are each labeled "(Coming soon)" → satisfy T-C12-1's "resolves OR labeled coming soon". The **4 demo images** (`/images/quickstart/demo-{1..4}-*.png`) are unresolved and NOT labeled coming-soon → the one real miss. Per §10 this is Pass-with-followup, not a fail. (The `contract.md → ../onboarding-plan.md` link the CLI also flagged is a Harness doc, not part of the published page — informational only.)
-- **C1 (demo-first) — PASS.** `<CardGroup>` demo (lines 26–57) precedes the first `<Steps>` (line 63). All four family-loop beats present (log → verify → check-progress with "Earned $4.23 · In your wallet $3.50 · Pending $0.73" → settle "$0.73 moved to your wallet"). Not a single-transaction demo. (Image rendering pending assets — see C12 — but beats are fully legible from copy/captions, satisfying T-C1-2/3 under A3.)
-- **C2 (role primary fork) — PASS.** Role `<Tabs>` is the first decision after the demo; 5 roles with plain-language labels (Manager/Co-parent/Learner/Advisor/Family-viewer). Advisor + Family-viewer get minimal-but-present paths (A6 tiering).
-- **C3 (client nested) — PASS.** Client `<Tabs>` are nested inside each role `<Tab>`; no top-level client fork.
-- **C10 (component validity) — PASS.** Components balanced (Tabs 6/6, Tab 21/21, Steps 6/6, Step 11/11, CardGroup 2/2, Card 8/8, Frame 4/4, Note 7/7); Mintlify CLI parsed the page with no MDX error; matches contract §7 tree (role Tabs enclose client Tabs; Learner Tab has no wallet/family-creation step).
-- **C6 (prompts + approval line) — PASS.** Role-specific prompts in every path; the exact approval line appears on both money-moving prompts (Manager settle note, Learner "Move my earnings") — count 2. No over-scoped prompts.
-- **C8 (kid path child-safe) — PASS.** Learner Tab has no wallet-setup and no family-creation; invite-only framing; no banned jargon (USDC / wallet address / on-chain / gas / blockchain); prompts match the §2.5 set verbatim.
-- **C7 (safety leads) — PASS.** Family-control framing in the top `<Note>` (lines 14–18) AND shown in the demo's verify/settle approval moments.
-- **C9 (bilingual-ready) — PASS.** All copy in MDX/components (not rasterized); es-419 duplication comment present; structure locale-duplicable. EN-only present (ES absence not penalized, §8).
-
-## Out-of-scope guard — respected
-
-Absence of primer/concepts/guides/reference pages, an actual es-419 translation, an animated demo, and any directory-install/deep-link/installable-skill path were all correctly NOT penalized (contract §8).
+**Delta from pre-CA-D1 eval:** Prior report incorrectly treated Claude deep-links as HF violations. CA-D1 regen satisfies **HF2a** on all five role paths and **HF2b** on Manager / Co-parent / Learner / Advisor ChatGPT tabs.
 
 ---
 
-## Follow-up ticket (does not block Pass)
+## Hard-fail gates (HF1, HF2a/HF2b, HF3–HF5)
 
-**DOCS-QS-1 — Produce the four demo screenshots.**
-- **What failed:** `quickstart.mdx` references `/images/quickstart/demo-{1..4}-*.png`; the assets don't exist, so they render broken.
-- **Expected:** four annotated screenshots depicting the family-loop beats (log → verify → progress card → settle confirmation).
-- **Actual:** placeholder paths; `mint broken-links` reports 4 unresolved images.
-- **Repro:** `cd docs-quickstart && npx mint@latest broken-links`.
-- **Rubric category impacted:** Accuracy / No-fiction (C12 image dimension). Soft — beats remain legible from copy/captions per A3.
+| Check | Result | Evidence |
+|-------|--------|----------|
+| **T-HF1** | PASS | `directory` / App Directory only in future-tense `<Note>` and dev-mode caveats — not as an available install step. |
+| **T-HF2a** | PASS | Five well-formed `claude.ai/customize/connectors?modal=add-custom-connector&connectorName=AllowMe&connectorUrl=…` links in `quickstart.mdx` (lines 77, 166, 216, 261, 323); same five in `quickstart.html`. Manager: bare `%2Fmcp` (no `setup=`). Invitees: encoded `setup=SETUP-XXXX-XXXX`. Manual paste fallback present under each. |
+| **T-HF2b** | PASS* | Manager, Co-parent, Learner, Advisor: `chatgpt.com/#settings/Connectors` captioned as shortcut only; full dev-mode numbered steps immediately below. *Family-viewer ChatGPT tab is a cross-ref only — see DOCS-QS-2 (not a fiction trap; steps exist elsewhere on the page). |
+| **T-HF3** | PASS | Skill only in future-tense coming-soon note; no numbered install step. |
+| **T-HF4** | PASS | No auth-server / OAuth 2.1 / PKCE docs; `Authentication: OAuth` only in connector fields. |
+| **T-HF5** | PASS | Numbered mechanics match custom-connector / dev-mode / CLI reality. |
+
+**Revoked T-HF2** (blanket deep-link ban) — correctly not applied.
+
+---
+
+## CA-D1 criteria (new)
+
+| Criterion | Checks | Result |
+|-----------|--------|--------|
+| **C13** — role-determined URL | T-C13-1 … 3 | **PASS.** Manager Claude deep-link + manual URL use bare `https://allowme.dev/mcp`. Co-parent, Learner, Advisor, Family-viewer use `?setup=SETUP-XXXX-XXXX` in copy, deep-links, and CLI examples. Explicit “not bare `allowme.dev/mcp`” on invitee paths. |
+| **C14** — verify-page consistency | T-C14-1 … 3 | **PASS.** “magic link” terminology matches `public/verify.html` (“Your magic link”, “Open in Claude”). Invitee flow: parent sends link → deep-link or paste → connect. Deep-link behavior aligned with verify “Open in Claude”. |
+| **C4** — connection verbatim | T-C4-1 … 6 | **PASS** (one gap). Claude/ChatGPT/CLI steps complete on Manager, Co-parent, Learner, Advisor. **Family-viewer ChatGPT** tab omits enumerated dev-mode steps (cross-ref to Co-parent) — follow-up, not fiction. |
+| **C11** — zero fiction | HF suite | **PASS.** |
+
+---
+
+## Other criterion results
+
+- **C1 (demo-first) — PASS.** `## See it in action` + `<CardGroup>` (lines 20–57) precedes first `<Steps>` (line 63). All four family-loop beats in copy/captions (log → verify → earned/in-wallet/pending → settle).
+- **C2 (role primary fork) — PASS.** Five roles with §2.2 plain-language tab titles; role `<Tabs>` first decision after demo.
+- **C3 (client nested) — PASS.** Client `<Tabs>` inside each role `<Tab>`; no top-level client fork.
+- **C10 (components) — PASS.** Valid Mintlify tree; role encloses client; Learner has no wallet/family-creation. Skill step omitted per A2 (coming-soon note satisfies C5/HF3).
+- **C6 (prompts + approval) — PASS.** Role-specific try-it blocks; exact approval line on Manager (settle framing) and Learner (“Move my earnings”). Co-parent/Advisor/Family-viewer have no money-moving prompts — T-C6-2 vacuously satisfied.
+- **C8 (kid path) — PASS.** No jargon; invite-only; §2.5 prompts verbatim; Claude deep-link + magic link (not bare MCP typing).
+- **C7 (safety) — PASS.** Top `<Note>` + demo verify/settle beats show control story.
+- **C9 (bilingual) — PASS.** Copy in MDX/components; es-419 comment; no ES required.
+- **C12 (links) — SOFT-FAIL (Pass-with-followup).** Next-step cards labeled “Coming soon”. Four demo PNGs missing under `/images/quickstart/` (T-C12-1 partial). Privacy href present.
+
+---
+
+## Dual-source parity
+
+`quickstart.mdx` and `public/quickstart.html` agree on CA-D1 mechanics (five Claude deep-links, ChatGPT shortcut captions, magic-link invitee URLs). Either source satisfies the contract for `/quickstart` deployment; Mintlify publish should track `quickstart.mdx`.
+
+---
+
+## Follow-up tickets (do not block Pass)
+
+**DOCS-QS-1 — Produce the four demo screenshots** (unchanged).
+- Paths: `/images/quickstart/demo-{1..4}-*.png`
+- Repro: `cd docs-quickstart && npx mint@latest broken-links`
+
+**DOCS-QS-2 — Inline ChatGPT dev-mode steps on Family-viewer tab.**
+- **What:** Family-viewer ChatGPT panel says “steps same as Co-parent” without the numbered Settings → Developer Mode → New App flow (mdx ~328, html ~339–340).
+- **Expected:** Same enumerated steps as Co-parent/Advisor tabs immediately under the settings shortcut (T-C4-2, T-HF2b strict reading).
+- **Impact:** Accuracy sub-score only; not a fiction-trap.
 
 ---
 
 ## Status
 
-- Evaluation: complete. Verdict **PASS (97/100)**.
-- Blocking gates: all clean.
-- Follow-up: DOCS-QS-1 (demo screenshots) before publish.
-- Independence: graded from contract + test + build only; `progress.md` not read.
+- Evaluation: **complete** for CA-D1 regen.
+- Verdict: **PASS (98/100)**.
+- Blocking gates: **all clean**.
+- Before public publish: DOCS-QS-1 (images); recommend DOCS-QS-2 (Family-viewer ChatGPT copy).
+- Independence: contract + test + build only; `progress.md` not read.
