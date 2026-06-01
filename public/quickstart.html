@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Get Started with AllowMe</title>
+<meta name="description" content="Connect AllowMe to your assistant and run your family's first session — kids earn, parents verify, money settles on approval — in a few minutes.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #1a1a2e; --paper: #faf9f6; --warm: #f5f0e8;
+  --accent: #2d6a4f; --accent-light: #40916c; --accent-glow: #52b788;
+  --gold: #b08d57; --slate: #6b7280; --mist: #e8e4dd; --card: #ffffff;
+  --shadow: 0 1px 3px rgba(26,26,46,0.06), 0 6px 16px rgba(26,26,46,0.04);
+  --radius: 12px;
+  --font-display: 'DM Serif Display', Georgia, serif;
+  --font-body: 'DM Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { font-family: var(--font-body); color: var(--ink); background: var(--paper); line-height: 1.65; font-size: 16px; -webkit-font-smoothing: antialiased; }
+a { color: var(--accent); }
+nav {
+  position: fixed; top: 0; width: 100%; z-index: 100;
+  background: rgba(250,249,246,0.85); backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--mist); padding: 0.75rem 1.5rem;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.nav-logo { font-family: var(--font-display); font-size: 1.25rem; color: var(--ink); text-decoration: none; letter-spacing: -0.01em; }
+.nav-logo span { color: var(--accent); }
+.nav-links { display: flex; gap: 1.5rem; align-items: center; }
+.nav-links a { font-size: 0.875rem; font-weight: 500; color: var(--slate); text-decoration: none; }
+.nav-links a:hover { color: var(--ink); }
+
+.wrap { max-width: 860px; margin: 0 auto; padding: 7rem 1.5rem 5rem; }
+.eyebrow { display:inline-flex; align-items:center; gap:.5rem; background: var(--warm); border:1px solid var(--mist); padding:.35rem 1rem; border-radius:100px; font-size:.8rem; font-weight:500; color: var(--slate); margin-bottom:1.25rem; }
+.eyebrow .dot { width:6px; height:6px; background: var(--accent-glow); border-radius:50%; }
+h1 { font-family: var(--font-display); font-size: clamp(2.2rem,5vw,3.2rem); line-height:1.12; letter-spacing:-0.025em; margin-bottom: 1rem; }
+h2 { font-family: var(--font-display); font-size: 1.75rem; letter-spacing:-0.02em; margin: 3rem 0 1rem; }
+h3 { font-size: 1.05rem; font-weight: 600; margin: 1.5rem 0 .5rem; }
+p { margin-bottom: 1rem; color: #33333f; }
+.lead { font-size: 1.15rem; }
+strong { color: var(--ink); }
+
+.note { background: #eef6f1; border: 1px solid #cfe6da; border-left: 4px solid var(--accent); border-radius: 10px; padding: 1rem 1.25rem; margin: 1.5rem 0; }
+.note.soon { background: var(--warm); border-color: var(--mist); border-left-color: var(--gold); }
+
+/* chat demo */
+.demo { background: var(--card); border:1px solid var(--mist); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.25rem; margin: 1.25rem 0; }
+.demo .conn { font-size:.8rem; color: var(--accent); font-weight:600; display:flex; align-items:center; gap:.4rem; margin-bottom:.9rem; }
+.demo .conn .dot { width:7px; height:7px; border-radius:50%; background: var(--accent-glow); }
+.beat { margin: .35rem 0; }
+.beat .who { font-size:.7rem; text-transform:uppercase; letter-spacing:.06em; color:var(--slate); margin:.6rem 0 .2rem; }
+.bubble { padding:.7rem .95rem; border-radius:14px; max-width:85%; font-size:.95rem; }
+.bubble.user { background: var(--accent); color:#fff; margin-left:auto; border-bottom-right-radius:4px; }
+.bubble.bot { background: var(--warm); color: var(--ink); border-bottom-left-radius:4px; }
+.bubble.bot .hl { color: var(--accent); font-weight:600; }
+
+/* tabs */
+.tabs { margin: 1rem 0; }
+.tablist { display:flex; flex-wrap:wrap; gap:.4rem; border-bottom:1px solid var(--mist); margin-bottom:1rem; }
+.tab-btn { font-family: var(--font-body); font-size:.85rem; font-weight:500; color: var(--slate); background:none; border:none; border-bottom:2px solid transparent; padding:.5rem .75rem; cursor:pointer; }
+.tab-btn:hover { color: var(--ink); }
+.tab-btn[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight:600; }
+.panel { display:none; }
+.panel.active { display:block; animation: fade .25s ease; }
+@keyframes fade { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+.role-tabs > .tablist .tab-btn { background: var(--warm); border:1px solid var(--mist); border-radius:8px; border-bottom:1px solid var(--mist); }
+.role-tabs > .tablist .tab-btn[aria-selected="true"] { background: var(--accent); color:#fff; border-color: var(--accent); }
+
+/* steps */
+.step { border-left:2px solid var(--mist); padding:0 0 .5rem 1.25rem; margin-left:.4rem; position:relative; }
+.step::before { content:""; position:absolute; left:-7px; top:.2rem; width:12px; height:12px; border-radius:50%; background: var(--accent); }
+.step h3 { margin-top:0; }
+ol, ul { margin: 0 0 1rem 1.25rem; }
+li { margin:.25rem 0; }
+code { font-family: var(--font-mono); font-size:.85em; background: var(--warm); padding:.1rem .35rem; border-radius:5px; }
+pre { background:#1a1a2e; color:#e8e4dd; font-family: var(--font-mono); font-size:.85rem; padding:1rem; border-radius:10px; overflow-x:auto; margin:.5rem 0 1rem; }
+pre code { background:none; color:inherit; padding:0; }
+.cards { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin:1rem 0; }
+.cardlink { display:block; background: var(--card); border:1px solid var(--mist); border-radius:10px; padding:1rem 1.1rem; text-decoration:none; color:var(--ink); box-shadow: var(--shadow); }
+.cardlink:hover { border-color: var(--accent-light); }
+.cardlink .t { font-weight:600; margin-bottom:.25rem; }
+.cardlink .d { font-size:.875rem; color: var(--slate); }
+.soonpill { font-size:.7rem; color: var(--gold); font-weight:600; }
+@media (max-width:640px){ .cards{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<nav>
+  <a href="/" class="nav-logo">Allow<span>Me</span></a>
+  <div class="nav-links">
+    <a href="/">Home</a>
+    <a href="https://docs.allowme.dev/privacy">Privacy</a>
+  </div>
+</nav>
+
+<div class="wrap">
+  <span class="eyebrow"><span class="dot"></span> Quickstart</span>
+  <h1>Get Started with AllowMe</h1>
+  <p class="lead">AllowMe turns good habits — reading, chores, learning — into real savings your kids can see and grow. <strong>You set the rules. Your kids earn. You approve.</strong></p>
+
+  <div class="note">
+    <strong>You're always in control.</strong> Parents decide what kids can do. Kids earn and settle within those rails. Money can only ever go to a destination you've authorized — nothing can be sent somewhere you didn't approve, by anyone.
+  </div>
+
+  <h2>See it in action</h2>
+  <p>Before you set anything up, here's the whole AllowMe loop in one family's week. Watch the money go from <strong>earned</strong> to <strong>in the wallet</strong> — only after a parent approves.</p>
+
+  <div class="demo">
+    <div class="conn"><span class="dot"></span> AllowMe connected</div>
+
+    <div class="beat"><div class="who">1 · Maya logs an achievement</div>
+      <div class="bubble user">I read for 30 minutes today</div></div>
+    <div class="beat">
+      <div class="bubble bot">Logged Maya's reading. It's waiting on a parent to verify — <span class="hl">nothing moves yet</span>.</div></div>
+
+    <div class="beat"><div class="who">2 · A parent verifies it</div>
+      <div class="bubble user">Verify that Maya read for 30 minutes today</div></div>
+    <div class="beat">
+      <div class="bubble bot">Verified. Maya <span class="hl">earned $1.25</span> — recorded, but not yet in her wallet. This is the approval moment.</div></div>
+
+    <div class="beat"><div class="who">3 · Maya checks her progress</div>
+      <div class="bubble user">How am I doing this week?</div></div>
+    <div class="beat">
+      <div class="bubble bot"><span class="hl">Earned this week: $4.23</span> · In your wallet: $3.50 · Pending: $0.73</div></div>
+
+    <div class="beat"><div class="who">4 · Maya settles — money moves</div>
+      <div class="bubble user">Move my earnings to my wallet</div></div>
+    <div class="beat">
+      <div class="bubble bot">Done — <span class="hl">$0.73 moved to your wallet.</span></div></div>
+  </div>
+
+  <p>That's AllowMe: <strong>kids earn, parents verify, money settles on approval</strong>, and the difference between <em>earned</em> and <em>in your wallet</em> is always visible. No surprises, no hidden balances.</p>
+
+  <h2>Step 1 — Choose your role</h2>
+  <p>AllowMe works a little differently depending on who you are. Pick the one that fits, then follow the steps inside.</p>
+
+  <div class="tabs role-tabs" data-tabs>
+    <div class="tablist" role="tablist">
+      <button class="tab-btn" role="tab" data-tab="r-manager" aria-selected="true">I'm a parent setting up for my family</button>
+      <button class="tab-btn" role="tab" data-tab="r-coparent" aria-selected="false">I was invited by my partner</button>
+      <button class="tab-btn" role="tab" data-tab="r-learner" aria-selected="false">I was invited by my parent</button>
+      <button class="tab-btn" role="tab" data-tab="r-advisor" aria-selected="false">I help a family with their finances</button>
+      <button class="tab-btn" role="tab" data-tab="r-family" aria-selected="false">I'm family and want to follow along</button>
+    </div>
+
+    <!-- MANAGER -->
+    <div class="panel active" id="r-manager" role="tabpanel">
+      <p>You're the <strong>Manager</strong> — you create the family, invite everyone, and set the rules.</p>
+      <div class="step"><h3>Connect AllowMe</h3>
+        <div class="tabs" data-tabs>
+          <div class="tablist" role="tablist">
+            <button class="tab-btn" data-tab="m-claude" aria-selected="true">Claude</button>
+            <button class="tab-btn" data-tab="m-chatgpt" aria-selected="false">ChatGPT</button>
+            <button class="tab-btn" data-tab="m-cc" aria-selected="false">Claude Code</button>
+            <button class="tab-btn" data-tab="m-codex" aria-selected="false">Codex</button>
+            <button class="tab-btn" data-tab="m-cursor" aria-selected="false">Cursor</button>
+          </div>
+          <div class="panel active" id="m-claude">
+            <ol>
+              <li>Open <strong>Customize → Connectors → Add custom connector</strong>.</li>
+              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>Remote MCP server URL:</strong> <code>https://allowme.dev/mcp</code></li></ul></li>
+              <li>Click <strong>Add</strong>.</li>
+              <li>Click <strong>Connect</strong>, then complete sign-in.</li>
+            </ol>
+            <div class="note">There's no one-click connect button yet — add AllowMe manually with the steps above. Works in Claude.ai and the Claude apps.</div>
+          </div>
+          <div class="panel" id="m-chatgpt">
+            <ol>
+              <li>Open <strong>Settings → Apps → Advanced settings</strong>.</li>
+              <li>Enable <strong>Developer Mode</strong> if prompted.</li>
+              <li>Click <strong>Create</strong> to open the <strong>New App</strong> modal.</li>
+              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>Description:</strong> <code>Family allowance and savings on Base</code></li><li><strong>MCP Server URL:</strong> <code>https://allowme.dev/mcp</code></li><li><strong>Authentication:</strong> <code>OAuth</code></li></ul></li>
+              <li>Check <strong>"I understand and want to continue"</strong> on the risk warning.</li>
+              <li>Click <strong>Create</strong>.</li>
+              <li>Complete sign-in to authorize.</li>
+            </ol>
+            <div class="note">AllowMe is a developer-mode app today — it isn't listed in the directory yet. This dev-mode path stays useful for testing even after a listing exists.</div>
+          </div>
+          <div class="panel" id="m-cc"><pre><code>claude mcp add --transport http allowme https://allowme.dev/mcp</code></pre></div>
+          <div class="panel" id="m-codex"><p>Add an HTTP MCP server pointing at AllowMe in your Codex MCP config:</p><pre><code>{
+  "mcpServers": {
+    "allowme": { "url": "https://allowme.dev/mcp" }
+  }
+}</code></pre></div>
+          <div class="panel" id="m-cursor"><p>Add AllowMe to <code>~/.cursor/mcp.json</code>:</p><pre><code>{
+  "mcpServers": {
+    "allowme": { "url": "https://allowme.dev/mcp" }
+  }
+}</code></pre></div>
+        </div>
+      </div>
+      <div class="step"><h3>Try it</h3>
+        <p>Paste any of these to start:</p>
+        <pre><code>Set up a new family called the Garcias
+Invite my daughter Maya as a learner
+Set Maya's weekly allowance to $15 with 20% going to savings
+Verify that Maya read for 30 minutes today</code></pre>
+        <p>When you later settle balances, <strong>AllowMe will show you exactly what will happen and ask you to approve before anything moves.</strong></p>
+      </div>
+    </div>
+
+    <!-- CO-PARENT -->
+    <div class="panel" id="r-coparent" role="tabpanel">
+      <p>You're a <strong>Co-parent</strong> — you join a family that already exists and can verify achievements and check progress.</p>
+      <div class="step"><h3>Connect AllowMe</h3>
+        <div class="tabs" data-tabs>
+          <div class="tablist" role="tablist">
+            <button class="tab-btn" data-tab="c-claude" aria-selected="true">Claude</button>
+            <button class="tab-btn" data-tab="c-chatgpt" aria-selected="false">ChatGPT</button>
+          </div>
+          <div class="panel active" id="c-claude">
+            <ol>
+              <li>Open <strong>Customize → Connectors → Add custom connector</strong>.</li>
+              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>Remote MCP server URL:</strong> <code>https://allowme.dev/mcp</code></li></ul></li>
+              <li>Click <strong>Add</strong>.</li>
+              <li>Click <strong>Connect</strong>, then complete sign-in.</li>
+            </ol>
+            <div class="note">After you sign in, you'll join the family you were invited to — you don't create a new one.</div>
+          </div>
+          <div class="panel" id="c-chatgpt">
+            <ol>
+              <li>Open <strong>Settings → Apps → Advanced settings</strong>.</li>
+              <li>Enable <strong>Developer Mode</strong> if prompted.</li>
+              <li>Click <strong>Create</strong> to open the <strong>New App</strong> modal.</li>
+              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>Description:</strong> <code>Family allowance and savings on Base</code></li><li><strong>MCP Server URL:</strong> <code>https://allowme.dev/mcp</code></li><li><strong>Authentication:</strong> <code>OAuth</code></li></ul></li>
+              <li>Check <strong>"I understand and want to continue"</strong> on the risk warning.</li>
+              <li>Click <strong>Create</strong>.</li>
+              <li>Complete sign-in to authorize.</li>
+            </ol>
+            <div class="note">AllowMe is a developer-mode app today — it isn't listed in the directory yet.</div>
+          </div>
+        </div>
+      </div>
+      <div class="step"><h3>Try it</h3>
+        <pre><code>Join the family I was invited to
+How is Maya doing this week?
+Verify that Maya practiced piano for 20 minutes today</code></pre>
+      </div>
+    </div>
+
+    <!-- LEARNER -->
+    <div class="panel" id="r-learner" role="tabpanel">
+      <p>You're a <strong>Learner</strong>. Someone in your family invited you. You can see how you're doing and move your own earnings — that's it. No setup, no confusing words.</p>
+      <div class="step"><h3>Connect AllowMe</h3>
+        <div class="tabs" data-tabs>
+          <div class="tablist" role="tablist">
+            <button class="tab-btn" data-tab="l-claude" aria-selected="true">Claude</button>
+            <button class="tab-btn" data-tab="l-chatgpt" aria-selected="false">ChatGPT</button>
+          </div>
+          <div class="panel active" id="l-claude">
+            <ol>
+              <li>Open <strong>Customize → Connectors → Add custom connector</strong>.</li>
+              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>Remote MCP server URL:</strong> <code>https://allowme.dev/mcp</code></li></ul></li>
+              <li>Click <strong>Add</strong>.</li>
+              <li>Click <strong>Connect</strong>, then sign in with the invite from your parent.</li>
+            </ol>
+            <div class="note">You're joining your family — you don't set anything up. If you don't have an invite yet, ask your parent.</div>
+          </div>
+          <div class="panel" id="l-chatgpt">
+            <ol>
+              <li>Open <strong>Settings → Apps → Advanced settings</strong>.</li>
+              <li>Enable <strong>Developer Mode</strong> if prompted.</li>
+              <li>Click <strong>Create</strong> to open the <strong>New App</strong> modal.</li>
+              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>MCP Server URL:</strong> <code>https://allowme.dev/mcp</code></li><li><strong>Authentication:</strong> <code>OAuth</code></li></ul></li>
+              <li>Check <strong>"I understand and want to continue"</strong>.</li>
+              <li>Click <strong>Create</strong>, then sign in with the invite from your parent.</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+      <div class="step"><h3>Try it</h3>
+        <p>Ask AllowMe anything like:</p>
+        <pre><code>How am I doing this week?
+How much have I earned?
+Move my earnings to my wallet
+How much is in my savings?</code></pre>
+        <p>When you move your earnings, <strong>AllowMe will show you exactly what will happen and ask you to approve before anything moves.</strong></p>
+      </div>
+    </div>
+
+    <!-- ADVISOR -->
+    <div class="panel" id="r-advisor" role="tabpanel">
+      <p>You're an <strong>Advisor</strong> — you have a scoped, read-and-advise view of a family you support.</p>
+      <div class="step"><h3>Connect AllowMe</h3>
+        <div class="tabs" data-tabs>
+          <div class="tablist" role="tablist">
+            <button class="tab-btn" data-tab="a-claude" aria-selected="true">Claude</button>
+            <button class="tab-btn" data-tab="a-chatgpt" aria-selected="false">ChatGPT</button>
+            <button class="tab-btn" data-tab="a-cc" aria-selected="false">Claude Code</button>
+            <button class="tab-btn" data-tab="a-codex" aria-selected="false">Codex</button>
+            <button class="tab-btn" data-tab="a-cursor" aria-selected="false">Cursor</button>
+          </div>
+          <div class="panel active" id="a-claude">
+            <ol>
+              <li>Open <strong>Customize → Connectors → Add custom connector</strong>.</li>
+              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>Remote MCP server URL:</strong> <code>https://allowme.dev/mcp</code></li></ul></li>
+              <li>Click <strong>Add</strong>.</li>
+              <li>Click <strong>Connect</strong>, then complete sign-in.</li>
+            </ol>
+          </div>
+          <div class="panel" id="a-chatgpt">
+            <ol>
+              <li>Open <strong>Settings → Apps → Advanced settings</strong>.</li>
+              <li>Enable <strong>Developer Mode</strong> if prompted.</li>
+              <li>Click <strong>Create</strong> to open the <strong>New App</strong> modal.</li>
+              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>MCP Server URL:</strong> <code>https://allowme.dev/mcp</code></li><li><strong>Authentication:</strong> <code>OAuth</code></li></ul></li>
+              <li>Check <strong>"I understand and want to continue"</strong>, then <strong>Create</strong> and sign in.</li>
+            </ol>
+          </div>
+          <div class="panel" id="a-cc"><pre><code>claude mcp add --transport http allowme https://allowme.dev/mcp</code></pre></div>
+          <div class="panel" id="a-codex"><pre><code>{
+  "mcpServers": {
+    "allowme": { "url": "https://allowme.dev/mcp" }
+  }
+}</code></pre></div>
+          <div class="panel" id="a-cursor"><p>Add AllowMe to <code>~/.cursor/mcp.json</code>:</p><pre><code>{
+  "mcpServers": {
+    "allowme": { "url": "https://allowme.dev/mcp" }
+  }
+}</code></pre></div>
+        </div>
+      </div>
+      <div class="step"><h3>Try it</h3>
+        <pre><code>Show me the Garcia family's savings progress
+How much has each child earned this month?</code></pre>
+      </div>
+    </div>
+
+    <!-- FAMILY VIEWER -->
+    <div class="panel" id="r-family" role="tabpanel">
+      <p>You're a <strong>Family viewer</strong> — a read-only follower. You can check how the kids are doing and view receipts. You can't change rules or move money.</p>
+      <div class="step"><h3>Connect AllowMe</h3>
+        <div class="tabs" data-tabs>
+          <div class="tablist" role="tablist">
+            <button class="tab-btn" data-tab="f-claude" aria-selected="true">Claude</button>
+            <button class="tab-btn" data-tab="f-chatgpt" aria-selected="false">ChatGPT</button>
+          </div>
+          <div class="panel active" id="f-claude">
+            <ol>
+              <li>Open <strong>Customize → Connectors → Add custom connector</strong>.</li>
+              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>Remote MCP server URL:</strong> <code>https://allowme.dev/mcp</code></li></ul></li>
+              <li>Click <strong>Add</strong>.</li>
+              <li>Click <strong>Connect</strong>, then complete sign-in with your invite.</li>
+            </ol>
+          </div>
+          <div class="panel" id="f-chatgpt">
+            <ol>
+              <li>Open <strong>Settings → Apps → Advanced settings</strong>.</li>
+              <li>Enable <strong>Developer Mode</strong> if prompted.</li>
+              <li>Click <strong>Create</strong> to open the <strong>New App</strong> modal.</li>
+              <li>Fill in:<ul><li><strong>Name:</strong> <code>AllowMe</code></li><li><strong>MCP Server URL:</strong> <code>https://allowme.dev/mcp</code></li><li><strong>Authentication:</strong> <code>OAuth</code></li></ul></li>
+              <li>Check <strong>"I understand and want to continue"</strong>, then <strong>Create</strong> and sign in.</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+      <div class="step"><h3>Try it</h3>
+        <pre><code>How is Maya doing this week?
+Show me the family's recent achievements</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="note soon">
+    <strong>Coming soon:</strong> an App Directory listing with one-click add, plus a packaged AllowMe skill that teaches your assistant the ropes automatically. For now, the connect steps above are the way in.
+  </div>
+
+  <h2>Next steps</h2>
+  <div class="cards">
+    <a class="cardlink" href="/safety"><div class="t">Is my money and my kid safe?</div><div class="d">The full family-control and safety story. <span class="soonpill">Coming soon</span></div></a>
+    <a class="cardlink" href="/concepts/earned-vs-settled"><div class="t">Earned vs. settled</div><div class="d">Why "earned" and "in your wallet" are different — and why that's good. <span class="soonpill">Coming soon</span></div></a>
+    <a class="cardlink" href="/guides/set-allowance-rules"><div class="t">Set allowance rules</div><div class="d">For Managers: configure categories, amounts, and savings splits. <span class="soonpill">Coming soon</span></div></a>
+    <a class="cardlink" href="https://docs.allowme.dev/privacy"><div class="t">Privacy &amp; data</div><div class="d">How AllowMe handles your family's data.</div></a>
+  </div>
+</div>
+
+<script>
+// Generic nested-tab handler: a click activates the target panel within the
+// nearest [data-tabs] container, scoped so role tabs and client tabs don't
+// collide.
+document.querySelectorAll('[data-tabs] .tab-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var group = btn.closest('[data-tabs]');
+    var targetId = btn.getAttribute('data-tab');
+    group.querySelectorAll(':scope > .tablist > .tab-btn').forEach(function (b) {
+      b.setAttribute('aria-selected', String(b === btn));
+    });
+    group.querySelectorAll(':scope > .panel').forEach(function (p) {
+      p.classList.toggle('active', p.id === targetId);
+    });
+  });
+});
+</script>
+</body>
+</html>

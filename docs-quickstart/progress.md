@@ -47,6 +47,21 @@
   `quickstart.mdx`. Makes T-C10-1 ("page builds") runnable via `mint dev` /
   `mint broken-links` from `docs-quickstart/`.
 
+## App-served rendering (decision: serve from the Bun app, not Mintlify)
+
+- `public/quickstart.html` — self-contained HTML/CSS/JS rendering of
+  `quickstart.mdx` (source of truth), in the landing-site design language.
+  Role tabs (outer) / client tabs (nested) via scoped vanilla JS; connect copy
+  verbatim; approval line on both money-moving prompts.
+- `app/server.ts` — `GET /quickstart` route added (mirrors landing pattern,
+  read-once at startup, before static middleware). Dockerfile already copies
+  `public/`, so it ships with `railway up` (no Dockerfile change).
+- **DOCS-QS-1 resolved for this rendering:** the demo is rendered as inline
+  chat-bubble mockups (all four family-loop beats), so there are no broken
+  placeholder images. Verified locally: `GET /quickstart` → HTTP 200; `tsc`
+  clean; 21 data-tab targets ↔ 21 panel ids.
+- Live at `allowme.dev/quickstart` after the next deploy.
+
 ## Open / needs-asset
 
 - **Demo images** `/images/quickstart/demo-{1..4}-*.png` are referenced as
