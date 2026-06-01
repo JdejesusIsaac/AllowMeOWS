@@ -16,4 +16,4 @@ region = "us-east4"
 # Exit code 2 = some families failed (operator review).
 [[deploy.cronJobs]]
 schedule = "0 0 * * 0"
-command = "tsx src/jobs/auto-settle.ts"
+command = "bun src/jobs/auto-settle.ts"
