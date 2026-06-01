@@ -348,11 +348,22 @@ const __dirname = dirname(__filename);
 const publicDir = join(__dirname, "..", "public");
 const landingPath = join(publicDir, "index.html");
 const verifyPath = join(publicDir, "verify.html");
+const quickstartPath = join(publicDir, "quickstart.html");
 
 if (existsSync(landingPath)) {
   const landingHtml = readFileSync(landingPath, "utf-8");
   app.get("/", (_req, res) => {
     res.type("html").send(landingHtml);
+  });
+}
+
+// Docs — self-contained Quickstart page (onboarding Deliverable 1). Served
+// from the app rather than a separate Mintlify host; the page is plain
+// HTML/CSS/JS with no build step. Dockerfile already copies public/.
+if (existsSync(quickstartPath)) {
+  const quickstartHtml = readFileSync(quickstartPath, "utf-8");
+  app.get("/quickstart", (_req, res) => {
+    res.type("html").send(quickstartHtml);
   });
 }
 
