@@ -1,0 +1,377 @@
+---
+title: "Get Started with AllowMe"
+description: "Connect AllowMe to your assistant and run your family's first session — kids earn, parents verify, money settles on approval — in a few minutes."
+---
+
+{/* es-419 translation track: this page is authored so an es-419 version can be
+    dropped in at /es/quickstart by duplicating the component tree. All
+    user-facing copy lives in MDX/components — never rasterized into images —
+    so it stays translatable (C9). */}
+
+AllowMe turns good habits — reading, chores, learning — into real savings your
+kids can see and grow. **You set the rules. Your kids earn. You approve.**
+
+<Note>
+  **You're always in control.** Parents decide what kids can do. Kids earn and
+  settle within those rails. Money can only ever go to a destination you've
+  authorized — nothing can be sent somewhere you didn't approve, by anyone.
+</Note>
+
+## See it in action
+
+Before you set anything up, here's the whole AllowMe loop in one family's week.
+Watch the money go from **earned** to **in the wallet** — only after a parent
+approves.
+
+<CardGroup cols={2}>
+  <Card title="1 · Maya logs an achievement">
+    <Frame caption="Maya tells the assistant she read for 30 minutes today.">
+      <img src="/images/quickstart/demo-1-log.png" alt="A learner logging a reading achievement in chat" />
+    </Frame>
+    Maya reads for 30 minutes and logs it. Nothing moves yet — it's waiting on a
+    parent.
+  </Card>
+  <Card title="2 · A parent verifies it">
+    <Frame caption="Dad verifies Maya's reading. This is the approval moment.">
+      <img src="/images/quickstart/demo-2-verify.png" alt="A parent verifying the achievement" />
+    </Frame>
+    Dad confirms the achievement. The amount is now **earned** — recorded, but
+    not yet in Maya's wallet.
+  </Card>
+  <Card title="3 · Maya checks her progress">
+    <Frame caption="check-progress shows earned, in-wallet, and pending side by side.">
+      <img src="/images/quickstart/demo-3-progress.png" alt="A progress card showing earned, in wallet, and pending amounts" />
+    </Frame>
+    Maya asks how she's doing and sees it plainly:
+
+    > **Earned this week: $4.23 · In your wallet: $3.50 · Pending: $0.73**
+  </Card>
+  <Card title="4 · Maya settles — money moves">
+    <Frame caption="After settle-balance, the pending amount lands in Maya's wallet.">
+      <img src="/images/quickstart/demo-4-settle.png" alt="A settlement confirmation moving pending funds to the wallet" />
+    </Frame>
+    Maya settles her balance. Only now does money move:
+
+    > **$0.73 moved to your wallet.**
+  </Card>
+</CardGroup>
+
+That's AllowMe: **kids earn, parents verify, money settles on approval**, and
+the difference between *earned* and *in your wallet* is always visible. No
+surprises, no hidden balances.
+
+<Steps>
+  <Step title="Choose your role">
+    AllowMe works a little differently depending on who you are. Pick the one
+    that fits, then follow the steps inside.
+
+    <Tabs>
+      <Tab title="I'm a parent setting up for my family">
+        You're the **Manager** — you create the family, invite everyone, and
+        set the rules.
+
+        <Steps>
+          <Step title="Connect AllowMe">
+            <Tabs>
+              <Tab title="Claude">
+                1. Open **Customize → Connectors → Add custom connector**.
+                2. Fill in:
+                   - **Name:** `AllowMe`
+                   - **Remote MCP server URL:** `https://allowme.dev/mcp`
+                3. Click **Add**.
+                4. Click **Connect**, then complete sign-in.
+
+                <Note>
+                  There's no one-click connect button yet — add AllowMe manually
+                  with the steps above. Works in Claude.ai and the Claude apps.
+                </Note>
+              </Tab>
+              <Tab title="ChatGPT">
+                1. Open **Settings → Apps → Advanced settings**.
+                2. Enable **Developer Mode** if prompted.
+                3. Click **Create** to open the **New App** modal.
+                4. Fill in:
+                   - **Name:** `AllowMe`
+                   - **Description:** `Family allowance and savings on Base`
+                   - **MCP Server URL:** `https://allowme.dev/mcp`
+                   - **Authentication:** `OAuth`
+                5. Check **"I understand and want to continue"** on the risk warning.
+                6. Click **Create**.
+                7. Complete sign-in to authorize.
+
+                <Note>
+                  AllowMe is a developer-mode app today — it isn't listed in the
+                  directory yet. This dev-mode path stays useful for testing even
+                  after a listing exists.
+                </Note>
+              </Tab>
+              <Tab title="Claude Code">
+                ```bash
+                claude mcp add --transport http allowme https://allowme.dev/mcp
+                ```
+              </Tab>
+              <Tab title="Codex">
+                Add an HTTP MCP server pointing at AllowMe in your Codex MCP
+                config:
+
+                ```json
+                {
+                  "mcpServers": {
+                    "allowme": { "url": "https://allowme.dev/mcp" }
+                  }
+                }
+                ```
+              </Tab>
+              <Tab title="Cursor">
+                Add AllowMe to `~/.cursor/mcp.json`:
+
+                ```json
+                {
+                  "mcpServers": {
+                    "allowme": { "url": "https://allowme.dev/mcp" }
+                  }
+                }
+                ```
+              </Tab>
+            </Tabs>
+          </Step>
+          <Step title="Try it">
+            Paste any of these to start:
+
+            ```text
+            Set up a new family called the Garcias
+            Invite my daughter Maya as a learner
+            Set Maya's weekly allowance to $15 with 20% going to savings
+            Verify that Maya read for 30 minutes today
+            ```
+
+            When you later settle balances, **AllowMe will show you exactly what
+            will happen and ask you to approve before anything moves.**
+          </Step>
+        </Steps>
+      </Tab>
+
+      <Tab title="I was invited by my partner">
+        You're a **Co-parent** — you join a family that already exists and can
+        verify achievements and check progress.
+
+        <Steps>
+          <Step title="Connect AllowMe">
+            <Tabs>
+              <Tab title="Claude">
+                1. Open **Customize → Connectors → Add custom connector**.
+                2. Fill in:
+                   - **Name:** `AllowMe`
+                   - **Remote MCP server URL:** `https://allowme.dev/mcp`
+                3. Click **Add**.
+                4. Click **Connect**, then complete sign-in.
+
+                <Note>
+                  After you sign in, you'll join the family you were invited to —
+                  you don't create a new one.
+                </Note>
+              </Tab>
+              <Tab title="ChatGPT">
+                1. Open **Settings → Apps → Advanced settings**.
+                2. Enable **Developer Mode** if prompted.
+                3. Click **Create** to open the **New App** modal.
+                4. Fill in:
+                   - **Name:** `AllowMe`
+                   - **Description:** `Family allowance and savings on Base`
+                   - **MCP Server URL:** `https://allowme.dev/mcp`
+                   - **Authentication:** `OAuth`
+                5. Check **"I understand and want to continue"** on the risk warning.
+                6. Click **Create**.
+                7. Complete sign-in to authorize.
+
+                <Note>
+                  AllowMe is a developer-mode app today — it isn't listed in the
+                  directory yet.
+                </Note>
+              </Tab>
+            </Tabs>
+          </Step>
+          <Step title="Try it">
+            ```text
+            Join the family I was invited to
+            How is Maya doing this week?
+            Verify that Maya practiced piano for 20 minutes today
+            ```
+          </Step>
+        </Steps>
+      </Tab>
+
+      <Tab title="I was invited by my parent">
+        You're a **Learner**. Someone in your family invited you. You can see how
+        you're doing and move your own earnings — that's it. No setup, no
+        confusing words.
+
+        <Steps>
+          <Step title="Connect AllowMe">
+            <Tabs>
+              <Tab title="Claude">
+                1. Open **Customize → Connectors → Add custom connector**.
+                2. Fill in:
+                   - **Name:** `AllowMe`
+                   - **Remote MCP server URL:** `https://allowme.dev/mcp`
+                3. Click **Add**.
+                4. Click **Connect**, then sign in with the invite from your parent.
+
+                <Note>
+                  You're joining your family — you don't set anything up. If you
+                  don't have an invite yet, ask your parent.
+                </Note>
+              </Tab>
+              <Tab title="ChatGPT">
+                1. Open **Settings → Apps → Advanced settings**.
+                2. Enable **Developer Mode** if prompted.
+                3. Click **Create** to open the **New App** modal.
+                4. Fill in:
+                   - **Name:** `AllowMe`
+                   - **MCP Server URL:** `https://allowme.dev/mcp`
+                   - **Authentication:** `OAuth`
+                5. Check **"I understand and want to continue"**.
+                6. Click **Create**, then sign in with the invite from your parent.
+              </Tab>
+            </Tabs>
+          </Step>
+          <Step title="Try it">
+            Ask AllowMe anything like:
+
+            ```text
+            How am I doing this week?
+            How much have I earned?
+            Move my earnings to my wallet
+            How much is in my savings?
+            ```
+
+            When you move your earnings, **AllowMe will show you exactly what
+            will happen and ask you to approve before anything moves.**
+          </Step>
+        </Steps>
+      </Tab>
+
+      <Tab title="I help a family with their finances">
+        You're an **Advisor** — you have a scoped, read-and-advise view of a
+        family you support.
+
+        <Steps>
+          <Step title="Connect AllowMe">
+            <Tabs>
+              <Tab title="Claude">
+                1. Open **Customize → Connectors → Add custom connector**.
+                2. Fill in:
+                   - **Name:** `AllowMe`
+                   - **Remote MCP server URL:** `https://allowme.dev/mcp`
+                3. Click **Add**.
+                4. Click **Connect**, then complete sign-in.
+              </Tab>
+              <Tab title="ChatGPT">
+                1. Open **Settings → Apps → Advanced settings**.
+                2. Enable **Developer Mode** if prompted.
+                3. Click **Create** to open the **New App** modal.
+                4. Fill in:
+                   - **Name:** `AllowMe`
+                   - **MCP Server URL:** `https://allowme.dev/mcp`
+                   - **Authentication:** `OAuth`
+                5. Check **"I understand and want to continue"**, then **Create** and sign in.
+              </Tab>
+              <Tab title="Claude Code">
+                ```bash
+                claude mcp add --transport http allowme https://allowme.dev/mcp
+                ```
+              </Tab>
+              <Tab title="Codex">
+                ```json
+                {
+                  "mcpServers": {
+                    "allowme": { "url": "https://allowme.dev/mcp" }
+                  }
+                }
+                ```
+              </Tab>
+              <Tab title="Cursor">
+                Add AllowMe to `~/.cursor/mcp.json`:
+
+                ```json
+                {
+                  "mcpServers": {
+                    "allowme": { "url": "https://allowme.dev/mcp" }
+                  }
+                }
+                ```
+              </Tab>
+            </Tabs>
+          </Step>
+          <Step title="Try it">
+            ```text
+            Show me the Garcia family's savings progress
+            How much has each child earned this month?
+            ```
+          </Step>
+        </Steps>
+      </Tab>
+
+      <Tab title="I'm family and want to follow along">
+        You're a **Family viewer** — a read-only follower. You can check how the
+        kids are doing and view receipts. You can't change rules or move money.
+
+        <Steps>
+          <Step title="Connect AllowMe">
+            <Tabs>
+              <Tab title="Claude">
+                1. Open **Customize → Connectors → Add custom connector**.
+                2. Fill in:
+                   - **Name:** `AllowMe`
+                   - **Remote MCP server URL:** `https://allowme.dev/mcp`
+                3. Click **Add**.
+                4. Click **Connect**, then complete sign-in with your invite.
+              </Tab>
+              <Tab title="ChatGPT">
+                1. Open **Settings → Apps → Advanced settings**.
+                2. Enable **Developer Mode** if prompted.
+                3. Click **Create** to open the **New App** modal.
+                4. Fill in:
+                   - **Name:** `AllowMe`
+                   - **MCP Server URL:** `https://allowme.dev/mcp`
+                   - **Authentication:** `OAuth`
+                5. Check **"I understand and want to continue"**, then **Create** and sign in.
+              </Tab>
+            </Tabs>
+          </Step>
+          <Step title="Try it">
+            ```text
+            How is Maya doing this week?
+            Show me the family's recent achievements
+            ```
+          </Step>
+        </Steps>
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+<Note>
+  **Coming soon:** an App Directory listing with one-click add, plus a packaged
+  AllowMe skill that teaches your assistant the ropes automatically. For now,
+  the connect steps above are the way in.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Is my money and my kid safe?" href="/safety">
+    The full family-control and safety story. _(Coming soon)_
+  </Card>
+  <Card title="Earned vs. settled" href="/concepts/earned-vs-settled">
+    Why "earned" and "in your wallet" are different — and why that's good.
+    _(Coming soon)_
+  </Card>
+  <Card title="Set allowance rules" href="/guides/set-allowance-rules">
+    For Managers: configure categories, amounts, and savings splits.
+    _(Coming soon)_
+  </Card>
+  <Card title="Privacy & data" href="https://docs.allowme.dev/privacy">
+    How AllowMe handles your family's data.
+  </Card>
+</CardGroup>
