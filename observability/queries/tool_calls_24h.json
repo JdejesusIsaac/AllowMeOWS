@@ -1,0 +1,7 @@
+{
+  "name": "tool_calls_24h",
+  "description": "Count of MCP tool calls grouped by tool.name over the last 24 hours",
+  "dataset": "mcp-events",
+  "aql": "['mcp-events'] | where ['span.name'] startswith 'tool.' | where _time > ago(24h) | summarize count() by tool.name, bin_auto(_time) | last 24 hours",
+  "version": "1.0.0"
+}

@@ -1,0 +1,33 @@
+{
+  "name": "overview",
+  "description": "AllowMe MCP — tool call volume, p95 latency, error rate over 24h",
+  "refresh": 60,
+  "version": "1.0.0",
+  "sprint": "4.0.2",
+  "panels": [
+    {
+      "id": "tool_calls_24h",
+      "title": "Tool calls — 24h",
+      "type": "stacked-area",
+      "query": "tool_calls_24h",
+      "groupBy": ["tool.name"],
+      "timeRange": "24h"
+    },
+    {
+      "id": "tool_p95_24h",
+      "title": "Tool p95 latency — 24h",
+      "type": "line",
+      "query": "tool_p95_24h",
+      "groupBy": ["tool.name"],
+      "timeRange": "24h"
+    },
+    {
+      "id": "error_rate_24h",
+      "title": "Tool error rate — 24h",
+      "type": "stacked-bar",
+      "query": "error_rate_24h",
+      "groupBy": ["tool.name"],
+      "timeRange": "24h"
+    }
+  ]
+}

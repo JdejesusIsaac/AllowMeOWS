@@ -12,13 +12,22 @@
     "setup": "tsx src/wallet/setup.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:no-tokens": "! git grep -E 'ows_key_[a-f0-9]{64}' -- ':(top)src' ':(top)app' ':(top)public' ':(top)policies' ':(top)README.md'",
+    "bench:distributor": "tsx tests/bench/distributor.bench.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.66",
     "@base-org/account": "2.5.5",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@open-wallet-standard/core": "^1.2.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.50.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.54.0",
+    "@opentelemetry/resources": "^1.28.0",
+    "@opentelemetry/sdk-node": "^0.54.0",
+    "@opentelemetry/semantic-conventions": "^1.28.0",
+    "@sentry/node": "^8.40.0",
     "@types/qrcode": "^1.5.6",
     "@types/string-similarity": "^4.0.2",
     "ai": "^6.0.146",
@@ -34,6 +43,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^3.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

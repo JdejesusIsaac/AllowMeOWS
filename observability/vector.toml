@@ -1,0 +1,89 @@
+# Sprint 4.0.2 W2 + W3 — Vector sidecar configuration for AllowMe + OWS
+# audit log forwarding to Axiom.
+#
+# Vector binary runs as a Railway sidecar (plan D4). Single config
+# covers both audit streams; both ship to the same Axiom dataset
+# (`audit-logs`) with the `source` field discriminating origin.
+#
+# Required environment:
+#   AXIOM_INGEST_TOKEN — bearer token for Axiom (also used by OTel)
+#   AXIOM_AUDIT_DATASET — dataset name, defaults to "audit-logs"
+
+# ============================================================
+# Sources — tail two JSONL streams
+# ============================================================
+
+# W2: AllowMe per-family audit log. New JSONL format introduced in
+# Sprint 4.0.2 D7 (the inline migration in `src/engine/state.ts`
+# `addAuditEntry` converts legacy JSON-array files on first append).
+[sources.allowme_audit]
+type = "file"
+include = ["/app/data/families/*/audit-log.jsonl"]
+read_from = "end"
+ignore_older_secs = 86400
+# Family-level rotation isn't implemented yet; checkpoint state lives
+# under /tmp so Railway's ephemeral FS is acceptable.
+data_dir = "/tmp/vector-allowme"
+
+# W3: OWS per-family audit log. Sprint 4.0.1 made this stream uniquely
+# valuable — every `policy_evaluated` entry confirms the policy engine
+# is engaging. Format is already JSONL (OWS native), no migration.
+[sources.ows_audit]
+type = "file"
+include = ["/root/.ows/families/*/.ows/logs/audit.jsonl"]
+read_from = "end"
+ignore_older_secs = 86400
+data_dir = "/tmp/vector-ows"
+
+# ============================================================
+# Transforms — parse JSON + tag source + extract family_id
+# ============================================================
+
+[transforms.parse_allowme_audit]
+type = "remap"
+inputs = ["allowme_audit"]
+source = '''
+. = parse_json!(.message)
+.source = "allowme"
+# Extract the family_id from the file path. The path looks like
+# /app/data/families/<id>/audit-log.jsonl — capture the segment
+# between "families/" and the next "/".
+.family_id = parse_regex!(.file, r'families/(?P<id>[^/]+)/audit-log\.jsonl$').id
+'''
+
+[transforms.parse_ows_audit]
+type = "remap"
+inputs = ["ows_audit"]
+source = '''
+. = parse_json!(.message)
+.source = "ows"
+.family_id = parse_regex!(.file, r'families/(?P<id>[^/]+)/\.ows/').id
+'''
+
+# ============================================================
+# Sink — single Axiom dataset
+# ============================================================
+
+[sinks.axiom_audit]
+type = "http"
+inputs = ["parse_allowme_audit", "parse_ows_audit"]
+uri = "https://api.axiom.co/v1/datasets/${AXIOM_AUDIT_DATASET:-audit-logs}/ingest"
+method = "post"
+encoding.codec = "json"
+compression = "gzip"
+auth.strategy = "bearer"
+auth.token = "${AXIOM_INGEST_TOKEN}"
+
+[sinks.axiom_audit.batch]
+# Batch up to 1MB or 1 second, whichever comes first. Stays well
+# below Axiom's 100MB request limit while keeping forwarding latency
+# under the 30s contract SLA (C3, C5).
+max_bytes = 1048576
+timeout_secs = 1
+
+[sinks.axiom_audit.request]
+# Retries with exponential backoff. Vector will buffer up to
+# `buffer.max_events` before dropping; at AllowMe scale (~50MB/day
+# at 5k families per research §5.1), this is generous.
+retry_attempts = 5
+retry_max_duration_secs = 60

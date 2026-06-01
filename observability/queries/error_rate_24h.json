@@ -1,0 +1,7 @@
+{
+  "name": "error_rate_24h",
+  "description": "Count of tool.success=false events over total, by tool.name, last 24 hours",
+  "dataset": "mcp-events",
+  "aql": "['mcp-events'] | where ['span.name'] startswith 'tool.' | where _time > ago(24h) | summarize errors=countif(['tool.success']==false), total=count() by tool.name | extend rate = errors * 1.0 / total | last 24 hours",
+  "version": "1.0.0"
+}

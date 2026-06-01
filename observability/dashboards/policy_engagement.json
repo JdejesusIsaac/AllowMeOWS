@@ -1,0 +1,31 @@
+{
+  "name": "policy_engagement",
+  "description": "OWS policy engine engagement — confirms Sprint 4.0.1's agent-mode token path is firing on every transfer",
+  "refresh": 60,
+  "version": "1.0.0",
+  "sprint": "4.0.2",
+  "panels": [
+    {
+      "id": "policy_evaluated_24h",
+      "title": "policy_evaluated events — 24h",
+      "type": "stacked-area",
+      "dataset": "audit-logs",
+      "filter": {
+        "source": "ows",
+        "event": "policy_evaluated"
+      },
+      "groupBy": ["decision"],
+      "timeRange": "24h"
+    },
+    {
+      "id": "broadcast_to_policy_ratio",
+      "title": "broadcast_transaction vs policy_evaluated ratio",
+      "description": "Should always be ~1:1. A broadcast without a preceding policy_evaluated is a custody-grade signal.",
+      "type": "ratio",
+      "dataset": "audit-logs",
+      "numerator": { "source": "ows", "event": "broadcast_transaction" },
+      "denominator": { "source": "ows", "event": "policy_evaluated" },
+      "timeRange": "24h"
+    }
+  ]
+}

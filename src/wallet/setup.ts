@@ -157,7 +157,17 @@ export class WalletSetup {
   async initializeFamily(
     config: FamilyConfig,
     passphrase: string
-  ): Promise<{ managerToken: string; wallets: string[] }> {
+  ): Promise<{
+    managerToken: string;
+    /**
+     * Sprint 4.1 W3 — OWS-assigned UUID for the API key file (the key
+     * stored at `~/.ows/families/<id>/.ows/keys/<managerKeyId>.json`).
+     * `FamilyApiTokenManager.saveToken` records this so a future
+     * `forgetToken` → `revokeApiKey` flow can target the right file.
+     */
+    managerKeyId: string;
+    wallets: string[];
+  }> {
     const state = new StateManager();
     const createdWallets: string[] = [];
     if (!config.familyId) {
@@ -291,6 +301,7 @@ export class WalletSetup {
 
     return {
       managerToken: managerKey.token,
+      managerKeyId: managerKey.id,
       wallets: createdWallets,
     };
   }

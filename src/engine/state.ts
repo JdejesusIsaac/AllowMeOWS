@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, rename, readdir, stat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename, readdir, stat, appendFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,12 @@ import type {
 } from "../schemas.js";
 import { FamilyConfigSchema } from "../schemas.js";
 import { STREAK } from "../constants.js";
+// Sprint 4.0.2 W4 — token redaction consolidated into the
+// single-source-of-truth observability module (contract C8). The audit-
+// walk surface continues to call `redactTokens`; the canonical regex
+// now lives in `src/observability/redact.ts`.
+import { redactTokens } from "../observability/redact.js";
+export { redactTokens };
 
 // Resolve project root from this file's location (src/engine/state.ts → ../../)
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -332,14 +338,91 @@ export class StateManager {
     await this.saveSavingsEntries(familyId, entries);
   }
 
-  // === Audit Log ===
+  // === Audit Log (Sprint 4.0.2 W2 + D7: JSONL on-disk format) ===
+  //
+  // The format moves from a single pretty-printed JSON array to one
+  // JSON object per line. Two reasons:
+  //   1. Vector tails JSONL natively (research §4.4); JSON-array tail
+  //      requires re-reading the full array on every append.
+  //   2. Append is O(1) on JSONL, O(n) on JSON-array. Audit logs grow
+  //      unboundedly across a family's lifetime.
+  //
+  // Migration: if the legacy `audit-log.json` exists but the new
+  // `audit-log.jsonl` does not, convert entries to JSONL lines and
+  // rename the legacy file to `.bak` (one-shot, idempotent — see
+  // `scripts/migrate-audit-logs.ts` for the bulk version). Reads
+  // prefer JSONL, fall back to JSON-array for fully-legacy families
+  // that haven't appended since the migration.
+
   async loadAuditLog(familyId: string): Promise<AuditEntry[]> {
-    return readJson<AuditEntry[]>(familyId, "audit-log.json", []);
+    await ensureFamilyDir(familyId);
+    const familyDir = getFamilyDir(familyId);
+    const jsonlPath = join(familyDir, "audit-log.jsonl");
+    const legacyPath = join(familyDir, "audit-log.json");
+
+    if (existsSync(jsonlPath)) {
+      try {
+        const raw = await readFile(jsonlPath, "utf-8");
+        const lines = raw.split("\n").filter((l) => l.trim().length > 0);
+        return lines.map((l) => JSON.parse(l) as AuditEntry);
+      } catch {
+        return [];
+      }
+    }
+    // Fall back to legacy JSON-array format if it exists.
+    if (existsSync(legacyPath)) {
+      try {
+        const raw = await readFile(legacyPath, "utf-8");
+        return JSON.parse(raw) as AuditEntry[];
+      } catch {
+        return [];
+      }
+    }
+    return [];
   }
 
   async addAuditEntry(familyId: string, entry: AuditEntry): Promise<void> {
-    const log = await this.loadAuditLog(familyId);
-    log.push(entry);
-    await writeJson(familyId, "audit-log.json", log);
+    await ensureFamilyDir(familyId);
+    const familyDir = getFamilyDir(familyId);
+    const jsonlPath = join(familyDir, "audit-log.jsonl");
+    const legacyPath = join(familyDir, "audit-log.json");
+
+    // Sprint 4.1 W9 — defense-in-depth token redaction. `details` is a
+    // free-form object and historically has contained whatever the
+    // caller put there. After 4.1, `ows_key_…` API tokens are bearer
+    // credentials; a leaked token in the audit log is a custody-grade
+    // disclosure. We walk the `details` object and replace any
+    // matching string against `OWS_TOKEN_REGEX` with `ows_key_***`.
+    // Sprint 4.0.2: redactTokens is imported from observability/redact
+    // (single source of truth — contract C8 consolidation).
+    const safeEntry: AuditEntry = entry.details !== undefined
+      ? { ...entry, details: redactTokens(entry.details) as AuditEntry["details"] }
+      : entry;
+
+    // One-shot inline migration: if the legacy JSON-array file exists
+    // and the new JSONL file does not, migrate before append. Preserves
+    // the legacy file as `.bak` for one release cycle (D7 / C4).
+    if (existsSync(legacyPath) && !existsSync(jsonlPath)) {
+      try {
+        const raw = await readFile(legacyPath, "utf-8");
+        const legacyEntries = JSON.parse(raw) as AuditEntry[];
+        const jsonlBody = legacyEntries.map((e) => JSON.stringify(e)).join("\n") + (legacyEntries.length > 0 ? "\n" : "");
+        await writeFile(jsonlPath, jsonlBody, "utf-8");
+        await rename(legacyPath, legacyPath + ".bak");
+      } catch {
+        // If migration fails, fall through to the simple append. The
+        // legacy reader path remains available for the next read.
+      }
+    }
+
+    // Append a single JSONL line. `appendFile` semantics from
+    // node:fs/promises so we keep the O(1) append behavior on disk.
+    const line = JSON.stringify(safeEntry) + "\n";
+    await appendFile(jsonlPath, line, "utf-8");
   }
 }
+
+// Sprint 4.0.2 — `redactTokens` is imported from
+// `src/observability/redact.ts` (re-exported at the top of this file
+// for backward compatibility with consumers that imported it from
+// `state.ts`). See contract C8 / sprint-4.0.2 progress S3.

@@ -43,10 +43,32 @@ vi.mock("../src/keys/family-keys.js", () => ({
   })),
 }));
 // WalletSetup.initializeFamily — bypass real wallet creation in bootstrap.
+// Sprint 4.1 W4 — return the new {managerToken, managerKeyId, wallets} shape
+// so configureFamilyCore can hand the token off to FamilyApiTokenManager.
 vi.mock("../src/wallet/setup.js", () => ({
   WalletSetup: vi.fn().mockImplementation(() => ({
-    initializeFamily: vi.fn().mockResolvedValue(undefined),
+    initializeFamily: vi.fn().mockResolvedValue({
+      managerToken: "ows_key_" + "a".repeat(64),
+      managerKeyId: "test-key-id",
+      wallets: [],
+    }),
   })),
+}));
+// Sprint 4.1 W6 — bypass the agent-mode token machinery. The same pattern
+// as the FamilyKeyManager mock above. Allowlist tests assert on the
+// allowlist-enforcement and audit-log behaviour, not on the token storage
+// path — that's covered by the FamilyApiTokenManager unit suite (AM1–AM10).
+vi.mock("../src/keys/family-api-tokens.js", () => ({
+  OWS_TOKEN_PREFIX: "ows_key_",
+  FamilyApiTokenManager: vi.fn().mockImplementation(() => ({
+    saveToken: vi.fn(),
+    getToken: () => "ows_key_" + "a".repeat(64),
+    hasToken: () => true,
+    forgetToken: () => "test-key-id",
+  })),
+  lazyMintTokenForLegacyFamily: vi
+    .fn()
+    .mockResolvedValue("ows_key_" + "a".repeat(64)),
 }));
 
 import { StateManager } from "../src/engine/state.js";

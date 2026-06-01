@@ -40,6 +40,22 @@ vi.mock("../src/keys/family-keys.js", () => ({
     getOrGenerateFamilyKey: () => "test-passphrase",
   })),
 }));
+// Sprint 4.1 W6 — bypass the agent-mode token machinery for session-lifecycle
+// tests. Same pattern as the FamilyKeyManager mock above; this test exercises
+// the session-lifecycle handlers, not the token storage path (which is
+// covered by the AM1–AM10 unit suite).
+vi.mock("../src/keys/family-api-tokens.js", () => ({
+  OWS_TOKEN_PREFIX: "ows_key_",
+  FamilyApiTokenManager: vi.fn().mockImplementation(() => ({
+    saveToken: vi.fn(),
+    getToken: () => "ows_key_" + "a".repeat(64),
+    hasToken: () => true,
+    forgetToken: () => "test-key-id",
+  })),
+  lazyMintTokenForLegacyFamily: vi
+    .fn()
+    .mockResolvedValue("ows_key_" + "a".repeat(64)),
+}));
 
 import { StateManager } from "../src/engine/state.js";
 import { MemberIndex } from "../src/identity/member-index.js";

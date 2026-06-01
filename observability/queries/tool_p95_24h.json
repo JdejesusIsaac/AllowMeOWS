@@ -1,0 +1,7 @@
+{
+  "name": "tool_p95_24h",
+  "description": "p95 of tool.duration_ms grouped by tool.name over the last 24 hours",
+  "dataset": "mcp-events",
+  "aql": "['mcp-events'] | where ['span.name'] startswith 'tool.' | where _time > ago(24h) | summarize p95=percentile(['span.duration_ms'], 95) by tool.name, bin_auto(_time) | last 24 hours",
+  "version": "1.0.0"
+}
