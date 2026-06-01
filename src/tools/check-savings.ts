@@ -11,16 +11,25 @@ import {
   type ToolResponse,
 } from "../middleware/access-control.js";
 import { renderProgressBar, formatUsdFromMicro } from "../utils/card-formatting.js";
+import { FilesystemLedger, isLedgerWriteEnabled } from "../engine/ledger.js";
 
-/** Sprint 3.6 — rich markdown CARD2 (friendly empty-state, locked vs released). */
+/**
+ * Sprint 3.6 — rich markdown CARD2 (friendly empty-state, locked vs released).
+ *
+ * Sprint 4.0.3 W10 — `pendingToVaultMicro` surfaces savings-release
+ * earnings that are recognized in the ledger but not yet settled on-chain
+ * into the vault (Copy-reference.md §6.1). `null`/`0` → no pending row.
+ */
 export function buildCheckSavingsRichMarkdown(input: {
   childName: string;
   totalUsdcLockedMicro: number;
   totalReleasedMicro: number;
   multiplier: number;
+  pendingToVaultMicro?: number;
 }): string {
+  const pendingMicro = input.pendingToVaultMicro ?? 0;
   const lines: string[] = [`**${input.childName}'s savings vault**`, ""];
-  if (input.totalUsdcLockedMicro === 0 && input.totalReleasedMicro === 0) {
+  if (input.totalUsdcLockedMicro === 0 && input.totalReleasedMicro === 0 && pendingMicro <= 0) {
     lines.push(
       `You're just getting started — you haven't tucked away allowance into savings yet, ${input.childName}. ` +
         `Nothing wrong with **$0.00 locked** today: complete an achievement and your streak will grow the vault.`,
@@ -44,10 +53,21 @@ export function buildCheckSavingsRichMarkdown(input: {
   );
   lines.push(`**Locked:** ${lockedStr}  ${bar}  (${input.multiplier}x streak when deposited)`);
   lines.push("");
-  lines.push(`**Released (ready to spend):** ${releasedStr}`);
+  lines.push(`**Released (in wallet):** ${releasedStr} ready to spend`);
+  if (pendingMicro > 0) {
+    lines.push("");
+    lines.push(
+      `⏳ **Pending settlement:** ${formatUsdFromMicro(pendingMicro)} — earned, not yet moved to vault`,
+    );
+    lines.push("");
+    lines.push(
+      "👉 Mature savings show as **released**. Run **settle-balance** to move pending into the vault, or wait for the next auto-settle.",
+    );
+    return lines.join("\n");
+  }
   lines.push("");
   lines.push(
-    "👉 Mature savings show as **released** — ask a parent about **release-savings** when the lock ends.",
+    "👉 Mature savings show as **released**. Ask a parent (or run **settle-balance** yourself) when ready.",
   );
   return lines.join("\n");
 }
@@ -170,11 +190,23 @@ export async function checkSavingsHandler(
     }
 
     const mult = streak?.multiplier ?? 1.0;
+
+    // Sprint 4.0.3 W10 — surface savings earnings recognized in the ledger
+    // but not yet settled into the vault (Copy-reference.md §6.1). Gated on
+    // ledger mode so legacy deployments render the original card.
+    let pendingToVaultMicro = 0;
+    if (isLedgerWriteEnabled()) {
+      const ledger = new FilesystemLedger();
+      const pendingSummary = await ledger.summarizePending(familyId, targetChild);
+      pendingToVaultMicro = pendingSummary.byDestination["savings-vault"] ?? 0;
+    }
+
     const summary = buildCheckSavingsRichMarkdown({
       childName: targetChild,
       totalUsdcLockedMicro: totalUsdcLocked,
       totalReleasedMicro: totalReleased,
       multiplier: mult,
+      pendingToVaultMicro,
     });
 
     return {

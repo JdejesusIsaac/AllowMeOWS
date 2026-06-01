@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { StateManager } from "../engine/state.js";
-import { USDC } from "../constants.js";
+import { StateManager, getFamilyVaultPath } from "../engine/state.js";
+import { USDC, WALLET_NAMES } from "../constants.js";
 import {
   withAccessControl,
   buildNoIdentityResponse,
@@ -11,9 +11,27 @@ import {
   type ToolResponse,
 } from "../middleware/access-control.js";
 import { renderProgressBar, formatUsdFromMicro } from "../utils/card-formatting.js";
+import { FilesystemLedger, isLedgerWriteEnabled } from "../engine/ledger.js";
+import {
+  fetchUsdcBalanceMicros,
+  resolveChildWalletAddress,
+} from "../utils/usdc-balance.js";
 
 /**
  * Sprint 3.6 rich markdown card (contract C3 CARD1): progress bar + $ + 🔥/⏳ + 👉
+ *
+ * Sprint 4.0.3 W10 — extended with the load-bearing earned-vs-spendable
+ * UX (Copy-reference.md §3-§5):
+ *   • `walletBalanceMicro` — on-chain USDC balance via `balanceOf`.
+ *     `null` when the lookup failed (RPC out, no resolvable address).
+ *   • `pendingLedgerMicro` — sum of unsettled LedgerEntries; the gap
+ *     between "earned" and "spendable".
+ *   • `autoSettleOn` + `nextSundayDays` — selects manual vs auto-settle
+ *     copy variants (Copy-reference.md §3 vs §4).
+ *   • `role` — manager vs learner copy fork (§3 vs §5).
+ *
+ * All new fields are optional so pre-4.0.3 callers (and the
+ * empty-state path) continue to render the legacy card.
  */
 export function buildCheckProgressRichMarkdown(input: {
   childName: string;
@@ -24,6 +42,12 @@ export function buildCheckProgressRichMarkdown(input: {
   byCatEarned: Record<string, number>;
   streak: { currentStreak: number; multiplier: number } | null;
   hasEarnedOrPending: boolean;
+  // Sprint 4.0.3 W10
+  walletBalanceMicro?: number | null;
+  pendingLedgerMicro?: number;
+  autoSettleOn?: boolean;
+  nextSundayDays?: number;
+  role?: string;
 }): string {
   const streakDays = input.streak?.currentStreak ?? 0;
   const mult = input.streak?.multiplier ?? 1;
@@ -35,12 +59,67 @@ export function buildCheckProgressRichMarkdown(input: {
     10,
   );
 
+  // Sprint 4.0.3 W10 — settlement-aware fields. `pendingLedgerMicro` is
+  // the source of truth for "pending settlement"; fall back to the legacy
+  // achievement-based `pendingMicro` only when the ledger view is absent.
+  const managerView = input.role !== undefined && input.role !== "learner";
+  const walletMicro = input.walletBalanceMicro;
+  const pendingSettleMicro = input.pendingLedgerMicro ?? input.pendingMicro ?? 0;
+  const autoOn = input.autoSettleOn === true;
+  const sundayDays = input.nextSundayDays ?? 0;
+
   const lines: string[] = [`**${input.childName}'s week so far**`, ""];
+
+  /** Render the 💰 wallet row. Skipped entirely when balance is unknown
+   *  (null) so a transient RPC outage never shows a misleading $0.00. */
+  const pushWalletRow = (earnedThisWeekZero: boolean): void => {
+    if (walletMicro === null || walletMicro === undefined) return;
+    const amt = formatUsdFromMicro(walletMicro);
+    if (managerView) {
+      lines.push(`💰 **In ${input.childName}'s wallet:** ${amt} spendable`);
+    } else if (earnedThisWeekZero && walletMicro > 0) {
+      // Copy-reference §3.4 — no earnings this week but money carried over.
+      lines.push(`💰 **In your wallet:** ${amt} from previous weeks`);
+    } else {
+      lines.push(`💰 **In your wallet:** ${amt} ready to spend`);
+    }
+  };
+
+  /** Render the ⏳ pending-settlement row + any settlement-options block. */
+  const pushPendingRows = (): void => {
+    if (pendingSettleMicro <= 0) return;
+    const amt = formatUsdFromMicro(pendingSettleMicro);
+    if (managerView) {
+      if (autoOn) {
+        lines.push(`⏳ **Pending:** ${amt} — auto-settles Sunday 00:00 UTC (in ${sundayDays} days)`);
+        lines.push(`✅ Auto-settle is enabled. Run **settle-balance** if you'd like to settle sooner.`);
+      } else {
+        lines.push(`⏳ **Pending:** ${amt} earned but not yet moved to wallet`);
+      }
+      return;
+    }
+    // Kid-facing pending copy.
+    if (autoOn) {
+      const when = sundayDays <= 0 ? "tonight" : `Sunday (in ${sundayDays} days)`;
+      lines.push(`⏳ **Pending settlement:** ${amt} — auto-settles ${when}`);
+    } else {
+      lines.push(`⏳ **Pending settlement:** ${amt} — run **settle-balance** to move it to your wallet`);
+    }
+  };
 
   if (!input.hasEarnedOrPending) {
     lines.push(
-      `Earned: ${formatUsdFromMicro(0)} / ${formatUsdFromMicro(input.weeklyBudgetMicro)} ${weekBar}`,
+      `Earned this week: ${formatUsdFromMicro(0)} / ${formatUsdFromMicro(input.weeklyBudgetMicro)} ${weekBar}`,
     );
+    // Carry-over wallet balance can still exist with zero earnings.
+    if (walletMicro && walletMicro > 0) {
+      lines.push("Ready when you are.");
+      lines.push("");
+      pushWalletRow(true);
+      lines.push("");
+      lines.push("👉 Tell a parent what you accomplished and they can verify it.");
+      return lines.join("\n");
+    }
     lines.push(`Streak: ${streakDays} days ${streakEmoji} (${mult}x multiplier)`);
     lines.push("");
     lines.push("**Categories**");
@@ -58,11 +137,29 @@ export function buildCheckProgressRichMarkdown(input: {
   }
 
   lines.push(
-    `Earned: ${formatUsdFromMicro(input.totalEarnedMicro)} / ${formatUsdFromMicro(input.weeklyBudgetMicro)} ${weekBar}`,
+    `Earned this week: ${formatUsdFromMicro(input.totalEarnedMicro)} / ${formatUsdFromMicro(input.weeklyBudgetMicro)} ${weekBar}`,
   );
   lines.push(
     `Streak: ${streakDays} days ${streakEmoji} (${mult}x multiplier)`,
   );
+
+  // Wallet + pending-settlement block (Copy-reference §3 / §5).
+  const earnedZero = input.totalEarnedMicro <= 0;
+  const hasSettlementRows =
+    (walletMicro !== null && walletMicro !== undefined) || pendingSettleMicro > 0;
+  if (hasSettlementRows) {
+    lines.push("");
+    pushWalletRow(earnedZero);
+    pushPendingRows();
+    // Manager settlement-options block (Copy-reference §5.1, auto off).
+    if (managerView && !autoOn && pendingSettleMicro > 0) {
+      lines.push("");
+      lines.push("**Settlement options:**");
+      lines.push("- Run **settle-balance** now to push pending → wallet (~$0.02 gas, one transaction)");
+      lines.push("- Enable weekly auto-settle via **configure-policy** to settle every Sunday automatically");
+    }
+  }
+
   lines.push("");
   lines.push("**Categories**");
   for (const cat of input.categories) {
@@ -72,15 +169,24 @@ export function buildCheckProgressRichMarkdown(input: {
       `${cat.name}   ${formatUsdFromMicro(e)} / ${formatUsdFromMicro(cat.budget)} ${bar}`,
     );
   }
-  if (input.pendingMicro > 0) {
-    lines.push("");
-    lines.push(
-      `⏳ ${formatUsdFromMicro(input.pendingMicro)} is pending distribution — ask a parent to run **distribute-allowance** when ready.`,
-    );
-  }
   lines.push("");
   lines.push("👉 Log something today to keep your streak going.");
   return lines.join("\n");
+}
+
+/**
+ * Sprint 4.0.3 W10 — whole days until the next Sunday 00:00 UTC, the
+ * auto-settle cadence (`AUTO_SETTLE_CRON_EXPRESSION`). Returns 0 when the
+ * next boundary is less than 24h away (drives the "tonight" copy variant).
+ */
+export function daysUntilNextSundayUtc(now: Date = new Date()): number {
+  const dow = now.getUTCDay(); // 0 = Sunday
+  const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  // Days until the upcoming Sunday boundary; if today is Sunday, target next week.
+  const delta = dow === 0 ? 7 : 7 - dow;
+  next.setUTCDate(next.getUTCDate() + delta);
+  const ms = next.getTime() - now.getTime();
+  return Math.floor(ms / (24 * 60 * 60 * 1000));
 }
 
 export async function checkProgressHandler(
@@ -227,6 +333,32 @@ export async function checkProgressHandler(
         }),
       );
 
+      // Sprint 4.0.3 W10 — settlement-aware enrichment. Only engaged when
+      // ledger mode is on so legacy (pre-4.0.3) deployments keep the
+      // original card and never incur the per-call balanceOf RPC.
+      let pendingLedgerMicro: number | undefined;
+      let walletBalanceMicro: number | null | undefined;
+      let autoSettleOn: boolean | undefined;
+      let nextSundayDays: number | undefined;
+      if (isLedgerWriteEnabled()) {
+        const ledger = new FilesystemLedger();
+        const summary = await ledger.summarizePending(familyId, child.name);
+        pendingLedgerMicro = summary.totalMicros;
+        autoSettleOn = config.autoSettleWeekly === true;
+        nextSundayDays = daysUntilNextSundayUtc();
+        const address = resolveChildWalletAddress({
+          childName: child.name,
+          externalAddress: child.walletAddress,
+          owsWalletName: WALLET_NAMES.childWallet(child.name),
+          vaultPath: getFamilyVaultPath(familyId),
+        });
+        // null address (unresolvable wallet) → leave balance undefined so
+        // the card omits the wallet row rather than showing a wrong $0.00.
+        walletBalanceMicro = address
+          ? await fetchUsdcBalanceMicros(address, config.chainId, config.usdcAddress)
+          : undefined;
+      }
+
       progressCardsForSingleScope.push(
         buildCheckProgressRichMarkdown({
           childName: child.name,
@@ -236,7 +368,15 @@ export async function checkProgressHandler(
           categories: child.categories || [],
           byCatEarned,
           streak,
-          hasEarnedOrPending: hasEarned || pending > 0,
+          // Render the full card (not the empty-state) whenever there's
+          // anything to settle — ledger pending counts even with no
+          // this-week achievement (e.g. carried-over earnings).
+          hasEarnedOrPending: hasEarned || pending > 0 || (pendingLedgerMicro ?? 0) > 0,
+          walletBalanceMicro,
+          pendingLedgerMicro,
+          autoSettleOn,
+          nextSundayDays,
+          role: caller.role,
         }),
       );
 

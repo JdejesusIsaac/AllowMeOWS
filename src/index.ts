@@ -24,6 +24,8 @@ import { registerStartLearningSessionTool } from "./tools/start-learning-session
 import { registerGetSessionStateTool } from "./tools/get-session-state.js";
 import { registerCompleteLearningSessionTool } from "./tools/complete-learning-session.js";
 import { registerViewSessionReceiptTool } from "./tools/view-session-receipt.js";
+// Sprint 4.0.3 W6 — settle-balance is the only on-chain path post-cutover.
+import { registerSettleBalanceTool } from "./tools/settle-balance.js";
 
 // Resolve master encryption key at startup (auto-generates if needed)
 try {
@@ -72,6 +74,8 @@ registerStartLearningSessionTool(server);
 registerGetSessionStateTool(server);
 registerCompleteLearningSessionTool(server);
 registerViewSessionReceiptTool(server);
+// Sprint 4.0.3 — settle-balance (only on-chain path post-cutover)
+registerSettleBalanceTool(server);
 
 // Connect via stdio transport
 const transport = new StdioServerTransport();

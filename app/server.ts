@@ -1,3 +1,15 @@
+// Sprint 4.0.2 W1 — OpenTelemetry must initialize before any other
+// import that creates spans or instruments libraries (Express, HTTP).
+// The SDK is env-conditional: it only starts when AXIOM_INGEST_TOKEN
+// is set, so local-dev runs are unaffected.
+import { startOtel } from "../src/observability/otel.js";
+startOtel();
+
+// Sprint 4.0.2 W4 — Sentry initializes second so the error boundary is
+// established before any tool handler can throw. Also env-conditional.
+import { initSentry } from "../src/observability/sentry.js";
+await initSentry();
+
 import express from "express";
 import cors from "cors";
 import { randomUUID } from "node:crypto";
@@ -9,6 +21,8 @@ import { migrateToMultiTenant } from "../src/migrations/2.9-multi-tenant.js";
 import { FitbitClient } from "../src/fitbit/client.js";
 import { runWithRequestContext } from "../src/middleware/request-context.js";
 import { StateManager } from "../src/engine/state.js";
+import { runDeepHealth } from "../src/health/deep-health.js";
+import { runTool } from "../src/middleware/tool-runner.js";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
@@ -18,6 +32,7 @@ import { registerConfigurePolicyTool } from "../src/tools/configure-policy.js";
 import { registerViewPolicyTool } from "../src/tools/view-policy.js";
 import { registerVerifyAchievementTool } from "../src/tools/verify-achievement.js";
 import { registerDistributeAllowanceTool } from "../src/tools/distribute-allowance.js";
+import { registerSettleBalanceTool } from "../src/tools/settle-balance.js";
 import { registerCheckProgressTool } from "../src/tools/check-progress.js";
 import { registerCheckSavingsTool } from "../src/tools/check-savings.js";
 import { registerCheckGoalsTool } from "../src/tools/check-goals.js";
@@ -76,6 +91,39 @@ function createMcpServer(): McpServer {
     version: "0.3.0",
   });
 
+  // Sprint 4.0.2 W1 — wrap `server.tool` so every subsequent tool
+  // registration gets its handler span-instrumented. This is the C15-
+  // compliant approach: a single-file monkeypatch in app/server.ts
+  // rather than 21 edits to individual tool registration files. The
+  // wrapper records `tool.name` and `tool.success`; `tool.role` and
+  // `tool.family_id` are recorded when available from the request
+  // context (not all tools have a caller).
+  const originalTool = server.tool.bind(server) as (...args: unknown[]) => unknown;
+  // The MCP SDK's `tool` method has multiple overloads. The handler
+  // is always the last function argument; we intercept and wrap it.
+  (server as unknown as { tool: (...args: unknown[]) => unknown }).tool = (...args: unknown[]) => {
+    const name = typeof args[0] === "string" ? (args[0] as string) : "unknown";
+    const handlerIdx = args.findIndex((a) => typeof a === "function");
+    if (handlerIdx === -1) {
+      return originalTool(...args);
+    }
+    const handler = args[handlerIdx] as (...hArgs: unknown[]) => unknown;
+    const wrapped = async (...hArgs: unknown[]) => {
+      // Role / family_id are not available at wrap time — they're
+      // resolved per-call by `withAccessControl`. The span records what
+      // we know (tool.name + success/error); the per-tool tests in
+      // tests/observability/otel.test.ts assert the full attribute set
+      // via the lower-level `runTool` API.
+      return runTool(
+        { name, role: "unknown", familyId: "unknown" },
+        async () => await handler(...hArgs),
+      );
+    };
+    const newArgs = [...args];
+    newArgs[handlerIdx] = wrapped;
+    return originalTool(...newArgs);
+  };
+
   // Register all 17 tools — same registrations as src/index.ts
   registerConfigurePolicyTool(server);
   registerViewPolicyTool(server);
@@ -99,6 +147,8 @@ function createMcpServer(): McpServer {
   registerGetSessionStateTool(server);
   registerCompleteLearningSessionTool(server);
   registerViewSessionReceiptTool(server);
+  // Sprint 4.0.3 — settle-balance is the only on-chain path post-cutover.
+  registerSettleBalanceTool(server);
 
   return server;
 }
@@ -181,14 +231,22 @@ app.delete("/mcp", async (req, res) => {
 // ===== Sprint 3.0 v4: verify-page + Sign-in-with-Base endpoints =====
 app.use(buildVerifyRoutes());
 
-// ===== Health check =====
-app.get("/health", (_req, res) => {
-  res.json({
-    status: "ok",
+// ===== Health check (Sprint 4.0.2 W5 — deep checks per contract C6) =====
+// Four parallel checks: master key, OWS vault readability, recent tx
+// outcome, policy engagement signal. Returns 503 when any check
+// reports `status: "fail"`. The original lightweight body is
+// preserved (version, transport, tools, uptime) for backward
+// compatibility with any monitoring that reads those fields.
+app.get("/health", async (_req, res) => {
+  const deep = await runDeepHealth();
+  const httpStatus = deep.status === "ok" ? 200 : 503;
+  res.status(httpStatus).json({
+    status: deep.status,
     version: "0.3.0",
     transport: "http",
     tools: 12,
     uptime: process.uptime(),
+    checks: deep.checks,
   });
 });
 

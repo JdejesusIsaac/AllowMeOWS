@@ -81,6 +81,9 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     // child's session receipts; cannot start or complete sessions
     // (criterion 8: only the learner runs sessions).
     "view-session-receipt",
+    // Sprint 4.0.3 W6 — settle-balance is the only path to on-chain
+    // after the Phase C cutover. Manager can settle for any child.
+    "settle-balance",
   ],
   [ROLES.CO_PARENT]: [
     "view-policy",
@@ -128,6 +131,10 @@ export const ROLE_TOOL_ACCESS: Record<Role, string[]> = {
     "get-session-state",
     "complete-learning-session",
     "view-session-receipt",
+    // Sprint 4.0.3 W6 — learner can self-settle their OWN pending
+    // balance. The handler enforces childName === caller.childName
+    // (LS23). Family viewers and advisors remain rejected (LS24, LS25).
+    "settle-balance",
   ],
 };
 

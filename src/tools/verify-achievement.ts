@@ -3,6 +3,11 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { StateManager } from "../engine/state.js";
 import { PolicyEngine } from "../engine/policy.js";
+import {
+  FilesystemLedger,
+  buildLedgerEntriesForAchievement,
+  isLedgerWriteEnabled,
+} from "../engine/ledger.js";
 import { AchievementSourceEnum } from "../schemas.js";
 import type { AchievementRecord } from "../schemas.js";
 import {
@@ -187,6 +192,44 @@ export async function verifyAchievementHandler(
     };
 
     await state.addAchievement(familyId, record);
+
+    // Sprint 4.0.3 W2 — dual-write to the ledger. Phase A writes both
+    // an Achievement AND the corresponding LedgerEntries. Phase C (post-
+    // cutover) keeps this write; distribute-allowance becomes a no-op
+    // for new achievements because the ledger entries already exist.
+    //
+    // Idempotency via `findBySourceId`: if this handler is re-entered
+    // for the same record (e.g. a process crash mid-write that gets
+    // retried with the same persisted Achievement.id), no duplicates
+    // are written. The check is per-family because sourceId is only
+    // unique within a family.
+    //
+    // Errors here MUST NOT fail the achievement: the Achievement is
+    // already persisted. We log to stderr and continue; a follow-up
+    // settle-balance or migration run will pick up the missing entries.
+    if (isLedgerWriteEnabled()) {
+      try {
+        const ledger = new FilesystemLedger();
+        const existing = await ledger.findBySourceId(familyId, record.id);
+        if (existing.length === 0) {
+          const entries = buildLedgerEntriesForAchievement(
+            record,
+            childConfig.savingsPercent,
+            familyId,
+          );
+          for (const entry of entries) {
+            await ledger.append(entry);
+          }
+        }
+      } catch (ledgerErr) {
+        console.error(
+          "[verify-achievement] ledger dual-write failed for " +
+            `achievement ${record.id}; Achievement record already persisted. ` +
+            "A future settle-balance or migration run will reconcile.",
+          ledgerErr,
+        );
+      }
+    }
 
     let goalCompleted: string | null = null;
     if (childConfig.learningGoals && childConfig.learningGoals.length > 0) {

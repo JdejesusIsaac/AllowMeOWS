@@ -9,3 +9,11 @@ restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
 numReplicas = 1
 region = "us-east4"
+
+# Sprint 4.0.3 W7 — auto-settle scheduled task.
+# Runs every Sunday at 00:00 UTC for families opted-in via
+# FamilyConfig.autoSettleWeekly. Honors ALLOWME_AUTO_SETTLE_DISABLED.
+# Exit code 2 = some families failed (operator review).
+[[deploy.cronJobs]]
+schedule = "0 0 * * 0"
+command = "tsx src/jobs/auto-settle.ts"

@@ -3,9 +3,13 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { StateManager, getFamilyVaultPath } from "../engine/state.js";
 import { WalletDistributor } from "../wallet/distributor.js";
-import { FamilyKeyManager } from "../keys/family-keys.js";
+import {
+  FamilyApiTokenManager,
+  lazyMintTokenForLegacyFamily,
+} from "../keys/family-api-tokens.js";
 import { USDC, WALLET_NAMES } from "../constants.js";
 import { checkDestinationAllowlist } from "../core/allowlist.js";
+import { FilesystemLedger, isLedgerOnlyMode } from "../engine/ledger.js";
 import {
   withAccessControl,
   buildNoIdentityResponse,
@@ -16,7 +20,9 @@ import {
 
 // Sprint 3.0.2 — extracted core handler so integration tests (AL6, AL7) can
 // invoke it directly with a mocked WalletDistributor.
-async function releaseSavingsCore(
+// Sprint 4.0.3 — exported so Phase C integration tests can invoke it
+// directly with the ledger-only mode env flag.
+export async function releaseSavingsCore(
   args: Record<string, unknown>,
   caller: CallerContext | null
 ): Promise<ToolResponse> {
@@ -37,17 +43,31 @@ async function releaseSavingsCore(
           };
         }
 
-        // Auto-resolve per-family encryption key scoped to this caller's family
-        const keyManager = new FamilyKeyManager();
-        let passphrase: string | undefined;
-        if (keyManager.hasFamilyKey(familyId)) {
-          passphrase = keyManager.getFamilyKey(familyId);
-        } else if (process.env.OWS_PASSPHRASE) {
-          passphrase = process.env.OWS_PASSPHRASE;
-          console.error(`[keys] Using legacy OWS_PASSPHRASE for family. New families use per-family keys.`);
+        // Sprint 4.1 W6 — agent-mode signing via OWS API token.
+        // See distribute-allowance.ts for the rationale; Sprint 4.1 D6
+        // removes the `OWS_PASSPHRASE` env-var fallback from the three
+        // signing callsites (multi-tenant correctness).
+        const apiTokens = new FamilyApiTokenManager();
+        let apiToken = apiTokens.getToken(familyId);
+        if (!apiToken) {
+          try {
+            apiToken = await lazyMintTokenForLegacyFamily(familyId);
+          } catch (mintErr) {
+            return {
+              content: [{
+                type: "text" as const,
+                text: JSON.stringify({
+                  success: false,
+                  error:
+                    `Family wallet not initialized. Run configure-policy first. ` +
+                    `(${mintErr instanceof Error ? mintErr.message : String(mintErr)})`,
+                }),
+              }],
+            };
+          }
         }
         // Per-family OWS vault (Sprint 2.9.1) — wallets live under data/families/<id>/.ows
-        const distributor = new WalletDistributor(passphrase, getFamilyVaultPath(familyId));
+        const distributor = new WalletDistributor(apiToken, getFamilyVaultPath(familyId));
 
         // Load all savings entries for this family (not filtered by child yet,
         // so we can save them all back)
@@ -71,6 +91,121 @@ async function releaseSavingsCore(
                 success: true,
                 released: 0,
                 message: "No savings ready for release.",
+              }),
+            }],
+          };
+        }
+
+        // Sprint 4.0.3 W4 — Phase C ledger-only path. Instead of
+        // broadcasting USDC from savings-vault → child wallet, we
+        // mark the savings entries as released AND write
+        // `savings-release` LedgerEntries pointing at the child wallet.
+        // The next `settle-balance` call moves the funds on-chain.
+        // PAXG entries skip the ledger step (they require a MoonPay
+        // swap; the existing kid-facing message still applies).
+        if (isLedgerOnlyMode()) {
+          if (dryRun) {
+            const total = readyEntries.reduce((s, e) => s + e.amount, 0);
+            const previewLines = [`**Preview — would release ${readyEntries.length} matured entries**`];
+            for (const e of readyEntries) {
+              previewLines.push(
+                `- ${e.childName}: $${(e.amount / 10 ** USDC.DECIMALS).toFixed(2)} (entry ${e.id.slice(0, 8)})`,
+              );
+            }
+            previewLines.push(
+              "",
+              "Run again with dryRun=false to ledgerize. On-chain transfer happens via **settle-balance**.",
+            );
+            return {
+              content: [{
+                type: "text" as const,
+                text: JSON.stringify({
+                  success: true,
+                  dryRun: true,
+                  mode: "ledger-only",
+                  wouldRelease: readyEntries.length,
+                  totalMicros: total,
+                  message: previewLines.join("\n"),
+                  summary: previewLines.join("\n"),
+                }),
+              }],
+            };
+          }
+          const ledger = new FilesystemLedger();
+          const releaseTime = new Date().toISOString();
+          let usdcEntriesLedgerized = 0;
+          let usdcMicrosLedgerized = 0;
+          const paxgEntries: typeof readyEntries = [];
+
+          for (const entry of readyEntries) {
+            // PAXG: skip ledger (needs MoonPay swap), just mark released
+            if (entry.asset === "PAXG") {
+              entry.released = true;
+              entry.releasedAt = releaseTime;
+              paxgEntries.push(entry);
+              continue;
+            }
+            // USDC: write savings-release entry, mark source released
+            const multiplied = Math.round(
+              entry.amount * entry.multiplierAtDeposit,
+            );
+            await ledger.append({
+              id: randomUUID(),
+              familyId,
+              childName: entry.childName,
+              kind: "savings-release",
+              destination: "child-wallet",
+              amountUsdcMicros: multiplied,
+              status: "pending",
+              createdAt: releaseTime,
+              sourceId: entry.id,
+              retryCount: 0,
+            });
+            entry.released = true;
+            entry.releasedAt = releaseTime;
+            usdcEntriesLedgerized += 1;
+            usdcMicrosLedgerized += multiplied;
+          }
+          await state.saveSavingsEntries(familyId, allEntries);
+
+          await state.addAuditEntry(familyId, {
+            id: randomUUID(),
+            timestamp: releaseTime,
+            action: "savings-release",
+            actor: caller.memberId,
+            details: {
+              tool: "release-savings",
+              mode: "ledger-only",
+              usdcEntriesLedgerized,
+              paxgEntriesReleased: paxgEntries.length,
+              totalMicrosLedgerized: usdcMicrosLedgerized,
+            },
+            amount: usdcMicrosLedgerized,
+          });
+
+          const lines = [
+            `**Matured savings ready to settle**`,
+            "",
+            `${usdcEntriesLedgerized} USDC entries ($${(usdcMicrosLedgerized / 10 ** USDC.DECIMALS).toFixed(2)}) queued for transfer to child wallet.`,
+          ];
+          if (paxgEntries.length > 0) {
+            lines.push(
+              "",
+              `${paxgEntries.length} PAXG entries marked released — Claude will handle the MoonPay swap separately.`,
+            );
+          }
+          lines.push("", "Run **settle-balance** to push the queued entries on-chain.");
+          const summary = lines.join("\n");
+          return {
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({
+                success: true,
+                mode: "ledger-only",
+                released: usdcEntriesLedgerized + paxgEntries.length,
+                ledgerizedMicros: usdcMicrosLedgerized,
+                message: summary,
+                summary,
               }),
             }],
           };
@@ -122,17 +257,9 @@ async function releaseSavingsCore(
           let attemptedDestination: string | undefined;
 
           if (!dryRun) {
-            if (!passphrase) {
-              return {
-                content: [{
-                  type: "text" as const,
-                  text: JSON.stringify({
-                    success: false,
-                    error: "Family wallet not initialized. Run configure-policy first.",
-                  }),
-                }],
-              };
-            }
+            // Sprint 4.1 W6 — the previous `if (!passphrase)` guard is
+            // structurally unreachable now; agent-token resolution above
+            // either returns a valid token or returns an error response.
 
             // Sprint 3.0.2 — Destination allowlist check on the child-wallet
             // leg. Decision 2: the savings-vault-as-source is exempt by

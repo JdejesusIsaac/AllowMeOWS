@@ -22,6 +22,7 @@ import { randomUUID } from "node:crypto";
 import { StateManager, getFamilyVaultPath } from "../engine/state.js";
 import { WalletSetup } from "../wallet/setup.js";
 import { FamilyKeyManager } from "../keys/family-keys.js";
+import { FamilyApiTokenManager } from "../keys/family-api-tokens.js";
 import { MemberIndex } from "../identity/member-index.js";
 import { SetupCodeStore } from "../identity/setup-codes.js";
 import { ROLES, USDC } from "../constants.js";
@@ -282,6 +283,8 @@ async function bootstrapFamily(
     // FamilyConfigSchema); anything ≥ 1 means "has been through configure
     // since the counter shipped". W2 / CP-VER1.
     policyVersion: 1,
+    // Sprint 4.0.3 W7 — opt-in weekly auto-settle. Default off (D4).
+    autoSettleWeekly: false,
   };
 
   const keyManager = new FamilyKeyManager();
@@ -289,7 +292,20 @@ async function bootstrapFamily(
 
   await state.createFamilyDir(familyId);
   const setup = new WalletSetup(getFamilyVaultPath(familyId));
-  await setup.initializeFamily(familyConfig, familyKey);
+  const setupResult = await setup.initializeFamily(familyConfig, familyKey);
+
+  // Sprint 4.1 W4 — capture the bootstrap-minted OWS API token and persist
+  // it under the master key. The same token is used on every subsequent
+  // `distribute-allowance` / `release-savings` / `settle-session-payout`
+  // call to engage the OWS policy engine (W6 callsites). Token lives in
+  // `data/family-api-tokens.json`; the per-family OWS vault holds the
+  // encrypted secret blob keyed by `managerKeyId`.
+  const apiTokens = new FamilyApiTokenManager();
+  apiTokens.saveToken(
+    familyId,
+    setupResult.managerToken,
+    setupResult.managerKeyId
+  );
 
   await state.saveFamilyConfig(familyId, familyConfig);
   // Sprint 3.0.6 — synchronous cache invalidation immediately after the
@@ -468,6 +484,9 @@ async function updateExistingFamily(
     // load with policyVersion: 0 (Zod default), so their first post-deploy
     // update bumps to 1 — matching the bootstrap semantics. W2 / CP-VER2.
     policyVersion: (existingConfig?.policyVersion ?? 0) + 1,
+    // Sprint 4.0.3 W7 — preserve auto-settle preference across updates.
+    // Default off for pre-4.0.3 configs (D4: opt-in).
+    autoSettleWeekly: existingConfig?.autoSettleWeekly ?? false,
   };
 
   const keyManager = new FamilyKeyManager();

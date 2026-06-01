@@ -160,8 +160,72 @@ export const FamilyConfigSchema = z.object({
   // discriminator and a foothold for a future optimistic-concurrency guard
   // on configure-policy.
   policyVersion: z.number().int().nonnegative().default(0),
+  // Sprint 4.0.3 W7 — opt-in weekly auto-settle. Default off (D4: informed
+  // consent — a misconfigured allowlist would silently fail under opt-out
+  // defaults). When true, the Sunday 00:00 UTC auto-settle job runs
+  // settle-balance on this family's ledger.
+  autoSettleWeekly: z.boolean().default(false),
 });
 export type FamilyConfig = z.infer<typeof FamilyConfigSchema>;
+
+// === Ledger (Sprint 4.0.3) ===
+//
+// A LedgerEntry is the unit of "money owed but not yet on-chain". Earning
+// recognition (verify-achievement → ledger write) is decoupled from
+// settlement (settle-balance → on-chain transfer). The savings split is
+// computed and persisted at earn time so retroactive savingsPercent edits
+// do not reshape past entries (research §3.1 / plan D2).
+
+export const LedgerEntryKindEnum = z.enum([
+  "achievement-credit", // verify-achievement → child wallet portion
+  "savings-deposit",    // verify-achievement → savings vault portion
+  "savings-release",    // release-savings → child wallet (matured savings)
+  "session-payout",     // settle-session-payout → child wallet (Learning Mode)
+]);
+export type LedgerEntryKind = z.infer<typeof LedgerEntryKindEnum>;
+
+export const LedgerEntryDestinationEnum = z.enum(["child-wallet", "savings-vault"]);
+export type LedgerEntryDestination = z.infer<typeof LedgerEntryDestinationEnum>;
+
+export const LedgerEntryStatusEnum = z.enum([
+  "pending",
+  "settled",
+  "failed",
+  // Sprint 4.0.3 W8 — terminal state after 3 failed retries. Not re-picked
+  // by subsequent settle-balance calls; requires operator review.
+  "abandoned",
+]);
+export type LedgerEntryStatus = z.infer<typeof LedgerEntryStatusEnum>;
+
+export const LedgerEntrySchema = z.object({
+  id: z.string().uuid(),
+  familyId: z.string(),
+  childName: z.string(),
+  kind: LedgerEntryKindEnum,
+  destination: LedgerEntryDestinationEnum,
+  // 6-decimal USDC micros. Matches Achievement.amount conventions.
+  amountUsdcMicros: z.number().int().nonnegative(),
+  status: LedgerEntryStatusEnum,
+  createdAt: z.string().datetime(),
+  settledAt: z.string().datetime().optional(),
+  txHash: z.string().optional(),
+  // UUID grouping entries that landed in the same settle-balance call.
+  // Set by markSettled on success; never cleared.
+  settlementBatchId: z.string().optional(),
+  // FK to Achievement.id | SavingsEntry.id | SessionRecord.sessionId.
+  // Used by findBySourceId for idempotent dual-write + migration dedup.
+  sourceId: z.string().min(1),
+  // Sprint 4.0.3 W8 — failure classifier output:
+  //   policy_denied: recipient_not_authorized | insufficient_gas |
+  //   rpc_timeout | chain_reorg | raw error message (unknown class).
+  failureReason: z.string().optional(),
+  // Sprint 4.0.3 W8 — incremented on every markFailed; on the 3rd
+  // failure with the same destination the entry transitions to
+  // "abandoned" and a Sentry event fires.
+  retryCount: z.number().int().nonnegative().default(0),
+});
+export type LedgerEntry = z.infer<typeof LedgerEntrySchema>;
+export type LedgerEntryInput = z.input<typeof LedgerEntrySchema>;
 
 // === Achievement ===
 
@@ -198,6 +262,12 @@ export const AchievementRecordSchema = z.object({
   distributed: z.boolean().default(false),
   distributedAt: z.string().datetime().optional(),
   txHash: z.string().optional(),
+  // Sprint 4.0.3 W3 — set true once ledger entries exist for this
+  // achievement (Phase C semantics: distribute-allowance no longer
+  // broadcasts; it ledgerizes). Pre-4.0.3 records hydrate as undefined
+  // and are treated as "not yet ledgerized".
+  ledgerized: z.boolean().optional(),
+  ledgerizedAt: z.string().datetime().optional(),
 });
 export type AchievementRecord = z.infer<typeof AchievementRecordSchema>;
 

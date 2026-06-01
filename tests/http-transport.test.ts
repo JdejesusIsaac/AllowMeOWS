@@ -70,7 +70,8 @@ describe("H2: MCP tool registration", () => {
     // Sprint 3.6 added resend-invite → 15, then test-connection + view-my-link → 17.
     // Sprint 4.0 added view-session-receipt (Manager + Co-Parent + Advisor +
     // Learner read access; only Learner runs the session lifecycle) → 18.
-    expect(managerTools.length).toBe(18);
+    // Sprint 4.0.3 added settle-balance (Manager + Learner self-settle) → 19.
+    expect(managerTools.length).toBe(19);
   });
 });
 
@@ -103,6 +104,10 @@ describe("H3-H5: x402 pricing configuration", () => {
     "get-session-state",
     "complete-learning-session",
     "view-session-receipt",
+    // Sprint 4.0.3 — settle-balance is the kid-agency surface
+    // (Copy-reference.md §1.4: "Kids gain agency"). Charging a kid to
+    // claim their own earnings would invert the trust model.
+    "settle-balance",
   ];
 
   it("H3: Paid tools have x402 pricing defined", () => {

@@ -24,9 +24,13 @@ import { randomUUID } from "node:crypto";
 import { StateManager, getFamilyVaultPath } from "../engine/state.js";
 import { PolicyEngine } from "../engine/policy.js";
 import { WalletDistributor } from "../wallet/distributor.js";
-import { FamilyKeyManager } from "../keys/family-keys.js";
+import {
+  FamilyApiTokenManager,
+  lazyMintTokenForLegacyFamily,
+} from "../keys/family-api-tokens.js";
 import { WALLET_NAMES } from "../constants.js";
 import { checkDestinationAllowlist } from "../core/allowlist.js";
+import { FilesystemLedger, isLedgerOnlyMode } from "../engine/ledger.js";
 import type { CallerContext } from "../middleware/access-control.js";
 
 export interface SettleSessionPayoutInput {
@@ -101,6 +105,49 @@ export async function settleSessionPayout(
     childConfig.savingsPercent
   );
 
+  // Sprint 4.0.3 W5 — Phase C ledger-only path. Write `session-payout`
+  // LedgerEntries instead of broadcasting. Sprint 4.0 Learning Mode's
+  // kid-facing flow stays unchanged from the kid's perspective — the
+  // payout shows up in `check-progress` as pending; settle-balance
+  // moves it on-chain.
+  if (isLedgerOnlyMode()) {
+    const ledger = new FilesystemLedger();
+    const now = new Date().toISOString();
+    if (childAmount > 0) {
+      await ledger.append({
+        id: randomUUID(),
+        familyId,
+        childName: childConfig.name,
+        kind: "session-payout",
+        destination: "child-wallet",
+        amountUsdcMicros: childAmount,
+        status: "pending",
+        createdAt: now,
+        sourceId: input.sessionId,
+        retryCount: 0,
+      });
+    }
+    if (savingsAmount > 0) {
+      await ledger.append({
+        id: randomUUID(),
+        familyId,
+        childName: childConfig.name,
+        kind: "session-payout",
+        destination: "savings-vault",
+        amountUsdcMicros: savingsAmount,
+        status: "pending",
+        createdAt: now,
+        sourceId: input.sessionId,
+        retryCount: 0,
+      });
+    }
+    return {
+      ok: true,
+      childAmount,
+      savingsAmount,
+    };
+  }
+
   // Allowlist check on the child-wallet leg — same rules as
   // distribute-allowance (Sprint 3.0.2 Decision 2). Internal vaults
   // (savings, gift, treasury) and OWS-managed wallets are exempt.
@@ -131,21 +178,24 @@ export async function settleSessionPayout(
     }
   }
 
-  // Resolve the per-family encryption key, same as distribute-allowance.
-  const keyManager = new FamilyKeyManager();
-  let passphrase: string | undefined;
-  if (keyManager.hasFamilyKey(familyId)) {
-    passphrase = keyManager.getFamilyKey(familyId);
-  } else if (process.env.OWS_PASSPHRASE) {
-    passphrase = process.env.OWS_PASSPHRASE;
+  // Sprint 4.1 W6 — agent-mode signing via OWS API token, mirroring
+  // distribute-allowance.ts. `OWS_PASSPHRASE` env-var fallback removed
+  // per D6 (multi-tenant correctness).
+  const apiTokens = new FamilyApiTokenManager();
+  let apiToken = apiTokens.getToken(familyId);
+  if (!apiToken) {
+    try {
+      apiToken = await lazyMintTokenForLegacyFamily(familyId);
+    } catch (mintErr) {
+      return {
+        ok: false,
+        error:
+          `Family wallet not initialized. Run configure-policy first. ` +
+          `(${mintErr instanceof Error ? mintErr.message : String(mintErr)})`,
+      };
+    }
   }
-  if (!passphrase) {
-    return {
-      ok: false,
-      error: "Family wallet not initialized. Run configure-policy first.",
-    };
-  }
-  const distributor = new WalletDistributor(passphrase, getFamilyVaultPath(familyId));
+  const distributor = new WalletDistributor(apiToken, getFamilyVaultPath(familyId));
 
   let txHash: string | undefined;
   let savingsTxHash: string | undefined;
