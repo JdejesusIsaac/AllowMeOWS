@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AllowMe — Kid Dashboard (Builders 8–11)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Nunito',sans-serif;color:#3a2d55;background:#efeafe;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:32px 16px;gap:14px}
+  .fr{font-family:'Fredoka',sans-serif}
+  .screen{width:100%;max-width:720px;background:linear-gradient(155deg,#F3EEFF 0%,#FDEEF6 45%,#E8FBF4 100%);border-radius:32px;padding:24px;display:flex;flex-direction:column;gap:16px;box-shadow:0 30px 60px -30px rgba(86,61,140,.4)}
+  .clay{background:#fff;border-radius:26px;box-shadow:0 12px 22px -12px rgba(86,61,140,.32),inset 0 -4px 9px rgba(120,90,180,.06),inset 0 2px 5px rgba(255,255,255,.7)}
+  .pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;font-weight:700;font-size:13px;padding:6px 12px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(238px,1fr));gap:14px}
+  .muted{color:#8a7aa8;font-weight:700}
+  .cap{font-size:13px;color:#9a8db5;font-weight:700}
+  i{font-style:normal}
+</style>
+</head>
+<body>
+
+<div class="screen">
+
+  <div style="display:flex;align-items:center;gap:13px">
+    <div class="fr" style="width:50px;height:50px;border-radius:18px;background:linear-gradient(140deg,#A78BFA,#8B5CF6);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:600;box-shadow:0 8px 14px -6px rgba(139,92,246,.6)">M</div>
+    <div style="flex:1">
+      <div class="fr" style="font-size:24px;font-weight:600">Hi Maya!</div>
+      <div style="font-size:14px" class="muted">Look how far you've come</div>
+    </div>
+    <span class="pill" style="background:#fff;color:#0d9488;box-shadow:0 6px 12px -6px rgba(45,212,191,.5)"><i class="ti ti-seeding"></i> 3 day streak</span>
+  </div>
+
+  <div style="border-radius:28px;padding:20px 22px;background:linear-gradient(135deg,#8B5CF6 0%,#C084FC 50%,#F472B6 100%);box-shadow:0 16px 28px -12px rgba(139,92,246,.6),inset 0 -5px 12px rgba(99,40,160,.25),inset 0 3px 8px rgba(255,255,255,.3);display:flex;align-items:center;gap:14px">
+    <div style="flex:1">
+      <div style="font-size:14px;font-weight:700;color:#f3e8ff">Money you've earned</div>
+      <div class="fr" style="font-size:52px;font-weight:700;color:#fff;line-height:1.05;text-shadow:0 2px 0 rgba(120,60,170,.25)">$12.50</div>
+      <span class="pill" style="background:rgba(255,255,255,.25);color:#fff;margin-top:4px"><i class="ti ti-arrow-up-right"></i> $1.50 this week</span>
+    </div>
+    <svg width="86" height="86" viewBox="0 0 84 84" style="flex:none;filter:drop-shadow(0 8px 8px rgba(120,60,30,.3))">
+      <circle cx="42" cy="44" r="31" fill="#FFD23F"/>
+      <circle cx="42" cy="40" r="31" fill="#FFDE5C"/>
+      <circle cx="42" cy="40" r="24" fill="none" stroke="#F5B700" stroke-width="3" opacity=".6"/>
+      <circle cx="33" cy="37" r="3.4" fill="#6b4e00"/>
+      <circle cx="51" cy="37" r="3.4" fill="#6b4e00"/>
+      <circle cx="34.2" cy="36" r="1.1" fill="#fff"/>
+      <circle cx="52.2" cy="36" r="1.1" fill="#fff"/>
+      <path d="M34 45 q8 7 16 0" stroke="#6b4e00" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <circle cx="26" cy="46" r="3" fill="#FF9EC4" opacity=".7"/>
+      <circle cx="58" cy="46" r="3" fill="#FF9EC4" opacity=".7"/>
+    </svg>
+  </div>
+
+  <div class="grid">
+
+    <div class="clay" style="padding:18px;display:flex;align-items:center;gap:16px">
+      <svg width="84" height="84" viewBox="0 0 84 84" style="flex:none">
+        <circle cx="42" cy="42" r="34" fill="none" stroke="#FBE2EF" stroke-width="12"/>
+        <circle cx="42" cy="42" r="34" fill="none" stroke="#F472B6" stroke-width="12" stroke-linecap="round" stroke-dasharray="132 214" transform="rotate(-90 42 42)"/>
+        <text x="42" y="48" text-anchor="middle" font-family="Fredoka" font-size="21" font-weight="700" fill="#DB2777">62%</text>
+      </svg>
+      <div>
+        <div class="pill" style="background:#FCE7F3;color:#be1d6c;margin-bottom:6px"><i class="ti ti-palette"></i> My goal</div>
+        <div class="fr" style="font-size:19px;font-weight:600">Art set</div>
+        <div style="font-size:14px" class="muted">$12.50 of $20</div>
+        <div style="font-size:13px;color:#e0699f;font-weight:700;margin-top:3px"><i class="ti ti-flame"></i> Almost there!</div>
+      </div>
+    </div>
+
+    <div class="clay" style="padding:18px;display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:40px;height:40px;border-radius:14px;background:linear-gradient(140deg,#5EEAD4,#2DD4BF);color:#08524a;display:flex;align-items:center;justify-content:center;font-size:21px;box-shadow:0 7px 12px -6px rgba(45,212,191,.6)"><i class="ti ti-shield-bolt"></i></div>
+        <div><div class="fr" style="font-size:17px;font-weight:600">Savings vault</div><div style="font-size:12px" class="muted">grows 1.5× when you wait</div></div>
+        <div class="fr" style="margin-left:auto;font-size:18px;font-weight:700;color:#0d9488;text-align:right">$5<span style="color:#b9a9d6"> → </span>$7.50</div>
+      </div>
+      <div style="height:14px;border-radius:999px;background:#E8FBF4;overflow:hidden;box-shadow:inset 0 2px 4px rgba(13,148,136,.18)"><div style="height:100%;width:60%;border-radius:999px;background:linear-gradient(90deg,#FBBF24,#34D399)"></div></div>
+      <div style="font-size:13px" class="muted"><i class="ti ti-clock-hour-4"></i> 12 days to go — patience pays off</div>
+    </div>
+
+    <div class="clay" style="padding:18px;display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:40px;height:40px;border-radius:14px;background:linear-gradient(140deg,#93C5FD,#60A5FA);color:#143a78;display:flex;align-items:center;justify-content:center;font-size:21px;box-shadow:0 7px 12px -6px rgba(96,165,250,.6)"><i class="ti ti-bulb"></i></div>
+        <div><div class="fr" style="font-size:17px;font-weight:600">What you learned</div><div style="font-size:12px" class="muted">today</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:9px;font-size:15px;font-weight:700"><i class="ti ti-circle-check-filled" style="color:#2DD4BF;font-size:21px"></i> Spotting AI mistakes</div>
+      <div class="pill" style="background:#EAFBF4;color:#0d9488;align-self:flex-start"><i class="ti ti-confetti"></i> All done today — see you tomorrow</div>
+    </div>
+
+    <div class="clay" style="padding:18px;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:40px;height:40px;border-radius:14px;background:linear-gradient(140deg,#FDA4AF,#FB7185);color:#7d1533;display:flex;align-items:center;justify-content:center;font-size:21px;box-shadow:0 7px 12px -6px rgba(251,113,133,.6)"><i class="ti ti-award"></i></div>
+        <div><div class="fr" style="font-size:17px;font-weight:600">My badges</div><div style="font-size:12px" class="muted">2 earned</div></div>
+      </div>
+      <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+        <span class="pill fr" style="background:linear-gradient(135deg,#FB7185,#F472B6);color:#fff;font-size:14px;padding:8px 14px;box-shadow:0 8px 13px -6px rgba(244,114,182,.7)"><i class="ti ti-star-filled"></i> AI Explorer</span>
+        <span class="pill" style="background:#efeaf6;color:#a596c2"><i class="ti ti-lock"></i> AI Pro</span>
+      </div>
+      <div style="font-size:13px" class="muted">2 more lessons to reach AI Pro</div>
+    </div>
+
+  </div>
+
+  <div style="border-radius:22px;padding:15px 18px;background:linear-gradient(135deg,#EEE9FF,#F8E9F4);display:flex;gap:12px;align-items:flex-start;box-shadow:inset 0 2px 6px rgba(139,92,246,.08)">
+    <div style="width:36px;height:36px;border-radius:12px;background:linear-gradient(140deg,#C4B5FD,#A78BFA);color:#fff;display:flex;align-items:center;justify-content:center;font-size:19px;flex:none"><i class="ti ti-sparkles"></i></div>
+    <div style="font-size:14px;color:#4a3a6b;line-height:1.6"><span class="fr" style="font-weight:600;color:#6d28d9">Why you earned $1.50:</span> you finished "Spotting AI mistakes" and got 9 out of 10! The checker was sure about 8 answers, and a grown-up double-checked the last one. Awesome work.</div>
+  </div>
+
+</div>
+
+<div class="cap">AllowMe prototype · Builders (ages 8–11) · mock data</div>
+
+</body>
+</html>
