@@ -6,10 +6,26 @@ A graphical, kid-facing dashboard for AllowanceAgent. Today the kid-facing surfa
 
 ## What's here
 
+Open `index.html` in a browser to browse all three age bands.
+
 | File | What it is |
 |---|---|
-| `kid-dashboard-builders.html` | Self-contained visual prototype (open in a browser). Builders age band, 8–11. |
+| `index.html` | Landing page linking the three age-band prototypes + the design package. |
+| `kid-dashboard-sprouts.html` | Prototype — Sprouts age band, 5–7 (no dollars/settlement; stars + one lesson). |
+| `kid-dashboard-builders.html` | Prototype — Builders age band, 8–11 (the reference design). |
+| `kid-dashboard-founders.html` | Prototype — Founders age band, 12–16 (full detail: settle control, study plan, gold). |
+| `kid-dashboard.css` | Shared claymorphism design system (fonts + tokens) used by all three. |
 | `PRODUCT-DESIGN-PACKAGE.md` | The product-design package: problem statement, personas, user stories, flows, IA, Figma-ready prompt, acceptance criteria, success metrics. |
+
+### One engine, three skins
+
+A 5-year-old and a 14-year-old are cognitively different users. Same underlying data, three developmentally-distinct renders:
+
+| Band | Ages | What changes |
+|---|---|---|
+| Sprouts | 5–7 | No dollar amounts, no settlement, no categories. One goal as collectible stars; one lesson; gentle. (Under-7s can't reliably rank money value or grasp the future.) |
+| Builders | 8–11 | Earned-vs-settled, weekly categories, savings vault, goal steps, plain-language reward reasons. The sweet spot — build first. |
+| Founders | 12–16 | Adds a settle-now control, the Learning Mode study plan (sessions + phase), savings multiplier, and gold (PAXG) diversification. |
 
 ## It maps onto tools that already exist
 
@@ -21,7 +37,7 @@ Every element on the dashboard is data the server already produces. This is a re
 | "+$1.50 this week" | `check-progress` | earned this week vs `weeklyBudgetMicro` |
 | Pending (earned, not yet settled) | `check-progress` | `pendingLedgerMicro` (the earned-vs-settled ledger, Sprint 4.0.3) |
 | Goal card + progress | `check-goals` / `check-progress` | `learningGoals`, subgoal status, category budgets |
-| Savings vault ($5 → $7.50, days left) | `check-savings` | locked amount, `multiplierAtDeposit`, release dates |
+| Savings vault (locked, boost, days left) | `check-savings` | `totalUsdcLocked`, `multiplierAtDeposit` (the streak multiplier at deposit, not a flat rate), `lockUntil` / `daysRemaining` (90-day default lock), optional PAXG gold position |
 | Streak chip | `check-progress` | `streak.currentStreak`, `streak.multiplier` |
 | Badges / tiers | (derivable) | streak/goal milestones |
 | "Why you earned this" | Learning Mode | session receipt (`generateTemplateReceipt`) + `resolveConfidenceFlag` (the "ok"/"low" signal) |

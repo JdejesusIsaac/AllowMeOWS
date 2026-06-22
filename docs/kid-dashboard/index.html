@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AllowMe — Kid Dashboard Prototypes</title>
+<link rel="stylesheet" href="kid-dashboard.css">
+</head>
+<body>
+<!-- Index for the kid-dashboard design prototypes. One engine, three age skins.
+     All read the same data the existing MCP tools return (check-progress /
+     check-savings / check-goals / learning-mode). Mock data, USDC on Base. -->
+<div class="screen">
+
+  <div class="row">
+    <div class="fr chip" style="width:50px;height:50px;border-radius:18px;background:linear-gradient(140deg,#A78BFA,#8B5CF6);color:#fff;font-size:24px"><i class="ti ti-sparkles"></i></div>
+    <div>
+      <h1 style="font-size:24px">Kid dashboard prototypes</h1>
+      <div class="muted" style="font-size:14px">One engine, three developmental skins</div>
+    </div>
+  </div>
+
+  <div style="border-radius:20px;padding:14px 16px;background:linear-gradient(135deg,#EEE9FF,#E8FBF4);font-size:14px;line-height:1.6;color:#4a3a6b">
+    Visual layer over the data the MCP tools already return — earned-vs-settled balance, weekly categories, the savings vault, learning goals, and the "why you earned" session receipt. Design prototypes with mock data; not wired to the server.
+  </div>
+
+  <div class="grid">
+
+    <a href="kid-dashboard-sprouts.html" class="clay" style="padding:18px;display:flex;flex-direction:column;gap:8px">
+      <div class="chip" style="background:linear-gradient(140deg,#93C5FD,#60A5FA);color:#fff"><i class="ti ti-seedling"></i></div>
+      <div class="title">Sprouts</div>
+      <div class="sub">Ages 5–7</div>
+      <div style="font-size:13px;color:#5a4a7b;line-height:1.5;font-weight:600">No dollars or settlement. One goal as stars, one lesson, gentle. Built for kids who can't yet rank money or grasp the future.</div>
+      <span class="pill" style="background:#EEF6FF;color:var(--sky-d);align-self:flex-start;margin-top:4px">Open <i class="ti ti-arrow-right"></i></span>
+    </a>
+
+    <a href="kid-dashboard-builders.html" class="clay" style="padding:18px;display:flex;flex-direction:column;gap:8px;border:2px solid #C4B5FD">
+      <div class="chip" style="background:linear-gradient(140deg,#C4B5FD,#8B5CF6);color:#fff"><i class="ti ti-building-castle"></i></div>
+      <div class="title">Builders <span class="pill" style="background:#EEEDFE;color:var(--purple-d);font-size:11px;padding:3px 8px">start here</span></div>
+      <div class="sub">Ages 8–11</div>
+      <div style="font-size:13px;color:#5a4a7b;line-height:1.5;font-weight:600">The sweet spot. Earned-vs-settled, weekly categories, savings vault, goal steps, plain-language reward reasons.</div>
+      <span class="pill" style="background:#EEEDFE;color:var(--purple-d);align-self:flex-start;margin-top:4px">Open <i class="ti ti-arrow-right"></i></span>
+    </a>
+
+    <a href="kid-dashboard-founders.html" class="clay" style="padding:18px;display:flex;flex-direction:column;gap:8px">
+      <div class="chip" style="background:linear-gradient(140deg,#A5B4FC,#6366F1);color:#fff"><i class="ti ti-rocket"></i></div>
+      <div class="title">Founders</div>
+      <div class="sub">Ages 12–16</div>
+      <div style="font-size:13px;color:#5a4a7b;line-height:1.5;font-weight:600">Full detail: settle-now control, the Learning Mode study plan, savings multiplier, and gold (PAXG) diversification.</div>
+      <span class="pill" style="background:#EEF0FF;color:#4338ca;align-self:flex-start;margin-top:4px">Open <i class="ti ti-arrow-right"></i></span>
+    </a>
+
+  </div>
+
+  <a href="PRODUCT-DESIGN-PACKAGE.md" class="row clay" style="padding:14px 16px;gap:12px">
+    <div class="chip" style="background:#EEEDFE;color:var(--purple-d)"><i class="ti ti-file-text"></i></div>
+    <div style="flex:1"><div class="title">Product design package</div><div class="sub">personas · user stories · flows · IA · metrics</div></div>
+    <i class="ti ti-arrow-right" style="color:var(--muted);font-size:18px"></i>
+  </a>
+
+</div>
+<div class="cap">AllowMe · kid dashboard design · mock data · USDC on Base · see README.md for tool mapping</div>
+</body>
+</html>

@@ -1,0 +1,38 @@
+/* AllowMe kid dashboard — shared claymorphism design system.
+   Prototype styling for the docs/kid-dashboard mockups. Mock data only. */
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700;800&display=swap');
+@import url('https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css');
+
+:root{
+  --purple:#8B5CF6; --purple-d:#6d28d9;
+  --pink:#F472B6;   --pink-d:#be1d6c;
+  --mint:#2DD4BF;   --mint-d:#0d9488;
+  --gold:#FBBF24;   --gold-d:#854F0B;
+  --sky:#60A5FA;    --sky-d:#143a78;
+  --coral:#FB7185;  --coral-d:#7d1533;
+  --ink:#3a2d55;    --muted:#8a7aa8;
+  --page:linear-gradient(155deg,#F3EEFF 0%,#FDEEF6 45%,#E8FBF4 100%);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Nunito',sans-serif;color:var(--ink);background:#efeafe;
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:28px 16px;gap:14px}
+.fr{font-family:'Fredoka',sans-serif}
+i{font-style:normal}
+a{color:inherit;text-decoration:none}
+
+.screen{width:100%;max-width:720px;background:var(--page);border-radius:32px;padding:24px;
+  display:flex;flex-direction:column;gap:16px;box-shadow:0 30px 60px -30px rgba(86,61,140,.4)}
+.clay{background:#fff;border-radius:24px;
+  box-shadow:0 12px 22px -12px rgba(86,61,140,.32),inset 0 -4px 9px rgba(120,90,180,.06),inset 0 2px 5px rgba(255,255,255,.7)}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;font-weight:700;font-size:13px;padding:6px 12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(248px,1fr));gap:14px}
+.row{display:flex;align-items:center;gap:10px}
+.track{height:12px;border-radius:999px;background:#efeafe;overflow:hidden}
+.track.sm{height:9px}
+.fill{height:100%;border-radius:999px}
+.muted{color:var(--muted);font-weight:700}
+.cap{font-size:13px;color:#9a8db5;font-weight:700;text-align:center;line-height:1.5}
+.chip{width:40px;height:40px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:21px;flex:none}
+.title{font-size:17px;font-weight:600}
+.sub{font-size:12px;color:var(--muted);font-weight:700}
+h1,h2,h3{font-weight:600;font-family:'Fredoka',sans-serif}
