@@ -17,6 +17,9 @@ Open `index.html` in a browser to browse all three age bands.
 | `kid-dashboard.css` | Shared claymorphism design system (fonts + tokens) used by all three. |
 | `PRODUCT-DESIGN-PACKAGE.md` | The product-design package: problem statement, personas, user stories, flows, IA, Figma-ready prompt, acceptance criteria, success metrics. |
 | `AI-LITERACY-LEARNING-EXPERIENCE.md` | The pedagogy behind the goals and badges: an AI-literacy learning track (AI4K12 Five Big Ideas) that slots into the existing Learning Mode engine. Bloom's objectives, mastery model, assessment design, cognitive-load budget. |
+| `PRD.md` | The build plan: PRD, numbered requirements, acceptance criteria, sprint tickets (T1–T10 referencing real files), prioritization (MVP / fast-follow / later), and the instrumented measurement plan. |
+
+These three docs are the end-to-end EdTech design pass: Learning Experience → Product Designer → Product Manager.
 
 ### One engine, three skins
 
