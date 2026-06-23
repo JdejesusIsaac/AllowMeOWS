@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AllowMe — Kid Dashboard (Sprouts 5–7)</title>
+<link rel="stylesheet" href="kid-dashboard.css">
+<style>
+  .star{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:26px;flex:none}
+  .son{background:#EF9F27;color:#412402}
+  .soff{background:#efeafe;color:#c3b8da}
+</style>
+</head>
+<body>
+<!-- Sprouts: ages 5-7. No dollar amounts, no settlement, no categories.
+     Earnings abstracted to stars; one goal; one lesson. Maps to check-progress
+     (achievements this week) + one learningGoal, simplified for pre-readers. -->
+<div class="screen">
+
+  <div class="row">
+    <div class="fr chip" style="width:54px;height:54px;border-radius:20px;background:linear-gradient(140deg,#93C5FD,#60A5FA);color:#fff;font-size:24px;font-weight:600;box-shadow:0 8px 14px -6px rgba(96,165,250,.6)">S</div>
+    <div class="fr" style="font-size:28px;font-weight:600">Hi Sam!</div>
+  </div>
+
+  <!-- ONE GOAL as collectible stars (abstract, no $) -->
+  <div style="border-radius:28px;padding:24px;background:linear-gradient(150deg,#FBEAF0,#EEE9FF);display:flex;flex-direction:column;gap:18px;align-items:center;text-align:center;box-shadow:inset 0 2px 8px rgba(139,92,246,.08)">
+    <div class="row">
+      <div class="chip" style="width:48px;height:48px;border-radius:16px;background:linear-gradient(140deg,#C4B5FD,#A78BFA);color:#fff;font-size:25px"><i class="ti ti-book"></i></div>
+      <div style="text-align:left"><div style="font-size:15px;color:var(--purple-d);font-weight:700">You're collecting stars for</div><div class="fr" style="font-size:25px;font-weight:600;color:var(--purple-d)">A dinosaur book</div></div>
+    </div>
+    <div style="display:flex;gap:12px">
+      <div class="star son"><i class="ti ti-star"></i></div>
+      <div class="star son"><i class="ti ti-star"></i></div>
+      <div class="star son"><i class="ti ti-star"></i></div>
+      <div class="star son"><i class="ti ti-star"></i></div>
+      <div class="star soff"><i class="ti ti-star"></i></div>
+    </div>
+    <div class="fr" style="font-size:22px;font-weight:600;color:var(--purple-d)">Just 1 more star to go!</div>
+  </div>
+
+  <!-- TODAY: one lesson, big and celebratory -->
+  <div class="clay" style="padding:22px;display:flex;align-items:center;gap:16px">
+    <div class="chip" style="width:54px;height:54px;border-radius:50%;background:linear-gradient(140deg,#5EEAD4,#2DD4BF);color:#08524a;font-size:30px"><i class="ti ti-circle-check"></i></div>
+    <div>
+      <div class="fr" style="font-size:21px;font-weight:600">You learned about being kind</div>
+      <div style="font-size:16px;color:var(--mint-d);font-weight:700">You earned a star today!</div>
+    </div>
+  </div>
+
+  <!-- Gentle close: no streak pressure, no "come back or lose it" -->
+  <div class="row" style="justify-content:center;gap:9px;color:var(--muted);font-size:18px;font-weight:700">
+    <i class="ti ti-mood-happy" style="color:#EF9F27;font-size:24px"></i> Great job today, Sam
+  </div>
+
+</div>
+<div class="cap">AllowMe prototype · Sprouts (ages 5–7) · mock data · stars stand in for USDC</div>
+</body>
+</html>

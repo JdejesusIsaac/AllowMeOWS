@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AllowMe — Teen Dashboard (Founders 12–16)</title>
+<link rel="stylesheet" href="kid-dashboard.css">
+<style>
+  .stat{flex:1;border-radius:18px;padding:14px 16px}
+  .btn{border:none;cursor:pointer;font-family:'Nunito',sans-serif;font-weight:700;border-radius:14px;padding:9px 15px;font-size:13px}
+</style>
+</head>
+<body>
+<!-- Founders: ages 12-16. Full detail — earned-vs-settled with settle control,
+     categories, savings (streak multiplier + 90-day lock + PAXG gold option),
+     Learning Mode study plan (sessions, currentPhase), session receipt + confidence.
+     Maps to check-progress / check-savings / check-goals / learning-mode. USDC on Base. -->
+<div class="screen">
+
+  <div class="row">
+    <div class="fr chip" style="width:48px;height:48px;border-radius:16px;background:linear-gradient(140deg,#818CF8,#6366F1);color:#fff;font-size:20px;font-weight:600;box-shadow:0 8px 14px -6px rgba(99,102,241,.6)">A</div>
+    <div style="flex:1">
+      <div class="fr" style="font-size:22px;font-weight:600">Hey Alex</div>
+      <div class="muted" style="font-size:13px">Week of Jun 16 · Base · USDC</div>
+    </div>
+    <span class="pill" style="background:#fff;color:#4338ca;box-shadow:0 6px 12px -6px rgba(99,102,241,.5)"><i class="ti ti-flame"></i> 9 days · 1.6×</span>
+  </div>
+
+  <!-- BALANCE: spendable vs pending settlement, with a settle control -->
+  <div style="border-radius:24px;padding:18px;background:linear-gradient(135deg,#6366F1,#8B5CF6);box-shadow:0 16px 28px -12px rgba(99,102,241,.55),inset 0 -5px 12px rgba(60,40,140,.25),inset 0 3px 8px rgba(255,255,255,.25);display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+    <div class="stat" style="background:rgba(255,255,255,.16)">
+      <div style="font-size:13px;color:#e9e7ff;font-weight:700">Ready to spend</div>
+      <div class="fr" style="font-size:34px;font-weight:700;color:#fff;line-height:1.1">$24.80</div>
+    </div>
+    <div class="stat" style="background:rgba(255,255,255,.16)">
+      <div style="font-size:13px;color:#e9e7ff;font-weight:700">Pending</div>
+      <div class="fr" style="font-size:34px;font-weight:700;color:#fff;line-height:1.1">$11.50</div>
+      <div style="font-size:12px;color:#e9e7ff;font-weight:700">auto-settles Sunday (5 days)</div>
+    </div>
+    <button class="btn" style="background:#fff;color:#4338ca;margin-left:auto"><i class="ti ti-bolt"></i> Settle now</button>
+  </div>
+
+  <!-- THIS WEEK + categories -->
+  <div class="clay" style="padding:18px">
+    <div class="row" style="margin-bottom:12px">
+      <div class="title" style="flex:1">This week</div>
+      <div class="fr" style="font-size:17px;font-weight:700;color:#4338ca">$11.50 <span class="muted" style="font-size:13px">/ $20.00</span></div>
+    </div>
+    <div class="track" style="margin-bottom:14px"><div class="fill" style="width:58%;background:#6366F1"></div></div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+      <div>
+        <div class="row" style="font-size:13px;font-weight:700;margin-bottom:4px"><i class="ti ti-code" style="color:var(--purple)"></i> Coding <span class="muted" style="margin-left:auto">$6.00/$10</span></div>
+        <div class="track sm"><div class="fill" style="width:60%;background:var(--purple)"></div></div>
+      </div>
+      <div>
+        <div class="row" style="font-size:13px;font-weight:700;margin-bottom:4px"><i class="ti ti-book" style="color:var(--sky)"></i> Reading <span class="muted" style="margin-left:auto">$3.50/$6</span></div>
+        <div class="track sm"><div class="fill" style="width:58%;background:var(--sky)"></div></div>
+      </div>
+      <div>
+        <div class="row" style="font-size:13px;font-weight:700;margin-bottom:4px"><i class="ti ti-run" style="color:var(--mint)"></i> Fitness <span class="muted" style="margin-left:auto">$2.00/$4</span></div>
+        <div class="track sm"><div class="fill" style="width:50%;background:var(--mint)"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- SAVINGS VAULT + gold diversification (real: convert-savings → PAXG) -->
+    <div class="clay" style="padding:18px;display:flex;flex-direction:column;gap:10px">
+      <div class="row">
+        <div class="chip" style="background:linear-gradient(140deg,#5EEAD4,#2DD4BF);color:#08524a"><i class="ti ti-lock"></i></div>
+        <div><div class="title">Savings vault</div><div class="sub">20% of allowance · 90-day lock</div></div>
+        <div class="fr" style="margin-left:auto;font-size:20px;font-weight:700;color:var(--mint-d)">$40.00</div>
+      </div>
+      <div class="muted" style="font-size:13px"><i class="ti ti-bolt"></i> Locked at 1.6× streak · unlocks in 54 days</div>
+      <div class="row" style="background:#FBF5E6;border-radius:12px;padding:9px 11px;font-size:12px;font-weight:700;color:var(--gold-d)">
+        <i class="ti ti-coin"></i> Diversify to gold (PAXG)?
+        <button class="btn" style="background:var(--gold);color:#412402;margin-left:auto;padding:5px 11px">Learn how</button>
+      </div>
+    </div>
+
+    <!-- STUDY PLAN (Learning Mode: sessionsCompleted/Planned, currentPhase, subgoals) -->
+    <div class="clay" style="padding:18px;display:flex;flex-direction:column;gap:11px">
+      <div class="row">
+        <div class="chip" style="background:linear-gradient(140deg,#A5B4FC,#818CF8);color:#312e81"><i class="ti ti-school"></i></div>
+        <div><div class="title">Catch up to Algebra 1</div><div class="sub">session 6 of 12 · phase: ratios</div></div>
+      </div>
+      <div class="track"><div class="fill" style="width:50%;background:#818CF8"></div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:12px;font-weight:700">
+        <span class="pill" style="background:#E8FBF4;color:var(--mint-d);padding:4px 9px"><i class="ti ti-check"></i> Fractions</span>
+        <span class="pill" style="background:#E8FBF4;color:var(--mint-d);padding:4px 9px"><i class="ti ti-check"></i> Decimals</span>
+        <span class="pill" style="background:#EEF0FF;color:#4338ca;padding:4px 9px"><i class="ti ti-player-play"></i> Ratios</span>
+        <span class="pill" style="background:#efeaf6;color:var(--muted);padding:4px 9px"><i class="ti ti-circle"></i> Pre-algebra</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- LAST SESSION receipt + confidence (Learning Mode) -->
+  <div style="border-radius:22px;padding:15px 18px;background:linear-gradient(135deg,#EEF0FF,#EEE9FF);display:flex;gap:12px;align-items:flex-start;box-shadow:inset 0 2px 6px rgba(99,102,241,.08)">
+    <div class="chip" style="width:36px;height:36px;border-radius:12px;background:linear-gradient(140deg,#A5B4FC,#818CF8);color:#fff;font-size:19px"><i class="ti ti-receipt"></i></div>
+    <div style="font-size:14px;color:#3b357a;line-height:1.6"><span class="fr" style="font-weight:600;color:#4338ca">Last session · +$1.85:</span> 32 min on Ratios, 4.5/5 engagement, passed the check (88%). Settles Sunday. <span style="color:var(--mint-d);font-weight:700">Verified genuine ✓</span></div>
+  </div>
+
+</div>
+<div class="cap">AllowMe prototype · Founders (ages 12–16) · mock data · USDC on Base</div>
+</body>
+</html>
